@@ -10,10 +10,12 @@ function handleConnection(ws: ServerWebSocket<any>) {
   console.log("New client connected");
 
   // Send welcome message to the new client
-  ws.send(JSON.stringify({
-    type: "system",
-    message: "Please join a channel to start chatting",
-  }));
+  ws.send(
+    JSON.stringify({
+      type: "system",
+      message: "Please join a channel to start chatting",
+    }),
+  );
 
   ws.close = () => {
     console.log("Client disconnected");
@@ -26,11 +28,13 @@ function handleConnection(ws: ServerWebSocket<any>) {
         // Notify other clients in same channel
         clients.forEach((client) => {
           if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({
-              type: "system",
-              message: "A user has left the channel",
-              channel: channelName
-            }));
+            client.send(
+              JSON.stringify({
+                type: "system",
+                message: "A user has left the channel",
+                channel: channelName,
+              }),
+            );
           }
         });
       }
@@ -39,7 +43,7 @@ function handleConnection(ws: ServerWebSocket<any>) {
 }
 
 const server = Bun.serve({
-  port: 3055,
+  port: parseInt(process.env.PORT || "3055", 10),
   // uncomment this to allow connections in windows wsl
   // hostname: "0.0.0.0",
   fetch(req: Request, server: Server) {
@@ -78,7 +82,7 @@ const server = Bun.serve({
       try {
         const data = JSON.parse(message as string);
         console.log(`\n=== Received message from client ===`);
-        console.log(`Type: ${data.type}, Channel: ${data.channel || 'N/A'}`);
+        console.log(`Type: ${data.type}, Channel: ${data.channel || "N/A"}`);
         if (data.message?.command) {
           console.log(`Command: ${data.message.command}, ID: ${data.id}`);
         } else if (data.message?.result) {
@@ -89,10 +93,12 @@ const server = Bun.serve({
         if (data.type === "join") {
           const channelName = data.channel;
           if (!channelName || typeof channelName !== "string") {
-            ws.send(JSON.stringify({
-              type: "error",
-              message: "Channel name is required"
-            }));
+            ws.send(
+              JSON.stringify({
+                type: "error",
+                message: "Channel name is required",
+              }),
+            );
             return;
           }
 
@@ -108,29 +114,35 @@ const server = Bun.serve({
           console.log(`\n✓ Client joined channel "${channelName}" (${channelClients.size} total clients)`);
 
           // Notify client they joined successfully
-          ws.send(JSON.stringify({
-            type: "system",
-            message: `Joined channel: ${channelName}`,
-            channel: channelName
-          }));
+          ws.send(
+            JSON.stringify({
+              type: "system",
+              message: `Joined channel: ${channelName}`,
+              channel: channelName,
+            }),
+          );
 
-          ws.send(JSON.stringify({
-            type: "system",
-            message: {
-              id: data.id,
-              result: "Connected to channel: " + channelName,
-            },
-            channel: channelName
-          }));
+          ws.send(
+            JSON.stringify({
+              type: "system",
+              message: {
+                id: data.id,
+                result: "Connected to channel: " + channelName,
+              },
+              channel: channelName,
+            }),
+          );
 
           // Notify other clients in channel
           channelClients.forEach((client) => {
             if (client !== ws && client.readyState === WebSocket.OPEN) {
-              client.send(JSON.stringify({
-                type: "system",
-                message: "A new user has joined the channel",
-                channel: channelName
-              }));
+              client.send(
+                JSON.stringify({
+                  type: "system",
+                  message: "A new user has joined the channel",
+                  channel: channelName,
+                }),
+              );
             }
           });
           return;
@@ -140,19 +152,23 @@ const server = Bun.serve({
         if (data.type === "message" || data.type === "progress_update") {
           const channelName = data.channel;
           if (!channelName || typeof channelName !== "string") {
-            ws.send(JSON.stringify({
-              type: "error",
-              message: "Channel name is required"
-            }));
+            ws.send(
+              JSON.stringify({
+                type: "error",
+                message: "Channel name is required",
+              }),
+            );
             return;
           }
 
           const channelClients = channels.get(channelName);
           if (!channelClients || !channelClients.has(ws)) {
-            ws.send(JSON.stringify({
-              type: "error",
-              message: "You must join the channel first"
-            }));
+            ws.send(
+              JSON.stringify({
+                type: "error",
+                message: "You must join the channel first",
+              }),
+            );
             return;
           }
 
@@ -166,14 +182,14 @@ const server = Bun.serve({
                 type: "broadcast",
                 message: data.message,
                 sender: "peer",
-                channel: channelName
+                channel: channelName,
               };
               console.log(`\n=== Broadcasting to peer #${broadcastCount} ===`);
               console.log(JSON.stringify(broadcastMessage, null, 2));
               client.send(JSON.stringify(broadcastMessage));
             }
           });
-          
+
           if (broadcastCount === 0) {
             console.log(`⚠️  No other clients in channel "${channelName}" to receive message!`);
           } else {
@@ -189,8 +205,8 @@ const server = Bun.serve({
       channels.forEach((clients) => {
         clients.delete(ws);
       });
-    }
-  }
+    },
+  },
 });
 
 console.log(`WebSocket server running on port ${server.port}`);

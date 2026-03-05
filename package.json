@@ -19,9 +19,15 @@
     "build": "tsup",
     "build:watch": "tsup --watch",
     "dev": "bun run build:watch",
-    "pub:release": "bun run build && npm publish"
+    "pub:release": "bun run build && npm publish",
+    "test": "bun test",
+    "lint": "bunx biome lint .",
+    "lint:fix": "bunx biome check --write .",
+    "format": "bunx biome format --write .",
+    "check": "bunx biome check ."
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.6",
     "@types/bun": "latest",
     "bun-types": "^1.2.5",
     "tsup": "^8.4.0",
@@ -31,6 +37,6 @@
     "@modelcontextprotocol/sdk": "^1.27.1",
     "uuid": "latest",
     "ws": "latest",
-    "zod": "3.22.4"
+    "zod": "^3.24.0"
   }
 }

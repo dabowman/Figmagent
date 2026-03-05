@@ -19,9 +19,12 @@ bun run dev              # Build in watch mode
 bun socket               # Start WebSocket relay server (port 3055)
 bun run start            # Run built MCP server
 bun setup                # Full setup (install + write .cursor/mcp.json + .mcp.json)
+bun run test             # Run tests (bun:test)
+bun run lint             # Lint with Biome
+bun run lint:fix         # Auto-fix lint + format issues
+bun run format           # Auto-format with Biome
+bun run check            # Lint + format check combined
 ```
-
-There is no test suite or linter configured.
 
 ## Architecture
 
