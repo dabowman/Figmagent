@@ -2858,10 +2858,12 @@ function connectToFigma(port: number = 3055) {
 
       const json = JSON.parse(data) as ProgressMessage;
 
-      // Handle progress updates
-      if (json.type === 'progress_update') {
+      // Handle progress updates (may arrive directly or wrapped in a broadcast by the relay)
+      const isProgressUpdate = json.type === 'progress_update' ||
+        (json.type === 'broadcast' && json.message && json.message.type === 'progress_update');
+      if (isProgressUpdate) {
         const progressData = json.message.data as CommandProgressUpdate;
-        const requestId = json.id || '';
+        const requestId = json.message.id || json.id || '';
 
         if (requestId && pendingRequests.has(requestId)) {
           const request = pendingRequests.get(requestId)!;

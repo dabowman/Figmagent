@@ -136,8 +136,8 @@ const server = Bun.serve({
           return;
         }
 
-        // Handle regular messages
-        if (data.type === "message") {
+        // Handle regular messages and progress updates
+        if (data.type === "message" || data.type === "progress_update") {
           const channelName = data.channel;
           if (!channelName || typeof channelName !== "string") {
             ws.send(JSON.stringify({

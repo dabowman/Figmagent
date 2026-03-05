@@ -210,6 +210,7 @@ async function handleCommand(command, params) {
           throw new Error("Missing sourceInstanceId parameter");
         }
       }
+      throw new Error("Missing targetNodeIds parameter");
     case "set_layout_mode":
       return await setLayoutMode(params);
     case "set_padding":
