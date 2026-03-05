@@ -53,6 +53,16 @@
       "linter": {
         "enabled": false
       }
+    },
+    {
+      "includes": ["src/cursor_mcp_plugin/code.js"],
+      "linter": {
+        "rules": {
+          "complexity": {
+            "useOptionalChain": "off"
+          }
+        }
+      }
     }
   ]
 }
