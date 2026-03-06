@@ -1,4 +1,4 @@
-import { server } from "../server.js";
+import { server } from "../instance.js";
 
 // Design Strategy Prompt
 server.prompt("design_strategy", "Best practices for working with Figma designs", (extra) => {

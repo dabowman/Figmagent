@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { server } from "../server.js";
+import { server } from "../instance.js";
 import { sendCommandToFigma } from "../connection.js";
 import { filterFigmaNode } from "../utils.js";
 
