@@ -35,6 +35,26 @@ const server = Bun.serve({
       });
     }
 
+    // Handle GET /channels — list active channels for auto-discovery
+    const url = new URL(req.url, `http://localhost`);
+    if (req.method === "GET" && url.pathname === "/channels") {
+      const result: Record<string, { clientCount: number }> = {};
+      channels.forEach((clients, name) => {
+        const activeCount = [...clients].filter(
+          (c) => c.readyState === WebSocket.OPEN,
+        ).length;
+        if (activeCount > 0) {
+          result[name] = { clientCount: activeCount };
+        }
+      });
+      return new Response(JSON.stringify(result), {
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Content-Type": "application/json",
+        },
+      });
+    }
+
     // Handle WebSocket upgrade
     const success = server.upgrade(req, {
       headers: {

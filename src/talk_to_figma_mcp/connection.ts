@@ -143,6 +143,16 @@ export function connectToFigma(port: number = 3055) {
   });
 }
 
+// Discover active channels from the relay's HTTP endpoint
+export async function discoverChannels(port: number = 3055): Promise<Record<string, { clientCount: number }>> {
+  const url = serverUrl === "localhost" ? `http://${serverUrl}:${port}/channels` : `https://${serverUrl}/channels`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to discover channels: ${response.statusText}`);
+  }
+  return response.json() as Promise<Record<string, { clientCount: number }>>;
+}
+
 // Function to join a channel
 export async function joinChannel(channelName: string): Promise<void> {
   if (!ws || ws.readyState !== WebSocket.OPEN) {

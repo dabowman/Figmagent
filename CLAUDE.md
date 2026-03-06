@@ -32,7 +32,7 @@ bun run check            # Lint + format check combined
 Single-file server (~3000 lines) implementing MCP via `@modelcontextprotocol/sdk`. Exposes 40 tools (create shapes, modify text, manage layouts, export images, etc.) and 6 AI prompts (design strategies). Communicates with the AI agent over stdio and with the WebSocket relay via `ws`. Each request gets a UUID, is tracked in a `pendingRequests` Map with timeout/promise callbacks, and resolves when the plugin responds.
 
 ### WebSocket Relay (`src/socket.ts`)
-Lightweight Bun WebSocket server on port 3055 (configurable via `PORT` env). Routes messages between MCP server and Figma plugin using channel-based isolation. Clients call `join` to enter a channel; messages broadcast only within the same channel.
+Lightweight Bun WebSocket server on port 3055 (configurable via `PORT` env). Routes messages between MCP server and Figma plugin using channel-based isolation. Clients call `join` to enter a channel; messages broadcast only within the same channel. Exposes `GET /channels` HTTP endpoint for auto-discovery of active channels.
 
 ### Figma Plugin (`src/cursor_mcp_plugin/`)
 Runs inside Figma. `code.js` is the plugin main thread handling 30+ commands via a dispatcher. `ui.html` is the plugin UI for WebSocket connection management. `manifest.json` declares permissions (dynamic-page access, localhost network). The plugin is **not built/bundled** — `code.js` is written directly as the runtime artifact.
@@ -72,7 +72,7 @@ For local development, point the MCP config to the local server.ts instead of th
 1. Run `bun setup` — installs dependencies and writes MCP config for both Cursor (`.cursor/mcp.json`) and Claude Code (`.mcp.json`)
 2. `bun socket` in one terminal (WebSocket relay)
 3. In Figma: Plugins > Development > Link existing plugin > select `src/cursor_mcp_plugin/manifest.json`
-4. Run plugin in Figma, join a channel, then use tools from Cursor or Claude Code
+4. Run plugin in Figma, click Connect, then call `join_channel` (no arguments needed — auto-discovers the active channel)
 
 ### Windows/WSL
 
@@ -80,7 +80,7 @@ Uncomment the `hostname: "0.0.0.0"` line in `src/socket.ts` to allow connections
 
 ## Agent Notes
 
-- Always call `join_channel` before issuing any Figma commands
+- Always call `join_channel` before issuing any Figma commands (no arguments needed — auto-discovers the active plugin channel via the relay's `GET /channels` endpoint)
 - Call `get_document_info` first to understand the design structure
 - Use `read_my_design` or `get_selection` before making modifications
 - The plugin and relay must both be running before any tool calls succeed

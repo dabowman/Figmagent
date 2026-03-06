@@ -31,6 +31,52 @@ afterAll(() => {
 // can get a fresh module state if needed. For now, single import is fine.
 // Note: the module reads --server= from process.argv but defaults to localhost.
 
+describe("discoverChannels", () => {
+  test("returns empty object when no channels exist", async () => {
+    const response = await fetch(`http://localhost:${PORT}/channels`);
+    expect(response.ok).toBe(true);
+    const data = await response.json();
+    expect(data).toEqual({});
+  });
+
+  test("returns channels with client counts after clients join", async () => {
+    // Connect a client and join a channel
+    const ws = new WebSocket(`ws://localhost:${PORT}`);
+    await new Promise((resolve) => { ws.onopen = resolve; });
+    await new Promise((resolve) => { ws.onmessage = resolve; }); // welcome
+    ws.send(JSON.stringify({ type: "join", channel: "discover-test-ch" }));
+    await new Promise((resolve) => { ws.onmessage = resolve; }); // join confirm
+    await new Promise((resolve) => { ws.onmessage = resolve; }); // join result
+
+    const response = await fetch(`http://localhost:${PORT}/channels`);
+    const data = await response.json();
+    expect(data["discover-test-ch"]).toBeDefined();
+    expect(data["discover-test-ch"].clientCount).toBeGreaterThanOrEqual(1);
+
+    ws.close();
+    // Wait for close to propagate
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  });
+
+  test("discoverChannels function works", async () => {
+    // Connect a client to create a channel
+    const ws = new WebSocket(`ws://localhost:${PORT}`);
+    await new Promise((resolve) => { ws.onopen = resolve; });
+    await new Promise((resolve) => { ws.onmessage = resolve; }); // welcome
+    ws.send(JSON.stringify({ type: "join", channel: "fn-discover-ch" }));
+    await new Promise((resolve) => { ws.onmessage = resolve; }); // join confirm
+    await new Promise((resolve) => { ws.onmessage = resolve; }); // join result
+
+    const { discoverChannels } = await import("../src/talk_to_figma_mcp/connection.js");
+    const channels = await discoverChannels(PORT);
+    expect(channels["fn-discover-ch"]).toBeDefined();
+    expect(channels["fn-discover-ch"].clientCount).toBeGreaterThanOrEqual(1);
+
+    ws.close();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  });
+});
+
 describe("sendCommandToFigma", () => {
   test("rejects when not connected", async () => {
     // Fresh import — ws starts as null

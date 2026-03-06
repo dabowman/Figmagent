@@ -434,7 +434,7 @@ This strategy enables transferring content and property overrides from a source 
 - Confirm text content and style overrides have transferred successfully
 
 ## Key Tips
-- Always join the appropriate channel first with \`join_channel()\`
+- Always join a channel first with \`join_channel()\` (call with no arguments to auto-discover the active Figma plugin channel)
 - When working with multiple targets, check the full selection with \`get_selection()\`
 - Preserve component relationships by using instance overrides rather than direct text manipulation`,
         },

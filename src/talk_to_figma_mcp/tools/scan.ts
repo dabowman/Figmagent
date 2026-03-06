@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { server } from "../instance.js";
 import { sendCommandToFigma } from "../connection.js";
-import { joinChannel } from "../connection.js";
+import { joinChannel, discoverChannels } from "../connection.js";
 
 // Node Type Scanning Tool
 server.tool(
@@ -278,26 +278,56 @@ server.tool(
 // Join Channel Tool
 server.tool(
   "join_channel",
-  "Join a specific channel to communicate with Figma",
+  "Join a channel to communicate with Figma. If no channel name is provided, auto-discovers active channels from the relay and joins if exactly one is found.",
   {
     channel: z.string().describe("The name of the channel to join").default(""),
   },
   async ({ channel }: any) => {
     try {
       if (!channel) {
-        // If no channel provided, ask the user for input
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Please provide a channel name to join:",
-            },
-          ],
-          followUp: {
-            tool: "join_channel",
-            description: "Join the specified channel",
-          },
-        };
+        // Auto-discover: query relay for active channels
+        try {
+          const channels = await discoverChannels();
+          const channelNames = Object.keys(channels);
+
+          if (channelNames.length === 0) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: "No active channels found. Make sure the Figma plugin is running and connected to the relay.",
+                },
+              ],
+            };
+          }
+
+          if (channelNames.length === 1) {
+            // Exactly one channel — auto-join it
+            channel = channelNames[0];
+          } else {
+            // Multiple channels — ask user to pick
+            const listing = channelNames
+              .map((name) => `  - ${name} (${channels[name].clientCount} client(s))`)
+              .join("\n");
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `Multiple active channels found. Please specify which one to join:\n${listing}`,
+                },
+              ],
+            };
+          }
+        } catch (discoveryError) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Could not auto-discover channels (is the relay running?). Please provide a channel name manually.`,
+              },
+            ],
+          };
+        }
       }
 
       await joinChannel(channel);
