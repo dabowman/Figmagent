@@ -58,6 +58,8 @@ export type FigmaCommand =
   | "delete_multiple_nodes"
   | "get_styles"
   | "get_local_components"
+  | "create_component"
+  | "combine_as_variants"
   | "create_component_instance"
   | "get_instance_overrides"
   | "set_instance_overrides"

@@ -254,6 +254,84 @@ server.tool(
   },
 );
 
+// Create Component Tool
+server.tool(
+  "create_component",
+  "Create a new COMPONENT node in Figma. Use this to build variant components that can later be combined into a COMPONENT_SET with combine_as_variants.",
+  {
+    x: z.number().describe("X position"),
+    y: z.number().describe("Y position"),
+    width: z.number().positive().optional().describe("Width (default 100)"),
+    height: z.number().positive().optional().describe("Height (default 100)"),
+    name: z.string().optional().describe("Component name (e.g. 'Layout=Table')"),
+    parentId: z.string().optional().describe("Optional parent node ID"),
+  },
+  async ({ x, y, width, height, name, parentId }: any) => {
+    try {
+      const result = await sendCommandToFigma("create_component", {
+        x,
+        y,
+        width,
+        height,
+        name,
+        parentId,
+      });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error creating component: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  },
+);
+
+// Combine as Variants Tool
+server.tool(
+  "combine_as_variants",
+  "Combine multiple COMPONENT nodes into a COMPONENT_SET (variant group). Each component's name should follow the variant format (e.g. 'Layout=Table', 'Layout=List'). Figma will parse the names into variant properties.",
+  {
+    componentIds: z.array(z.string()).min(1).describe("Array of COMPONENT node IDs to combine"),
+    parentId: z.string().optional().describe("Optional parent node ID for the resulting COMPONENT_SET"),
+  },
+  async ({ componentIds, parentId }: any) => {
+    try {
+      const result = await sendCommandToFigma("combine_as_variants", {
+        componentIds,
+        parentId,
+      });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error combining as variants: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  },
+);
+
 // Create Component Instance Tool
 server.tool(
   "create_component_instance",

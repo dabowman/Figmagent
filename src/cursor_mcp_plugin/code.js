@@ -144,6 +144,10 @@ async function handleCommand(command, params) {
       return await getLocalComponents();
     // case "get_team_components":
     //   return await getTeamComponents();
+    case "create_component":
+      return await createComponent(params);
+    case "combine_as_variants":
+      return await combineAsVariants(params);
     case "create_component_instance":
       return await createComponentInstance(params);
     case "import_library_component":
@@ -1156,6 +1160,85 @@ async function getLocalComponents() {
 //     throw new Error(`Error getting team components: ${error.message}`);
 //   }
 // }
+
+async function createComponent(params) {
+  const {
+    x = 0,
+    y = 0,
+    width = 100,
+    height = 100,
+    name = "Component",
+    parentId,
+  } = params || {};
+
+  const component = figma.createComponent();
+  component.x = x;
+  component.y = y;
+  component.resize(width, height);
+  component.name = name;
+
+  if (parentId) {
+    const parentNode = await figma.getNodeByIdAsync(parentId);
+    if (!parentNode) {
+      throw new Error("Parent node not found: " + parentId);
+    }
+    if (!("appendChild" in parentNode)) {
+      throw new Error("Parent node does not support children: " + parentId);
+    }
+    parentNode.appendChild(component);
+  } else {
+    figma.currentPage.appendChild(component);
+  }
+
+  return {
+    id: component.id,
+    name: component.name,
+    type: component.type,
+    x: component.x,
+    y: component.y,
+    width: component.width,
+    height: component.height,
+  };
+}
+
+async function combineAsVariants(params) {
+  const { componentIds, parentId } = params || {};
+
+  if (!componentIds || !Array.isArray(componentIds) || componentIds.length === 0) {
+    throw new Error("Missing or empty componentIds array");
+  }
+
+  const components = [];
+  for (let i = 0; i < componentIds.length; i++) {
+    const node = await figma.getNodeByIdAsync(componentIds[i]);
+    if (!node) {
+      throw new Error("Component not found: " + componentIds[i]);
+    }
+    if (node.type !== "COMPONENT") {
+      throw new Error("Node is not a COMPONENT: " + componentIds[i]);
+    }
+    components.push(node);
+  }
+
+  let parent = figma.currentPage;
+  if (parentId) {
+    const parentNode = await figma.getNodeByIdAsync(parentId);
+    if (!parentNode) {
+      throw new Error("Parent node not found: " + parentId);
+    }
+    parent = parentNode;
+  }
+
+  const componentSet = figma.combineAsVariants(components, parent);
+
+  return {
+    id: componentSet.id,
+    name: componentSet.name,
+    type: componentSet.type,
+    childCount: componentSet.children.length,
+    children: componentSet.children.map((child) => ({ id: child.id, name: child.name, type: child.type })),
+  };
+}
 
 async function createComponentInstance(params) {
   const { componentKey, x = 0, y = 0 } = params || {};
