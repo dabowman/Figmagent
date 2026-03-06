@@ -146,6 +146,8 @@ async function handleCommand(command, params) {
     //   return await getTeamComponents();
     case "create_component_instance":
       return await createComponentInstance(params);
+    case "import_library_component":
+      return await importLibraryComponent(params);
     case "export_node_as_image":
       return await exportNodeAsImage(params);
     case "set_corner_radius":
@@ -1179,6 +1181,64 @@ async function createComponentInstance(params) {
   } catch (error) {
     throw new Error(`Error creating component instance: ${error.message}`);
   }
+}
+
+async function importLibraryComponent(params) {
+  const componentKey = params && params.componentKey;
+  const parentNodeId = params && params.parentNodeId;
+  const position = params && params.position;
+  const nameOverride = params && params.name;
+
+  if (!componentKey) {
+    throw new Error("Missing componentKey parameter");
+  }
+
+  let imported;
+  try {
+    imported = await figma.importComponentByKeyAsync(componentKey);
+  } catch (e) {
+    throw new Error(
+      "Failed to import component with key " + componentKey + ": " + (e && e.message ? e.message : String(e)) +
+      ". This may be a component set key — use get_component_variants to find individual variant keys, then import those instead."
+    );
+  }
+
+  if (imported.type !== "COMPONENT") {
+    throw new Error(
+      "Imported node is type " + imported.type + ", not COMPONENT. " +
+      "You likely used a component set key. Use get_component_variants to find individual variant keys, then import a specific variant."
+    );
+  }
+
+  const instance = imported.createInstance();
+
+  if (position) {
+    instance.x = position.x;
+    instance.y = position.y;
+  }
+
+  if (parentNodeId) {
+    const parent = await figma.getNodeByIdAsync(parentNodeId);
+    if (parent && "appendChild" in parent) {
+      parent.appendChild(instance);
+    }
+  }
+
+  if (nameOverride) {
+    instance.name = nameOverride;
+  }
+
+  figma.currentPage.selection = [instance];
+  figma.viewport.scrollAndZoomIntoView([instance]);
+
+  return {
+    instanceId: instance.id,
+    instanceName: instance.name,
+    componentName: imported.name,
+    width: instance.width,
+    height: instance.height,
+    variantProperties: instance.variantProperties || {}
+  };
 }
 
 async function exportNodeAsImage(params) {
