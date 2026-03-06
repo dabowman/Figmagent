@@ -3435,11 +3435,6 @@ async function setLayoutSizing(params) {
     throw new Error(`Node type ${node.type} does not support layout sizing`);
   }
 
-  // Check if the node has auto-layout enabled
-  if (node.layoutMode === "NONE") {
-    throw new Error("Layout sizing can only be set on auto-layout frames (layoutMode must not be NONE)");
-  }
-
   // Validate and set layoutSizingHorizontal if provided
   if (layoutSizingHorizontal !== undefined) {
     if (!["FIXED", "HUG", "FILL"].includes(layoutSizingHorizontal)) {
