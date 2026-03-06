@@ -11,8 +11,9 @@ MCP Server (server.ts) ←WebSocket→ Relay (socket.ts) ←WebSocket→ Plugin 
 ```
 
 **Files you MUST edit:**
-1. `src/talk_to_figma_mcp/server.ts` — tool definition + handler
-2. `src/cursor_mcp_plugin/code.js` — command case + handler function
+1. `src/talk_to_figma_mcp/tools/<domain>.ts` — tool registration (e.g., `modify.ts`, `components.ts`, `create.ts`)
+2. `src/talk_to_figma_mcp/types.ts` — add command name to `FigmaCommand` union type
+3. `src/cursor_mcp_plugin/code.js` — command case in `handleCommand` switch + handler function
 
 **Files you do NOT edit** (generic message routers):
 - `src/socket.ts` — relay, just broadcasts messages within channels
@@ -22,7 +23,7 @@ MCP Server (server.ts) ←WebSocket→ Relay (socket.ts) ←WebSocket→ Plugin 
 
 When an AI agent calls a tool:
 
-1. **server.ts** handler calls `sendCommandToFigma(commandName, params)`
+1. **tools/<domain>.ts** handler calls `sendCommandToFigma(commandName, params)`
 2. A UUID is generated, stored in `pendingRequests` Map with resolve/reject callbacks and a 30s timeout (extended to 60s when progress updates are received)
 3. Message sent over WebSocket: `{ id, type: "message", channel, message: { id, command, params } }`
 4. **Relay** broadcasts to all other clients in the same channel
@@ -31,15 +32,26 @@ When an AI agent calls a tool:
 7. `handleCommand` switch matches the command string and calls the handler function
 8. Handler executes against `figma.*` APIs, returns a result object
 9. Result flows back: `figma.ui.postMessage({ type: "command-result", id, result })` → UI → WebSocket → relay → server.ts
-10. **server.ts** matches the response UUID to `pendingRequests`, resolves the promise
+10. **connection.ts** matches the response UUID to `pendingRequests`, resolves the promise
 
-**Critical**: The command name string must match EXACTLY between `sendCommandToFigma("my_command")` in server.ts and `case "my_command":` in code.js. Parameter shapes must also agree — there is no shared schema, just convention.
+**Critical**: The command name string must match EXACTLY between `sendCommandToFigma("my_command")` in the tool file and `case "my_command":` in code.js, and must be in the `FigmaCommand` union in `types.ts`. Parameter shapes must also agree — there is no shared schema, just convention.
 
 ## Step-by-Step: Adding a Simple Tool
 
-### Step 1: Define the tool in server.ts
+### Step 1: Define the tool in the appropriate tools/ module
 
-Add this near related existing tools in server.ts. Note: `server.prompt()` and `server.tool()` calls are interleaved throughout the file, not in separate sections.
+Add the tool in the relevant domain file under `src/talk_to_figma_mcp/tools/`:
+- `document.ts` — get_document_info, get_selection, get_node_info, read_my_design
+- `create.ts` — create_rectangle, create_frame, create_text
+- `modify.ts` — rename_node, set_fill_color, set_stroke_color, move_node, resize_node, delete_node, set_corner_radius
+- `text.ts` — set_text_content, set_multiple_text_contents
+- `layout.ts` — set_layout_mode, set_padding, set_axis_align, set_layout_sizing, set_item_spacing
+- `components.ts` — get_styles, get_local_variables, get_local_components, create_component, combine_as_variants, create_component_instance, get/set_instance_overrides, swap_component_variant
+- `scan.ts` — scan_text_nodes, scan_nodes_by_types, get_annotations, set_annotation
+- `export.ts` — export_node_as_image
+- `libraries.ts` — remote library tools (REST API based)
+
+Also add the command name to the `FigmaCommand` union type in `src/talk_to_figma_mcp/types.ts`.
 
 ```typescript
 server.tool(
@@ -258,16 +270,18 @@ Key points:
 | `sendProgressUpdate(commandId, type, status, progress, total, processed, message, payload)` | Send progress through the chain — required for batch ops |
 | `setCharacters(node, text, options)` | Set text content with smart font handling (handles mixed fonts) |
 | `rgbaToHex(color)` | Convert Figma 0–1 RGBA to hex string |
-| `filterFigmaNode(node)` | Serialize a Figma node to a clean JSON-safe object |
+| `filterFigmaNode(node, depth)` | Serialize a Figma node to a clean JSON-safe object (depth limits child traversal) |
+| `findNodeByIdInTree(nodeId)` | Walk `figma.currentPage` depth-first to find a node — fallback for `getNodeByIdAsync` failures on nested instance IDs |
+| `toNumber(value)` | Safe string-to-number coercion |
 | `delay(ms)` | Promise-based delay |
 | `generateCommandId()` | Create a unique command ID |
 | `uniqBy(arr, predicate)` | De-duplicate an array by key |
 
 ### filterFigmaNode exists in BOTH files
 
-`filterFigmaNode` has separate implementations in `code.js` and `server.ts` (lines 224–311). When adding a tool, decide where to filter:
+`filterFigmaNode` has separate implementations in `code.js` and `utils.ts`. When adding a tool, decide where to filter:
 - **In code.js (plugin side)**: Smaller WebSocket payload, less data over the wire. Most existing tools do this.
-- **In server.ts (server side)**: Simpler plugin handler, but sends raw Figma data over WebSocket.
+- **In utils.ts (server side)**: Simpler plugin handler, but sends raw Figma data over WebSocket. Supports `depth` param for limiting child traversal.
 
 ### Dead file: setcharacters.js
 
@@ -277,8 +291,9 @@ Key points:
 
 Before considering the tool complete:
 
-- [ ] Command name string matches exactly in server.ts and code.js
-- [ ] Parameter names/shapes match between Zod schema (server.ts) and destructuring (code.js)
+- [ ] Command name string matches exactly in tools/<domain>.ts and code.js
+- [ ] Command name added to `FigmaCommand` union in `types.ts`
+- [ ] Parameter names/shapes match between Zod schema (tool file) and destructuring (code.js)
 - [ ] Handler function in code.js is `async`
 - [ ] Every `case` in `handleCommand` ends with `return` or `throw` — never fall through. (A missing `return` on `set_instance_overrides` once caused it to silently execute `set_layout_mode`.)
 - [ ] Uses `figma.getNodeByIdAsync()` (not sync version)

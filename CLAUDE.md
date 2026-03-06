@@ -28,14 +28,14 @@ bun run check            # Lint + format check combined
 
 ## Architecture
 
-### MCP Server (`src/talk_to_figma_mcp/server.ts`)
-Single-file server (~3000 lines) implementing MCP via `@modelcontextprotocol/sdk`. Exposes 40 tools (create shapes, modify text, manage layouts, export images, etc.) and 6 AI prompts (design strategies). Communicates with the AI agent over stdio and with the WebSocket relay via `ws`. Each request gets a UUID, is tracked in a `pendingRequests` Map with timeout/promise callbacks, and resolves when the plugin responds.
+### MCP Server (`src/talk_to_figma_mcp/`)
+Modular server implementing MCP via `@modelcontextprotocol/sdk`. Entry point is `server.ts` which imports domain-grouped tool modules from `tools/` (document, create, modify, text, layout, components, export, scan, libraries) and prompt definitions from `prompts/`. Exposes 55+ tools and 6 AI prompts. Types in `types.ts`, utilities in `utils.ts`, WebSocket connection management in `connection.ts`. Communicates with the AI agent over stdio and with the WebSocket relay via `ws`. Each request gets a UUID, is tracked in a `pendingRequests` Map with timeout/promise callbacks, and resolves when the plugin responds.
 
 ### WebSocket Relay (`src/socket.ts`)
 Lightweight Bun WebSocket server on port 3055 (configurable via `PORT` env). Routes messages between MCP server and Figma plugin using channel-based isolation. Clients call `join` to enter a channel; messages broadcast only within the same channel. Exposes `GET /channels` HTTP endpoint for auto-discovery of active channels.
 
 ### Figma Plugin (`src/cursor_mcp_plugin/`)
-Runs inside Figma. `code.js` is the plugin main thread handling 30+ commands via a dispatcher. `ui.html` is the plugin UI for WebSocket connection management. `manifest.json` declares permissions (dynamic-page access, localhost network). The plugin is **not built/bundled** — `code.js` is written directly as the runtime artifact.
+Runs inside Figma. `code.js` is the plugin main thread handling 55+ commands via a dispatcher. `ui.html` is the plugin UI for WebSocket connection management. `manifest.json` declares permissions (dynamic-page access, localhost network). The plugin is **not built/bundled** — `code.js` is written directly as the runtime artifact.
 
 **JS constraints**: `code.js` runs in Figma's sandboxed JS VM, not a modern browser engine. Do **not** use optional chaining (`?.`), nullish coalescing (`??`), catch binding omission (`catch {}`), or other post-ES2017 syntax. These cause syntax errors at plugin load time. `let`/`const` are fine, but `var` inside nested functions triggers Biome's `noInnerDeclarations`.
 
@@ -50,7 +50,8 @@ Bundles only the MCP server (`src/talk_to_figma_mcp/server.ts`) into `dist/` as 
 - **Chunking**: Large operations (scanning 100+ nodes) are chunked with progress updates to prevent Figma UI freezing.
 - **Reconnection**: WebSocket auto-reconnects after 2 seconds on disconnect.
 - **Zod validation**: All tool parameters are validated with Zod schemas.
-- **Batch operations**: Prefer `set_multiple_text_contents`, `delete_multiple_nodes`, `set_multiple_annotations` over repeated single-node calls.
+- **Batch operations**: Prefer `set_multiple_text_contents`, `delete_multiple_nodes`, `set_multiple_annotations`, `set_multiple_properties`, `create_frame_tree` over repeated single-node calls.
+- **Large nodes**: Use `get_node_info` with `depth=1` or `depth=2` for large component sets to avoid token overflow. Omit `depth` for full tree.
 
 ## Local Development
 
