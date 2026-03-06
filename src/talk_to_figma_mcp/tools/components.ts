@@ -366,8 +366,14 @@ server.tool(
   "create_component_instance",
   "Create an instance of a component in Figma. Use componentId for local/unpublished components (node ID), or componentKey for published library components (hash key).",
   {
-    componentKey: z.string().optional().describe("Key of a published component to instantiate (use for library components)"),
-    componentId: z.string().optional().describe("Node ID of a local COMPONENT to instantiate (use for unpublished components)"),
+    componentKey: z
+      .string()
+      .optional()
+      .describe("Key of a published component to instantiate (use for library components)"),
+    componentId: z
+      .string()
+      .optional()
+      .describe("Node ID of a local COMPONENT to instantiate (use for unpublished components)"),
     x: z.number().optional().describe("X position (default 0)"),
     y: z.number().optional().describe("Y position (default 0)"),
     parentId: z.string().optional().describe("Optional parent node ID to place the instance into"),
@@ -503,9 +509,7 @@ server.tool(
   "Swap an instance to a different variant within the same component set (e.g. change 'Bulk selection=False' to 'Bulk selection=True'). The instance keeps its position and overrides where compatible. newVariantId must be a COMPONENT node inside the same COMPONENT_SET.",
   {
     instanceId: z.string().describe("ID of the instance node to update"),
-    newVariantId: z
-      .string()
-      .describe("ID of the target COMPONENT variant to swap to"),
+    newVariantId: z.string().describe("ID of the target COMPONENT variant to swap to"),
   },
   async ({ instanceId, newVariantId }: any) => {
     try {
@@ -528,6 +532,103 @@ server.tool(
           {
             type: "text",
             text: `Error swapping component variant: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  },
+);
+
+// Bind Variable Tool
+server.tool(
+  "bind_variable",
+  "Bind a design token variable to a node property. Use get_local_variables first to find variable IDs. Supports binding color variables to fills/strokes, and number/boolean/string variables to properties like corner radius, padding, spacing, dimensions, opacity, and visibility.",
+  {
+    nodeId: z.string().describe("The ID of the node to bind the variable to"),
+    field: z
+      .enum([
+        "fill",
+        "stroke",
+        "opacity",
+        "cornerRadius",
+        "topLeftRadius",
+        "topRightRadius",
+        "bottomLeftRadius",
+        "bottomRightRadius",
+        "paddingTop",
+        "paddingRight",
+        "paddingBottom",
+        "paddingLeft",
+        "itemSpacing",
+        "counterAxisSpacing",
+        "width",
+        "height",
+        "minWidth",
+        "maxWidth",
+        "minHeight",
+        "maxHeight",
+        "visible",
+        "characters",
+      ])
+      .describe("The property to bind the variable to"),
+    variableId: z.string().describe("The ID of the variable to bind (from get_local_variables)"),
+  },
+  async ({ nodeId, field, variableId }: any) => {
+    try {
+      const result = await sendCommandToFigma("bind_variable", {
+        nodeId,
+        field,
+        variableId,
+      });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error binding variable: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  },
+);
+
+// Set Text Style Tool
+server.tool(
+  "set_text_style",
+  "Apply a text style to a text node. Use get_styles first to find text style IDs. This sets the full text style (font family, size, weight, line height, letter spacing, etc.) in one call.",
+  {
+    nodeId: z.string().describe("The ID of the text node"),
+    styleId: z.string().describe("The ID of the text style to apply (from get_styles)"),
+  },
+  async ({ nodeId, styleId }: any) => {
+    try {
+      const result = await sendCommandToFigma("set_text_style", {
+        nodeId,
+        styleId,
+      });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error setting text style: ${error instanceof Error ? error.message : String(error)}`,
           },
         ],
       };

@@ -261,6 +261,10 @@ async function handleCommand(command, params) {
       return await cloneAndModify(params);
     case "get_main_component":
       return await getMainComponent(params);
+    case "bind_variable":
+      return await bindVariable(params);
+    case "set_text_style":
+      return await setTextStyle(params);
     default:
       throw new Error(`Unknown command: ${command}`);
   }
@@ -1242,14 +1246,7 @@ async function getLocalComponents() {
 // }
 
 async function createComponent(params) {
-  const {
-    x = 0,
-    y = 0,
-    width = 100,
-    height = 100,
-    name = "Component",
-    parentId,
-  } = params || {};
+  const { x = 0, y = 0, width = 100, height = 100, name = "Component", parentId } = params || {};
 
   const component = figma.createComponent();
   component.x = x;
@@ -1386,15 +1383,20 @@ async function importLibraryComponent(params) {
     imported = await figma.importComponentByKeyAsync(componentKey);
   } catch (e) {
     throw new Error(
-      "Failed to import component with key " + componentKey + ": " + (e && e.message ? e.message : String(e)) +
-      ". This may be a component set key — use get_component_variants to find individual variant keys, then import those instead."
+      "Failed to import component with key " +
+        componentKey +
+        ": " +
+        (e && e.message ? e.message : String(e)) +
+        ". This may be a component set key — use get_component_variants to find individual variant keys, then import those instead.",
     );
   }
 
   if (imported.type !== "COMPONENT") {
     throw new Error(
-      "Imported node is type " + imported.type + ", not COMPONENT. " +
-      "You likely used a component set key. Use get_component_variants to find individual variant keys, then import a specific variant."
+      "Imported node is type " +
+        imported.type +
+        ", not COMPONENT. " +
+        "You likely used a component set key. Use get_component_variants to find individual variant keys, then import a specific variant.",
     );
   }
 
@@ -1425,7 +1427,7 @@ async function importLibraryComponent(params) {
     componentName: imported.name,
     width: instance.width,
     height: instance.height,
-    variantProperties: instance.variantProperties || {}
+    variantProperties: instance.variantProperties || {},
   };
 }
 
@@ -4175,20 +4177,24 @@ async function createFrameTree(params) {
 
   // Helper to apply fill color to a node
   function applyFillColor(node, colorSpec) {
-    node.fills = [{
-      type: "SOLID",
-      color: { r: parseFloat(colorSpec.r) || 0, g: parseFloat(colorSpec.g) || 0, b: parseFloat(colorSpec.b) || 0 },
-      opacity: colorSpec.a !== undefined ? parseFloat(colorSpec.a) : 1,
-    }];
+    node.fills = [
+      {
+        type: "SOLID",
+        color: { r: parseFloat(colorSpec.r) || 0, g: parseFloat(colorSpec.g) || 0, b: parseFloat(colorSpec.b) || 0 },
+        opacity: colorSpec.a !== undefined ? parseFloat(colorSpec.a) : 1,
+      },
+    ];
   }
 
   // Helper to apply stroke color to a node
   function applyStrokeColor(node, colorSpec) {
-    node.strokes = [{
-      type: "SOLID",
-      color: { r: parseFloat(colorSpec.r) || 0, g: parseFloat(colorSpec.g) || 0, b: parseFloat(colorSpec.b) || 0 },
-      opacity: colorSpec.a !== undefined ? parseFloat(colorSpec.a) : 1,
-    }];
+    node.strokes = [
+      {
+        type: "SOLID",
+        color: { r: parseFloat(colorSpec.r) || 0, g: parseFloat(colorSpec.g) || 0, b: parseFloat(colorSpec.b) || 0 },
+        opacity: colorSpec.a !== undefined ? parseFloat(colorSpec.a) : 1,
+      },
+    ];
   }
 
   // Recursive builder
@@ -4212,7 +4218,17 @@ async function createFrameTree(params) {
         node.fontSize = toNumber(spec.fontSize, 14);
       }
       if (spec.fontWeight !== undefined) {
-        const weightMap = { 100: "Thin", 200: "Extra Light", 300: "Light", 400: "Regular", 500: "Medium", 600: "Semi Bold", 700: "Bold", 800: "Extra Bold", 900: "Black" };
+        const weightMap = {
+          100: "Thin",
+          200: "Extra Light",
+          300: "Light",
+          400: "Regular",
+          500: "Medium",
+          600: "Semi Bold",
+          700: "Bold",
+          800: "Extra Bold",
+          900: "Black",
+        };
         const w = toNumber(spec.fontWeight, 400);
         const styleName = weightMap[w] || "Regular";
         try {
@@ -4287,7 +4303,15 @@ async function createFrameTree(params) {
     createdCount++;
     if (commandId && createdCount % 5 === 0) {
       const pct = Math.round((createdCount / totalNodes) * 100);
-      sendProgressUpdate(commandId, "create_frame_tree", "in_progress", pct, totalNodes, createdCount, "Created " + createdCount + " of " + totalNodes + " nodes");
+      sendProgressUpdate(
+        commandId,
+        "create_frame_tree",
+        "in_progress",
+        pct,
+        totalNodes,
+        createdCount,
+        "Created " + createdCount + " of " + totalNodes + " nodes",
+      );
     }
 
     // Build children recursively
@@ -4325,7 +4349,15 @@ async function createFrameTree(params) {
   const treeResult = await buildNode(tree, null);
 
   if (commandId) {
-    sendProgressUpdate(commandId, "create_frame_tree", "completed", 100, totalNodes, createdCount, "Tree creation completed");
+    sendProgressUpdate(
+      commandId,
+      "create_frame_tree",
+      "completed",
+      100,
+      totalNodes,
+      createdCount,
+      "Tree creation completed",
+    );
   }
 
   return {
@@ -4361,7 +4393,8 @@ async function setMultipleProperties(params) {
     const end = Math.min(start + CHUNK_SIZE, totalOps);
     const chunk = operations.slice(start, end);
 
-    const chunkPromises = chunk.map((op) => (async (op) => {
+    const chunkPromises = chunk.map((op) =>
+      (async (op) => {
         try {
           const node = await figma.getNodeByIdAsync(op.nodeId);
           if (!node) throw new Error("Node not found: " + op.nodeId);
@@ -4369,21 +4402,25 @@ async function setMultipleProperties(params) {
           // Fill color
           if (op.fillColor && "fills" in node) {
             const fc = op.fillColor;
-            node.fills = [{
-              type: "SOLID",
-              color: { r: parseFloat(fc.r) || 0, g: parseFloat(fc.g) || 0, b: parseFloat(fc.b) || 0 },
-              opacity: fc.a !== undefined ? parseFloat(fc.a) : 1,
-            }];
+            node.fills = [
+              {
+                type: "SOLID",
+                color: { r: parseFloat(fc.r) || 0, g: parseFloat(fc.g) || 0, b: parseFloat(fc.b) || 0 },
+                opacity: fc.a !== undefined ? parseFloat(fc.a) : 1,
+              },
+            ];
           }
 
           // Stroke color
           if (op.strokeColor && "strokes" in node) {
             const sc = op.strokeColor;
-            node.strokes = [{
-              type: "SOLID",
-              color: { r: parseFloat(sc.r) || 0, g: parseFloat(sc.g) || 0, b: parseFloat(sc.b) || 0 },
-              opacity: sc.a !== undefined ? parseFloat(sc.a) : 1,
-            }];
+            node.strokes = [
+              {
+                type: "SOLID",
+                color: { r: parseFloat(sc.r) || 0, g: parseFloat(sc.g) || 0, b: parseFloat(sc.b) || 0 },
+                opacity: sc.a !== undefined ? parseFloat(sc.a) : 1,
+              },
+            ];
           }
 
           // Stroke weight
@@ -4407,7 +4444,8 @@ async function setMultipleProperties(params) {
           // Padding
           if (op.paddingTop !== undefined && "paddingTop" in node) node.paddingTop = toNumber(op.paddingTop, 0);
           if (op.paddingRight !== undefined && "paddingRight" in node) node.paddingRight = toNumber(op.paddingRight, 0);
-          if (op.paddingBottom !== undefined && "paddingBottom" in node) node.paddingBottom = toNumber(op.paddingBottom, 0);
+          if (op.paddingBottom !== undefined && "paddingBottom" in node)
+            node.paddingBottom = toNumber(op.paddingBottom, 0);
           if (op.paddingLeft !== undefined && "paddingLeft" in node) node.paddingLeft = toNumber(op.paddingLeft, 0);
 
           // Item spacing
@@ -4419,7 +4457,8 @@ async function setMultipleProperties(params) {
         } catch (e) {
           return { success: false, nodeId: op.nodeId, error: e.message || String(e) };
         }
-      })(op));
+      })(op),
+    );
 
     const chunkResults = await Promise.all(chunkPromises);
     for (let ri = 0; ri < chunkResults.length; ri++) {
@@ -4434,16 +4473,33 @@ async function setMultipleProperties(params) {
     if (commandId) {
       const processed = Math.min(end, totalOps);
       const pct = Math.round((processed / totalOps) * 100);
-      sendProgressUpdate(commandId, "set_multiple_properties", "in_progress", pct, totalOps, processed, "Processed " + processed + " of " + totalOps, {
-        currentChunk: chunkIdx + 1,
-        totalChunks: totalChunks,
-        chunkSize: CHUNK_SIZE,
-      });
+      sendProgressUpdate(
+        commandId,
+        "set_multiple_properties",
+        "in_progress",
+        pct,
+        totalOps,
+        processed,
+        "Processed " + processed + " of " + totalOps,
+        {
+          currentChunk: chunkIdx + 1,
+          totalChunks: totalChunks,
+          chunkSize: CHUNK_SIZE,
+        },
+      );
     }
   }
 
   if (commandId) {
-    sendProgressUpdate(commandId, "set_multiple_properties", "completed", 100, totalOps, totalOps, "All property updates completed");
+    sendProgressUpdate(
+      commandId,
+      "set_multiple_properties",
+      "completed",
+      100,
+      totalOps,
+      totalOps,
+      "All property updates completed",
+    );
   }
 
   return {
@@ -4485,11 +4541,13 @@ async function cloneAndModify(params) {
 
   if (params.fillColor && "fills" in clone) {
     const fc = params.fillColor;
-    clone.fills = [{
-      type: "SOLID",
-      color: { r: parseFloat(fc.r) || 0, g: parseFloat(fc.g) || 0, b: parseFloat(fc.b) || 0 },
-      opacity: fc.a !== undefined ? parseFloat(fc.a) : 1,
-    }];
+    clone.fills = [
+      {
+        type: "SOLID",
+        color: { r: parseFloat(fc.r) || 0, g: parseFloat(fc.g) || 0, b: parseFloat(fc.b) || 0 },
+        opacity: fc.a !== undefined ? parseFloat(fc.a) : 1,
+      },
+    ];
   }
 
   if (params.cornerRadius !== undefined && "cornerRadius" in clone) {
@@ -4530,6 +4588,146 @@ async function getMainComponent(params) {
     type: mainComponent.type,
     description: mainComponent.description || "",
     key: mainComponent.key,
-    parent: mainComponent.parent ? { id: mainComponent.parent.id, name: mainComponent.parent.name, type: mainComponent.parent.type } : undefined,
+    parent: mainComponent.parent
+      ? { id: mainComponent.parent.id, name: mainComponent.parent.name, type: mainComponent.parent.type }
+      : undefined,
+  };
+}
+
+async function bindVariable(params) {
+  var _a = params || {},
+    nodeId = _a.nodeId,
+    field = _a.field,
+    variableId = _a.variableId;
+
+  if (!nodeId) throw new Error("Missing nodeId parameter");
+  if (!field) throw new Error("Missing field parameter");
+  if (!variableId) throw new Error("Missing variableId parameter");
+
+  var node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) throw new Error("Node not found: " + nodeId);
+
+  var variable = await figma.variables.getVariableByIdAsync(variableId);
+  if (!variable) throw new Error("Variable not found: " + variableId);
+
+  // Map user-friendly field names to Figma's VariableBindableNodeField values
+  var fieldMap = {
+    fills: "fills",
+    fill: "fills",
+    strokes: "strokes",
+    stroke: "strokes",
+    opacity: "opacity",
+    cornerRadius: "topLeftRadius",
+    topLeftRadius: "topLeftRadius",
+    topRightRadius: "topRightRadius",
+    bottomLeftRadius: "bottomLeftRadius",
+    bottomRightRadius: "bottomRightRadius",
+    paddingTop: "paddingTop",
+    paddingRight: "paddingRight",
+    paddingBottom: "paddingBottom",
+    paddingLeft: "paddingLeft",
+    itemSpacing: "itemSpacing",
+    counterAxisSpacing: "counterAxisSpacing",
+    width: "width",
+    height: "height",
+    minWidth: "minWidth",
+    maxWidth: "maxWidth",
+    minHeight: "minHeight",
+    maxHeight: "maxHeight",
+    visible: "visible",
+    characters: "characters",
+  };
+
+  var figmaField = fieldMap[field];
+  if (!figmaField) {
+    throw new Error("Unsupported field: " + field + ". Supported fields: " + Object.keys(fieldMap).join(", "));
+  }
+
+  // For fill/stroke bindings, we need to bind to the first paint's color
+  if (figmaField === "fills" || figmaField === "strokes") {
+    // Ensure node supports this property
+    if (!(figmaField in node)) {
+      throw new Error("Node does not support " + figmaField + ": " + nodeId);
+    }
+    // For color variables, we need to set a solid fill/stroke first if empty,
+    // then bind the variable to it
+    let paints = JSON.parse(JSON.stringify(node[figmaField]));
+    if (!paints || paints.length === 0) {
+      paints = [{ type: "SOLID", color: { r: 0, g: 0, b: 0 }, opacity: 1 }];
+      node[figmaField] = paints;
+    }
+    // Use the fill/stroke-specific binding via setBoundVariable
+    const paintCopy = JSON.parse(JSON.stringify(node[figmaField]));
+    paintCopy[0] = figma.variables.setBoundVariableForPaint(paintCopy[0], "color", variable);
+    node[figmaField] = paintCopy;
+  } else {
+    node.setBoundVariable(figmaField, variable);
+  }
+
+  return {
+    success: true,
+    nodeId: node.id,
+    nodeName: node.name,
+    field: field,
+    figmaField: figmaField,
+    variableId: variable.id,
+    variableName: variable.name,
+  };
+}
+
+async function setTextStyle(params) {
+  var _a = params || {},
+    nodeId = _a.nodeId,
+    styleId = _a.styleId;
+
+  if (!nodeId) throw new Error("Missing nodeId parameter");
+  if (!styleId) throw new Error("Missing styleId parameter");
+
+  var node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) throw new Error("Node not found: " + nodeId);
+
+  if (node.type !== "TEXT") {
+    throw new Error("Node is not a TEXT node (type: " + node.type + ")");
+  }
+
+  // Load fonts before applying style
+  var style = await figma.getStyleByIdAsync(styleId);
+  if (!style) throw new Error("Style not found: " + styleId);
+  if (style.type !== "TEXT") throw new Error("Style is not a text style (type: " + style.type + ")");
+
+  // Load the font from the style
+  var fontName = style.fontName;
+  if (fontName) {
+    await figma.loadFontAsync(fontName);
+  }
+
+  // Also load current fonts to avoid errors
+  if (node.fontName !== figma.mixed) {
+    await figma.loadFontAsync(node.fontName);
+  } else {
+    // Mixed fonts — load all segments
+    const len = node.characters.length;
+    const fontsToLoad = {};
+    for (let i = 0; i < len; i++) {
+      const f = node.getRangeFontName(i, i + 1);
+      const key = f.family + ":" + f.style;
+      if (!fontsToLoad[key]) {
+        fontsToLoad[key] = f;
+      }
+    }
+    const fontEntries = Object.keys(fontsToLoad);
+    for (let j = 0; j < fontEntries.length; j++) {
+      await figma.loadFontAsync(fontsToLoad[fontEntries[j]]);
+    }
+  }
+
+  node.textStyleId = styleId;
+
+  return {
+    success: true,
+    nodeId: node.id,
+    nodeName: node.name,
+    styleId: styleId,
+    styleName: style.name,
   };
 }

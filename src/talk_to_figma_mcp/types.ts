@@ -91,4 +91,6 @@ export type FigmaCommand =
   | "create_frame_tree"
   | "set_multiple_properties"
   | "clone_and_modify"
-  | "get_main_component";
+  | "get_main_component"
+  | "bind_variable"
+  | "set_text_style";
