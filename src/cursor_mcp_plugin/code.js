@@ -1241,20 +1241,41 @@ async function combineAsVariants(params) {
 }
 
 async function createComponentInstance(params) {
-  const { componentKey, x = 0, y = 0 } = params || {};
+  const { componentKey, componentId, x = 0, y = 0, parentId } = params || {};
 
-  if (!componentKey) {
-    throw new Error("Missing componentKey parameter");
+  if (!componentKey && !componentId) {
+    throw new Error("Missing componentKey or componentId parameter");
   }
 
   try {
-    const component = await figma.importComponentByKeyAsync(componentKey);
-    const instance = component.createInstance();
+    let component;
+    if (componentId) {
+      const node = await figma.getNodeByIdAsync(componentId);
+      if (!node) {
+        throw new Error("Component node not found: " + componentId);
+      }
+      if (node.type !== "COMPONENT") {
+        throw new Error("Node is not a COMPONENT: " + componentId + " (type: " + node.type + ")");
+      }
+      component = node;
+    } else {
+      component = await figma.importComponentByKeyAsync(componentKey);
+    }
 
+    const instance = component.createInstance();
     instance.x = x;
     instance.y = y;
 
-    figma.currentPage.appendChild(instance);
+    if (parentId) {
+      const parentNode = await figma.getNodeByIdAsync(parentId);
+      if (!parentNode) {
+        throw new Error("Parent node not found: " + parentId);
+      }
+      if (!("appendChild" in parentNode)) {
+        throw new Error("Parent node does not support children: " + parentId);
+      }
+      parentNode.appendChild(instance);
+    }
 
     return {
       id: instance.id,
@@ -1266,7 +1287,7 @@ async function createComponentInstance(params) {
       componentId: instance.componentId,
     };
   } catch (error) {
-    throw new Error(`Error creating component instance: ${error.message}`);
+    throw new Error("Error creating component instance: " + error.message);
   }
 }
 

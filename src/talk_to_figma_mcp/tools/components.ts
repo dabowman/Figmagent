@@ -335,18 +335,22 @@ server.tool(
 // Create Component Instance Tool
 server.tool(
   "create_component_instance",
-  "Create an instance of a component in Figma",
+  "Create an instance of a component in Figma. Use componentId for local/unpublished components (node ID), or componentKey for published library components (hash key).",
   {
-    componentKey: z.string().describe("Key of the component to instantiate"),
-    x: z.number().describe("X position"),
-    y: z.number().describe("Y position"),
+    componentKey: z.string().optional().describe("Key of a published component to instantiate (use for library components)"),
+    componentId: z.string().optional().describe("Node ID of a local COMPONENT to instantiate (use for unpublished components)"),
+    x: z.number().optional().describe("X position (default 0)"),
+    y: z.number().optional().describe("Y position (default 0)"),
+    parentId: z.string().optional().describe("Optional parent node ID to place the instance into"),
   },
-  async ({ componentKey, x, y }: any) => {
+  async ({ componentKey, componentId, x, y, parentId }: any) => {
     try {
       const result = await sendCommandToFigma("create_component_instance", {
         componentKey,
+        componentId,
         x,
         y,
+        parentId,
       });
       const typedResult = result as any;
       return {
