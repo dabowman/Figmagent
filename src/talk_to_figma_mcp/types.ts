@@ -57,6 +57,7 @@ export type FigmaCommand =
   | "delete_node"
   | "delete_multiple_nodes"
   | "get_styles"
+  | "get_local_variables"
   | "get_local_components"
   | "create_component"
   | "combine_as_variants"

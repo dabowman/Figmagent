@@ -27,6 +27,35 @@ server.tool("get_styles", "Get all styles from the current Figma document", {}, 
   }
 });
 
+// Get Local Variables Tool
+server.tool(
+  "get_local_variables",
+  "Get all local design token variables from the Figma document. Returns variable collections with their modes and all variables (colors, numbers, strings, booleans). Works on any Figma plan — no Enterprise required.",
+  {},
+  async () => {
+    try {
+      const result = await sendCommandToFigma("get_local_variables");
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error getting local variables: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  },
+);
+
 // Get Local Components Tool
 server.tool("get_local_components", "Get all local components from the Figma document", {}, async () => {
   try {

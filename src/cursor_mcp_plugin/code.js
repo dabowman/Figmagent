@@ -147,6 +147,8 @@ async function handleCommand(command, params) {
       return await deleteMultipleNodes(params);
     case "get_styles":
       return await getStyles();
+    case "get_local_variables":
+      return await getLocalVariables();
     case "get_local_components":
       return await getLocalComponents();
     // case "get_team_components":
@@ -1158,6 +1160,49 @@ async function getStyles() {
       key: style.key,
     })),
   };
+}
+
+async function getLocalVariables() {
+  const collections = await figma.variables.getLocalVariableCollectionsAsync();
+  const result = [];
+
+  for (let i = 0; i < collections.length; i++) {
+    const collection = collections[i];
+    const variables = [];
+
+    for (let j = 0; j < collection.variableIds.length; j++) {
+      const variable = await figma.variables.getVariableByIdAsync(collection.variableIds[j]);
+      if (!variable) continue;
+
+      const values = {};
+      for (let m = 0; m < collection.modes.length; m++) {
+        const mode = collection.modes[m];
+        const value = variable.valuesByMode[mode.modeId];
+        if (value && typeof value === "object" && "type" in value && value.type === "VARIABLE_ALIAS") {
+          values[mode.name] = { alias: value.id };
+        } else {
+          values[mode.name] = value;
+        }
+      }
+
+      variables.push({
+        id: variable.id,
+        name: variable.name,
+        resolvedType: variable.resolvedType,
+        values: values,
+      });
+    }
+
+    result.push({
+      id: collection.id,
+      name: collection.name,
+      modes: collection.modes.map((mode) => ({ id: mode.modeId, name: mode.name })),
+      variableCount: variables.length,
+      variables: variables,
+    });
+  }
+
+  return result;
 }
 
 async function getLocalComponents() {
