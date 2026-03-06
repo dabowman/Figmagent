@@ -50,14 +50,14 @@ server.tool(
     try {
       const result = await sendCommandToFigma("set_fill_color", {
         nodeId,
-        color: { r, g, b, a: a || 1 },
+        color: { r, g, b, a: a ?? 1 },
       });
       const typedResult = result as { name: string };
       return {
         content: [
           {
             type: "text",
-            text: `Set fill color of node "${typedResult.name}" to RGBA(${r}, ${g}, ${b}, ${a || 1})`,
+            text: `Set fill color of node "${typedResult.name}" to RGBA(${r}, ${g}, ${b}, ${a ?? 1})`,
           },
         ],
       };
@@ -90,8 +90,8 @@ server.tool(
     try {
       const result = await sendCommandToFigma("set_stroke_color", {
         nodeId,
-        color: { r, g, b, a: a || 1 },
-        weight: weight || 1,
+        color: { r, g, b, a: a ?? 1 },
+        weight: weight ?? 1,
       });
       const typedResult = result as { name: string };
       return {
@@ -100,7 +100,7 @@ server.tool(
             type: "text",
             text: `Set stroke color of node "${
               typedResult.name
-            }" to RGBA(${r}, ${g}, ${b}, ${a || 1}) with weight ${weight || 1}`,
+            }" to RGBA(${r}, ${g}, ${b}, ${a ?? 1}) with weight ${weight ?? 1}`,
           },
         ],
       };
@@ -322,6 +322,161 @@ server.tool(
           {
             type: "text",
             text: `Error setting corner radius: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  },
+);
+
+// Reorder Children Tool
+server.tool(
+  "reorder_children",
+  "Reorder children within a parent frame. Provide the ordered array of child IDs — children will be reordered to match this sequence.",
+  {
+    parentId: z.string().describe("The ID of the parent frame"),
+    childIds: z
+      .array(z.string())
+      .min(1)
+      .describe(
+        "Ordered array of child node IDs. First ID becomes the first child (bottom-most layer). Children not listed keep their relative position at the end.",
+      ),
+  },
+  async ({ parentId, childIds }: any) => {
+    try {
+      const result = await sendCommandToFigma("reorder_children", { parentId, childIds });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error reordering children: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  },
+);
+
+// Set Multiple Properties Tool
+server.tool(
+  "set_multiple_properties",
+  "Set multiple visual properties on one or more nodes in a single call. Supports fill, stroke, corner radius, layout sizing, padding, and item spacing.",
+  {
+    operations: z
+      .array(
+        z.object({
+          nodeId: z.string().describe("Node ID to modify"),
+          fillColor: z
+            .object({
+              r: z.number().min(0).max(1),
+              g: z.number().min(0).max(1),
+              b: z.number().min(0).max(1),
+              a: z.number().min(0).max(1).optional(),
+            })
+            .optional()
+            .describe("Fill color in RGBA format (0-1)"),
+          strokeColor: z
+            .object({
+              r: z.number().min(0).max(1),
+              g: z.number().min(0).max(1),
+              b: z.number().min(0).max(1),
+              a: z.number().min(0).max(1).optional(),
+            })
+            .optional()
+            .describe("Stroke color in RGBA format (0-1)"),
+          strokeWeight: z.number().positive().optional().describe("Stroke weight"),
+          cornerRadius: z.number().min(0).optional().describe("Corner radius"),
+          layoutSizingHorizontal: z.enum(["FIXED", "HUG", "FILL"]).optional(),
+          layoutSizingVertical: z.enum(["FIXED", "HUG", "FILL"]).optional(),
+          paddingTop: z.number().optional(),
+          paddingRight: z.number().optional(),
+          paddingBottom: z.number().optional(),
+          paddingLeft: z.number().optional(),
+          itemSpacing: z.number().optional(),
+        }),
+      )
+      .min(1)
+      .describe("Array of node modifications to apply"),
+  },
+  async ({ operations }: any) => {
+    try {
+      const result = await sendCommandToFigma("set_multiple_properties", { operations }, 60000);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error setting multiple properties: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  },
+);
+
+// Clone and Modify Tool
+server.tool(
+  "clone_and_modify",
+  "Clone an existing node and optionally modify the clone's properties in one call. Clone is placed in the same parent as original by default.",
+  {
+    nodeId: z.string().describe("Node ID to clone"),
+    parentId: z.string().optional().describe("Parent ID for the clone (default: same parent as original)"),
+    name: z.string().optional().describe("New name for the clone"),
+    x: z.number().optional().describe("X position for the clone"),
+    y: z.number().optional().describe("Y position for the clone"),
+    fillColor: z
+      .object({
+        r: z.number().min(0).max(1),
+        g: z.number().min(0).max(1),
+        b: z.number().min(0).max(1),
+        a: z.number().min(0).max(1).optional(),
+      })
+      .optional()
+      .describe("Fill color in RGBA format (0-1)"),
+    cornerRadius: z.number().min(0).optional().describe("Corner radius"),
+  },
+  async ({ nodeId, parentId, name, x, y, fillColor, cornerRadius }: any) => {
+    try {
+      const result = await sendCommandToFigma("clone_and_modify", {
+        nodeId,
+        parentId,
+        name,
+        x,
+        y,
+        fillColor,
+        cornerRadius,
+      });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error cloning and modifying: ${error instanceof Error ? error.message : String(error)}`,
           },
         ],
       };

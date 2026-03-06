@@ -46,6 +46,13 @@ function sendProgressUpdate(
   return update;
 }
 
+// Helper: coerce value to number with fallback (handles string "4" → 4)
+function toNumber(val, fallback) {
+  if (val === undefined || val === null) return fallback;
+  var n = typeof val === "number" ? val : parseFloat(val);
+  return Number.isNaN(n) ? fallback : n;
+}
+
 // Performance: skip invisible instance children in all traversals
 figma.skipInvisibleInstanceChildren = true;
 
@@ -242,6 +249,16 @@ async function handleCommand(command, params) {
       return await setFocus(params);
     case "set_selections":
       return await setSelections(params);
+    case "reorder_children":
+      return await reorderChildren(params);
+    case "create_frame_tree":
+      return await createFrameTree(params);
+    case "set_multiple_properties":
+      return await setMultipleProperties(params);
+    case "clone_and_modify":
+      return await cloneAndModify(params);
+    case "get_main_component":
+      return await getMainComponent(params);
     default:
       throw new Error(`Unknown command: ${command}`);
   }
@@ -684,6 +701,8 @@ async function createRectangle(params) {
     y: rect.y,
     width: rect.width,
     height: rect.height,
+    fills: rect.fills,
+    cornerRadius: rect.cornerRadius,
     parentId: rect.parent ? rect.parent.id : undefined,
   };
 }
@@ -710,6 +729,7 @@ async function createFrame(params) {
     layoutSizingHorizontal = "FIXED",
     layoutSizingVertical = "FIXED",
     itemSpacing = 0,
+    cornerRadius,
   } = params || {};
 
   const frame = figma.createFrame();
@@ -741,6 +761,11 @@ async function createFrame(params) {
     frame.itemSpacing = itemSpacing;
   }
 
+  // Set corner radius if provided
+  if (cornerRadius !== undefined) {
+    frame.cornerRadius = cornerRadius;
+  }
+
   // Set fill color if provided
   if (fillColor) {
     const paintStyle = {
@@ -750,7 +775,7 @@ async function createFrame(params) {
         g: parseFloat(fillColor.g) || 0,
         b: parseFloat(fillColor.b) || 0,
       },
-      opacity: parseFloat(fillColor.a) || 1,
+      opacity: fillColor.a !== undefined ? parseFloat(fillColor.a) : 1,
     };
     frame.fills = [paintStyle];
   }
@@ -764,7 +789,7 @@ async function createFrame(params) {
         g: parseFloat(strokeColor.g) || 0,
         b: parseFloat(strokeColor.b) || 0,
       },
-      opacity: parseFloat(strokeColor.a) || 1,
+      opacity: strokeColor.a !== undefined ? parseFloat(strokeColor.a) : 1,
     };
     frame.strokes = [strokeStyle];
   }
@@ -798,8 +823,18 @@ async function createFrame(params) {
     fills: frame.fills,
     strokes: frame.strokes,
     strokeWeight: frame.strokeWeight,
+    cornerRadius: frame.cornerRadius,
     layoutMode: frame.layoutMode,
     layoutWrap: frame.layoutWrap,
+    paddingTop: frame.paddingTop,
+    paddingRight: frame.paddingRight,
+    paddingBottom: frame.paddingBottom,
+    paddingLeft: frame.paddingLeft,
+    primaryAxisAlignItems: frame.primaryAxisAlignItems,
+    counterAxisAlignItems: frame.counterAxisAlignItems,
+    layoutSizingHorizontal: frame.layoutSizingHorizontal,
+    layoutSizingVertical: frame.layoutSizingVertical,
+    itemSpacing: frame.itemSpacing,
     parentId: frame.parent ? frame.parent.id : undefined,
   };
 }
@@ -866,7 +901,7 @@ async function createText(params) {
       g: parseFloat(fontColor.g) || 0,
       b: parseFloat(fontColor.b) || 0,
     },
-    opacity: parseFloat(fontColor.a) || 1,
+    opacity: fontColor.a !== undefined ? parseFloat(fontColor.a) : 1,
   };
   textNode.fills = [paintStyle];
 
@@ -926,7 +961,7 @@ async function setFillColor(params) {
     r: parseFloat(r) || 0,
     g: parseFloat(g) || 0,
     b: parseFloat(b) || 0,
-    a: parseFloat(a) || 1,
+    a: a !== undefined ? parseFloat(a) : 1,
   };
 
   // Set fill
@@ -1480,21 +1515,23 @@ async function setCornerRadius(params) {
     throw new Error(`Node does not support corner radius: ${nodeId}`);
   }
 
+  var numRadius = toNumber(radius, 0);
+
   // If corners array is provided, set individual corner radii
   if (corners && Array.isArray(corners) && corners.length === 4) {
     if ("topLeftRadius" in node) {
       // Node supports individual corner radii
-      if (corners[0]) node.topLeftRadius = radius;
-      if (corners[1]) node.topRightRadius = radius;
-      if (corners[2]) node.bottomRightRadius = radius;
-      if (corners[3]) node.bottomLeftRadius = radius;
+      if (corners[0]) node.topLeftRadius = numRadius;
+      if (corners[1]) node.topRightRadius = numRadius;
+      if (corners[2]) node.bottomRightRadius = numRadius;
+      if (corners[3]) node.bottomLeftRadius = numRadius;
     } else {
       // Node only supports uniform corner radius
-      node.cornerRadius = radius;
+      node.cornerRadius = numRadius;
     }
   } else {
     // Set uniform corner radius
-    node.cornerRadius = radius;
+    node.cornerRadius = numRadius;
   }
 
   return {
@@ -3378,11 +3415,11 @@ async function setPadding(params) {
     throw new Error("Padding can only be set on auto-layout frames (layoutMode must not be NONE)");
   }
 
-  // Set padding values if provided
-  if (paddingTop !== undefined) node.paddingTop = paddingTop;
-  if (paddingRight !== undefined) node.paddingRight = paddingRight;
-  if (paddingBottom !== undefined) node.paddingBottom = paddingBottom;
-  if (paddingLeft !== undefined) node.paddingLeft = paddingLeft;
+  // Set padding values if provided (with type coercion)
+  if (paddingTop !== undefined) node.paddingTop = toNumber(paddingTop, 0);
+  if (paddingRight !== undefined) node.paddingRight = toNumber(paddingRight, 0);
+  if (paddingBottom !== undefined) node.paddingBottom = toNumber(paddingBottom, 0);
+  if (paddingLeft !== undefined) node.paddingLeft = toNumber(paddingLeft, 0);
 
   return {
     id: node.id,
@@ -3521,24 +3558,26 @@ async function setItemSpacing(params) {
     throw new Error("Item spacing can only be set on auto-layout frames (layoutMode must not be NONE)");
   }
 
-  // Set item spacing if provided
+  // Set item spacing if provided (with type coercion)
   if (itemSpacing !== undefined) {
-    if (typeof itemSpacing !== "number") {
+    const numItemSpacing = toNumber(itemSpacing, undefined);
+    if (numItemSpacing === undefined) {
       throw new Error("Item spacing must be a number");
     }
-    node.itemSpacing = itemSpacing;
+    node.itemSpacing = numItemSpacing;
   }
 
-  // Set counter axis spacing if provided
+  // Set counter axis spacing if provided (with type coercion)
   if (counterAxisSpacing !== undefined) {
-    if (typeof counterAxisSpacing !== "number") {
+    const numCounterAxisSpacing = toNumber(counterAxisSpacing, undefined);
+    if (numCounterAxisSpacing === undefined) {
       throw new Error("Counter axis spacing must be a number");
     }
     // counterAxisSpacing only applies when layoutWrap is WRAP
     if (node.layoutWrap !== "WRAP") {
       throw new Error("Counter axis spacing can only be set on frames with layoutWrap set to WRAP");
     }
-    node.counterAxisSpacing = counterAxisSpacing;
+    node.counterAxisSpacing = numCounterAxisSpacing;
   }
 
   return {
@@ -4020,5 +4059,432 @@ async function setSelections(params) {
     selectedNodes: selectedNodes,
     notFoundIds: notFoundIds,
     message: `Selected ${nodes.length} nodes${notFoundIds.length > 0 ? ` (${notFoundIds.length} not found)` : ""}`,
+  };
+}
+
+// ============================================================
+// Composite / batch tools (Phase 2-4)
+// ============================================================
+
+async function reorderChildren(params) {
+  const parentId = params.parentId;
+  const childIds = params.childIds;
+
+  if (!parentId) throw new Error("Missing parentId parameter");
+  if (!childIds || !Array.isArray(childIds) || childIds.length === 0) {
+    throw new Error("Missing or invalid childIds parameter");
+  }
+
+  const parent = await figma.getNodeByIdAsync(parentId);
+  if (!parent) throw new Error("Parent node not found: " + parentId);
+  if (!("children" in parent)) throw new Error("Node does not support children: " + parentId);
+
+  // Build lookup of current children
+  const childMap = {};
+  for (let i = 0; i < parent.children.length; i++) {
+    childMap[parent.children[i].id] = parent.children[i];
+  }
+
+  // Insert specified children in order using insertChild
+  let moved = 0;
+  for (let idx = 0; idx < childIds.length; idx++) {
+    const child = childMap[childIds[idx]];
+    if (child) {
+      parent.insertChild(idx, child);
+      moved++;
+    }
+  }
+
+  return {
+    parentId: parent.id,
+    parentName: parent.name,
+    newOrder: parent.children.map((c) => ({ id: c.id, name: c.name })),
+    movedCount: moved,
+  };
+}
+
+async function createFrameTree(params) {
+  const parentId = params.parentId;
+  const tree = params.tree;
+  const commandId = params.commandId;
+
+  if (!tree) throw new Error("Missing tree parameter");
+
+  // Count total nodes for progress tracking
+  function countNodes(spec) {
+    let count = 1;
+    if (spec.children && Array.isArray(spec.children)) {
+      for (let i = 0; i < spec.children.length; i++) {
+        count += countNodes(spec.children[i]);
+      }
+    }
+    return count;
+  }
+
+  const totalNodes = countNodes(tree);
+  let createdCount = 0;
+
+  if (commandId) {
+    sendProgressUpdate(commandId, "create_frame_tree", "started", 0, totalNodes, 0, "Starting tree creation");
+  }
+
+  // Helper to apply fill color to a node
+  function applyFillColor(node, colorSpec) {
+    node.fills = [{
+      type: "SOLID",
+      color: { r: parseFloat(colorSpec.r) || 0, g: parseFloat(colorSpec.g) || 0, b: parseFloat(colorSpec.b) || 0 },
+      opacity: colorSpec.a !== undefined ? parseFloat(colorSpec.a) : 1,
+    }];
+  }
+
+  // Helper to apply stroke color to a node
+  function applyStrokeColor(node, colorSpec) {
+    node.strokes = [{
+      type: "SOLID",
+      color: { r: parseFloat(colorSpec.r) || 0, g: parseFloat(colorSpec.g) || 0, b: parseFloat(colorSpec.b) || 0 },
+      opacity: colorSpec.a !== undefined ? parseFloat(colorSpec.a) : 1,
+    }];
+  }
+
+  // Recursive builder
+  async function buildNode(spec, parentNode) {
+    const nodeType = spec.type || "FRAME";
+    const fontFamily = spec.fontFamily || "Inter";
+    const fontStyle = spec.fontStyle || "Regular";
+    let node;
+
+    if (nodeType === "TEXT") {
+      node = figma.createText();
+      try {
+        await figma.loadFontAsync({ family: fontFamily, style: fontStyle });
+      } catch (_e) {
+        await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+      }
+      if (spec.text !== undefined) {
+        node.characters = String(spec.text);
+      }
+      if (spec.fontSize !== undefined) {
+        node.fontSize = toNumber(spec.fontSize, 14);
+      }
+      if (spec.fontWeight !== undefined) {
+        const weightMap = { 100: "Thin", 200: "Extra Light", 300: "Light", 400: "Regular", 500: "Medium", 600: "Semi Bold", 700: "Bold", 800: "Extra Bold", 900: "Black" };
+        const w = toNumber(spec.fontWeight, 400);
+        const styleName = weightMap[w] || "Regular";
+        try {
+          await figma.loadFontAsync({ family: fontFamily, style: styleName });
+          node.fontName = { family: fontFamily, style: styleName };
+        } catch (_e2) {
+          // Keep default font if weight style not available
+        }
+      }
+      if (spec.fontColor) {
+        applyFillColor(node, spec.fontColor);
+      }
+    } else if (nodeType === "RECTANGLE") {
+      node = figma.createRectangle();
+    } else {
+      // FRAME (default)
+      node = figma.createFrame();
+    }
+
+    // Common properties
+    if (spec.name !== undefined) node.name = spec.name;
+    if (spec.width !== undefined || spec.height !== undefined) {
+      node.resize(toNumber(spec.width, 100), toNumber(spec.height, 100));
+    }
+    if (spec.x !== undefined) node.x = toNumber(spec.x, 0);
+    if (spec.y !== undefined) node.y = toNumber(spec.y, 0);
+
+    // Corner radius (frames and rectangles)
+    if (spec.cornerRadius !== undefined && "cornerRadius" in node) {
+      node.cornerRadius = toNumber(spec.cornerRadius, 0);
+    }
+
+    // Fill color
+    if (spec.fillColor) {
+      applyFillColor(node, spec.fillColor);
+    }
+
+    // Stroke
+    if (spec.strokeColor) {
+      applyStrokeColor(node, spec.strokeColor);
+    }
+    if (spec.strokeWeight !== undefined && "strokeWeight" in node) {
+      node.strokeWeight = toNumber(spec.strokeWeight, 1);
+    }
+
+    // Auto-layout properties (FRAME only)
+    if (nodeType === "FRAME" && spec.layoutMode && spec.layoutMode !== "NONE") {
+      node.layoutMode = spec.layoutMode;
+      if (spec.layoutWrap) node.layoutWrap = spec.layoutWrap;
+      if (spec.paddingTop !== undefined) node.paddingTop = toNumber(spec.paddingTop, 0);
+      if (spec.paddingRight !== undefined) node.paddingRight = toNumber(spec.paddingRight, 0);
+      if (spec.paddingBottom !== undefined) node.paddingBottom = toNumber(spec.paddingBottom, 0);
+      if (spec.paddingLeft !== undefined) node.paddingLeft = toNumber(spec.paddingLeft, 0);
+      if (spec.primaryAxisAlignItems) node.primaryAxisAlignItems = spec.primaryAxisAlignItems;
+      if (spec.counterAxisAlignItems) node.counterAxisAlignItems = spec.counterAxisAlignItems;
+      if (spec.itemSpacing !== undefined) node.itemSpacing = toNumber(spec.itemSpacing, 0);
+    }
+
+    // Append to parent
+    if (parentNode) {
+      parentNode.appendChild(node);
+    } else if (parentId) {
+      const targetParent = await figma.getNodeByIdAsync(parentId);
+      if (!targetParent) throw new Error("Parent node not found: " + parentId);
+      if (!("appendChild" in targetParent)) throw new Error("Parent node does not support children: " + parentId);
+      targetParent.appendChild(node);
+    } else {
+      figma.currentPage.appendChild(node);
+    }
+
+    // Track progress
+    createdCount++;
+    if (commandId && createdCount % 5 === 0) {
+      const pct = Math.round((createdCount / totalNodes) * 100);
+      sendProgressUpdate(commandId, "create_frame_tree", "in_progress", pct, totalNodes, createdCount, "Created " + createdCount + " of " + totalNodes + " nodes");
+    }
+
+    // Build children recursively
+    const childResults = [];
+    if (spec.children && Array.isArray(spec.children)) {
+      for (let ci = 0; ci < spec.children.length; ci++) {
+        const childResult = await buildNode(spec.children[ci], node);
+        childResults.push(childResult);
+      }
+    }
+
+    // Two-pass: set layout sizing AFTER children are created (FILL requires parent auto-layout)
+    if (nodeType === "FRAME" && spec.layoutMode && spec.layoutMode !== "NONE") {
+      if (spec.layoutSizingHorizontal) node.layoutSizingHorizontal = spec.layoutSizingHorizontal;
+      if (spec.layoutSizingVertical) node.layoutSizingVertical = spec.layoutSizingVertical;
+    }
+
+    // Set FILL sizing on this node if it's a child of an auto-layout parent
+    if (parentNode && "layoutMode" in parentNode && parentNode.layoutMode !== "NONE") {
+      if (spec.layoutSizingHorizontal === "FILL") node.layoutSizingHorizontal = "FILL";
+      if (spec.layoutSizingVertical === "FILL") node.layoutSizingVertical = "FILL";
+    }
+
+    const result = {
+      id: node.id,
+      name: node.name,
+      type: node.type,
+    };
+    if (childResults.length > 0) {
+      result.children = childResults;
+    }
+    return result;
+  }
+
+  const treeResult = await buildNode(tree, null);
+
+  if (commandId) {
+    sendProgressUpdate(commandId, "create_frame_tree", "completed", 100, totalNodes, createdCount, "Tree creation completed");
+  }
+
+  return {
+    success: true,
+    totalNodesCreated: createdCount,
+    tree: treeResult,
+  };
+}
+
+async function setMultipleProperties(params) {
+  const operations = params.operations;
+  const commandId = params.commandId;
+
+  if (!operations || !Array.isArray(operations) || operations.length === 0) {
+    throw new Error("Missing or empty operations array");
+  }
+
+  const totalOps = operations.length;
+  let successCount = 0;
+  let failureCount = 0;
+  const results = [];
+
+  if (commandId) {
+    sendProgressUpdate(commandId, "set_multiple_properties", "started", 0, totalOps, 0, "Starting property updates");
+  }
+
+  // Process in chunks of 5
+  const CHUNK_SIZE = 5;
+  const totalChunks = Math.ceil(totalOps / CHUNK_SIZE);
+
+  for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
+    const start = chunkIdx * CHUNK_SIZE;
+    const end = Math.min(start + CHUNK_SIZE, totalOps);
+    const chunk = operations.slice(start, end);
+
+    const chunkPromises = chunk.map((op) => (async (op) => {
+        try {
+          const node = await figma.getNodeByIdAsync(op.nodeId);
+          if (!node) throw new Error("Node not found: " + op.nodeId);
+
+          // Fill color
+          if (op.fillColor && "fills" in node) {
+            const fc = op.fillColor;
+            node.fills = [{
+              type: "SOLID",
+              color: { r: parseFloat(fc.r) || 0, g: parseFloat(fc.g) || 0, b: parseFloat(fc.b) || 0 },
+              opacity: fc.a !== undefined ? parseFloat(fc.a) : 1,
+            }];
+          }
+
+          // Stroke color
+          if (op.strokeColor && "strokes" in node) {
+            const sc = op.strokeColor;
+            node.strokes = [{
+              type: "SOLID",
+              color: { r: parseFloat(sc.r) || 0, g: parseFloat(sc.g) || 0, b: parseFloat(sc.b) || 0 },
+              opacity: sc.a !== undefined ? parseFloat(sc.a) : 1,
+            }];
+          }
+
+          // Stroke weight
+          if (op.strokeWeight !== undefined && "strokeWeight" in node) {
+            node.strokeWeight = toNumber(op.strokeWeight, 1);
+          }
+
+          // Corner radius
+          if (op.cornerRadius !== undefined && "cornerRadius" in node) {
+            node.cornerRadius = toNumber(op.cornerRadius, 0);
+          }
+
+          // Layout sizing
+          if (op.layoutSizingHorizontal !== undefined && "layoutSizingHorizontal" in node) {
+            node.layoutSizingHorizontal = op.layoutSizingHorizontal;
+          }
+          if (op.layoutSizingVertical !== undefined && "layoutSizingVertical" in node) {
+            node.layoutSizingVertical = op.layoutSizingVertical;
+          }
+
+          // Padding
+          if (op.paddingTop !== undefined && "paddingTop" in node) node.paddingTop = toNumber(op.paddingTop, 0);
+          if (op.paddingRight !== undefined && "paddingRight" in node) node.paddingRight = toNumber(op.paddingRight, 0);
+          if (op.paddingBottom !== undefined && "paddingBottom" in node) node.paddingBottom = toNumber(op.paddingBottom, 0);
+          if (op.paddingLeft !== undefined && "paddingLeft" in node) node.paddingLeft = toNumber(op.paddingLeft, 0);
+
+          // Item spacing
+          if (op.itemSpacing !== undefined && "itemSpacing" in node) {
+            node.itemSpacing = toNumber(op.itemSpacing, 0);
+          }
+
+          return { success: true, nodeId: op.nodeId };
+        } catch (e) {
+          return { success: false, nodeId: op.nodeId, error: e.message || String(e) };
+        }
+      })(op));
+
+    const chunkResults = await Promise.all(chunkPromises);
+    for (let ri = 0; ri < chunkResults.length; ri++) {
+      results.push(chunkResults[ri]);
+      if (chunkResults[ri].success) {
+        successCount++;
+      } else {
+        failureCount++;
+      }
+    }
+
+    if (commandId) {
+      const processed = Math.min(end, totalOps);
+      const pct = Math.round((processed / totalOps) * 100);
+      sendProgressUpdate(commandId, "set_multiple_properties", "in_progress", pct, totalOps, processed, "Processed " + processed + " of " + totalOps, {
+        currentChunk: chunkIdx + 1,
+        totalChunks: totalChunks,
+        chunkSize: CHUNK_SIZE,
+      });
+    }
+  }
+
+  if (commandId) {
+    sendProgressUpdate(commandId, "set_multiple_properties", "completed", 100, totalOps, totalOps, "All property updates completed");
+  }
+
+  return {
+    success: failureCount === 0,
+    totalOperations: totalOps,
+    successCount: successCount,
+    failureCount: failureCount,
+    results: results,
+  };
+}
+
+async function cloneAndModify(params) {
+  const nodeId = params.nodeId;
+  const targetParentId = params.parentId;
+  const newName = params.name;
+
+  if (!nodeId) throw new Error("Missing nodeId parameter");
+
+  const node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) throw new Error("Node not found: " + nodeId);
+
+  const clone = node.clone();
+
+  // Reparent: clone() auto-appends to currentPage, so move to correct parent
+  if (targetParentId) {
+    const targetParent = await figma.getNodeByIdAsync(targetParentId);
+    if (!targetParent) throw new Error("Target parent not found: " + targetParentId);
+    if (!("appendChild" in targetParent)) throw new Error("Target parent does not support children: " + targetParentId);
+    targetParent.appendChild(clone);
+  } else if (node.parent && node.parent.id !== figma.currentPage.id) {
+    // Default: place clone in same parent as original
+    node.parent.appendChild(clone);
+  }
+
+  // Apply modifications
+  if (newName !== undefined) clone.name = newName;
+  if (params.x !== undefined) clone.x = toNumber(params.x, 0);
+  if (params.y !== undefined) clone.y = toNumber(params.y, 0);
+
+  if (params.fillColor && "fills" in clone) {
+    const fc = params.fillColor;
+    clone.fills = [{
+      type: "SOLID",
+      color: { r: parseFloat(fc.r) || 0, g: parseFloat(fc.g) || 0, b: parseFloat(fc.b) || 0 },
+      opacity: fc.a !== undefined ? parseFloat(fc.a) : 1,
+    }];
+  }
+
+  if (params.cornerRadius !== undefined && "cornerRadius" in clone) {
+    clone.cornerRadius = toNumber(params.cornerRadius, 0);
+  }
+
+  return {
+    id: clone.id,
+    name: clone.name,
+    type: clone.type,
+    x: clone.x,
+    y: clone.y,
+    width: clone.width,
+    height: clone.height,
+    parentId: clone.parent ? clone.parent.id : undefined,
+  };
+}
+
+async function getMainComponent(params) {
+  const nodeId = params.nodeId;
+  if (!nodeId) throw new Error("Missing nodeId parameter");
+
+  const node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) throw new Error("Node not found: " + nodeId);
+
+  if (node.type !== "INSTANCE") {
+    throw new Error("Node is not an instance (type: " + node.type + "). Only INSTANCE nodes have a main component.");
+  }
+
+  const mainComponent = await node.getMainComponentAsync();
+  if (!mainComponent) {
+    throw new Error("Could not find main component for instance: " + nodeId);
+  }
+
+  return {
+    id: mainComponent.id,
+    name: mainComponent.name,
+    type: mainComponent.type,
+    description: mainComponent.description || "",
+    key: mainComponent.key,
+    parent: mainComponent.parent ? { id: mainComponent.parent.id, name: mainComponent.parent.name, type: mainComponent.parent.type } : undefined,
   };
 }

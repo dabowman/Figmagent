@@ -105,6 +105,7 @@ server.tool(
       .describe(
         "Distance between children in auto-layout frame. Note: This value will be ignored if primaryAxisAlignItems is set to SPACE_BETWEEN.",
       ),
+    cornerRadius: z.number().min(0).optional().describe("Corner radius for the frame"),
   },
   async ({
     x,
@@ -127,6 +128,7 @@ server.tool(
     layoutSizingHorizontal,
     layoutSizingVertical,
     itemSpacing,
+    cornerRadius,
   }: any) => {
     try {
       const result = await sendCommandToFigma("create_frame", {
@@ -150,6 +152,7 @@ server.tool(
         layoutSizingHorizontal,
         layoutSizingVertical,
         itemSpacing,
+        cornerRadius,
       });
       const typedResult = result as { name: string; id: string };
       return {
@@ -222,6 +225,86 @@ server.tool(
           {
             type: "text",
             text: `Error creating text: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  },
+);
+
+// Shared color schema for create_frame_tree
+const colorSchema = z
+  .object({
+    r: z.number().min(0).max(1).describe("Red (0-1)"),
+    g: z.number().min(0).max(1).describe("Green (0-1)"),
+    b: z.number().min(0).max(1).describe("Blue (0-1)"),
+    a: z.number().min(0).max(1).optional().describe("Alpha (0-1)"),
+  })
+  .optional();
+
+// Recursive node spec schema for create_frame_tree
+const nodeSpecSchema: z.ZodType<any> = z.lazy(() =>
+  z.object({
+    type: z.enum(["FRAME", "TEXT", "RECTANGLE"]).optional().describe("Node type (default: FRAME)"),
+    name: z.string().optional().describe("Node name"),
+    x: z.number().optional().describe("X position"),
+    y: z.number().optional().describe("Y position"),
+    width: z.number().optional().describe("Width"),
+    height: z.number().optional().describe("Height"),
+    // Frame layout
+    layoutMode: z.enum(["NONE", "HORIZONTAL", "VERTICAL"]).optional(),
+    layoutWrap: z.enum(["NO_WRAP", "WRAP"]).optional(),
+    paddingTop: z.number().optional(),
+    paddingRight: z.number().optional(),
+    paddingBottom: z.number().optional(),
+    paddingLeft: z.number().optional(),
+    primaryAxisAlignItems: z.enum(["MIN", "MAX", "CENTER", "SPACE_BETWEEN"]).optional(),
+    counterAxisAlignItems: z.enum(["MIN", "MAX", "CENTER", "BASELINE"]).optional(),
+    layoutSizingHorizontal: z.enum(["FIXED", "HUG", "FILL"]).optional(),
+    layoutSizingVertical: z.enum(["FIXED", "HUG", "FILL"]).optional(),
+    itemSpacing: z.number().optional(),
+    cornerRadius: z.number().min(0).optional(),
+    // Colors
+    fillColor: colorSchema,
+    strokeColor: colorSchema,
+    strokeWeight: z.number().optional(),
+    // Text-specific
+    text: z.string().optional().describe("Text content (for TEXT nodes)"),
+    fontSize: z.number().optional(),
+    fontWeight: z.number().optional(),
+    fontFamily: z.string().optional().describe("Font family (default: Inter)"),
+    fontStyle: z.string().optional().describe("Font style (default: Regular)"),
+    fontColor: colorSchema,
+    // Children
+    children: z.array(z.lazy(() => nodeSpecSchema)).optional().describe("Child nodes"),
+  }),
+);
+
+// Create Frame Tree Tool
+server.tool(
+  "create_frame_tree",
+  "Create an entire subtree of frames, text nodes, and rectangles in one call. Accepts a recursive JSON tree description. Returns a map of all created node IDs.",
+  {
+    parentId: z.string().optional().describe("Parent node ID to append the tree root to"),
+    tree: nodeSpecSchema.describe("Root node description with optional nested children"),
+  },
+  async ({ parentId, tree }: any) => {
+    try {
+      const result = await sendCommandToFigma("create_frame_tree", { parentId, tree }, 60000);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error creating frame tree: ${error instanceof Error ? error.message : String(error)}`,
           },
         ],
       };

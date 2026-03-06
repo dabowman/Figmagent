@@ -505,3 +505,34 @@ server.tool(
     }
   },
 );
+
+// Get Main Component Tool
+server.tool(
+  "get_main_component",
+  "Get the main component of an instance node. Use this to find the source component when you have an instance, preventing instance-vs-component confusion.",
+  {
+    nodeId: z.string().describe("The ID of the instance node"),
+  },
+  async ({ nodeId }: any) => {
+    try {
+      const result = await sendCommandToFigma("get_main_component", { nodeId });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error getting main component: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  },
+);

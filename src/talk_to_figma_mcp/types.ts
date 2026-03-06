@@ -85,4 +85,9 @@ export type FigmaCommand =
   | "set_default_connector"
   | "create_connections"
   | "set_focus"
-  | "set_selections";
+  | "set_selections"
+  | "reorder_children"
+  | "create_frame_tree"
+  | "set_multiple_properties"
+  | "clone_and_modify"
+  | "get_main_component";
