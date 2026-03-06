@@ -154,6 +154,8 @@ async function handleCommand(command, params) {
       return await setCornerRadius(params);
     case "set_text_content":
       return await setTextContent(params);
+    case "rename_node":
+      return await renameNode(params);
     case "clone_node":
       return await cloneNode(params);
     case "scan_text_nodes":
@@ -1399,6 +1401,32 @@ async function setCornerRadius(params) {
     topRightRadius: "topRightRadius" in node ? node.topRightRadius : undefined,
     bottomRightRadius: "bottomRightRadius" in node ? node.bottomRightRadius : undefined,
     bottomLeftRadius: "bottomLeftRadius" in node ? node.bottomLeftRadius : undefined,
+  };
+}
+
+async function renameNode(params) {
+  const { nodeId, name } = params || {};
+
+  if (!nodeId) {
+    throw new Error("Missing nodeId parameter");
+  }
+  if (name === undefined) {
+    throw new Error("Missing name parameter");
+  }
+
+  const node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) {
+    throw new Error("Node not found: " + nodeId);
+  }
+
+  const oldName = node.name;
+  node.name = name;
+
+  return {
+    id: node.id,
+    oldName: oldName,
+    newName: node.name,
+    type: node.type,
   };
 }
 

@@ -2,6 +2,39 @@ import { z } from "zod";
 import { server } from "../instance.js";
 import { sendCommandToFigma } from "../connection.js";
 
+// Rename Node Tool
+server.tool(
+  "rename_node",
+  "Rename any node in Figma. Essential for setting variant names (e.g. 'Layout=Activity') on components inside a COMPONENT_SET.",
+  {
+    nodeId: z.string().describe("The ID of the node to rename"),
+    name: z.string().describe("The new name for the node"),
+  },
+  async ({ nodeId, name }: any) => {
+    try {
+      const result = await sendCommandToFigma("rename_node", { nodeId, name });
+      const typedResult = result as { id: string; oldName: string; newName: string; type: string };
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Renamed ${typedResult.type} "${typedResult.oldName}" → "${typedResult.newName}"`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error renaming node: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  },
+);
+
 // Set Fill Color Tool
 server.tool(
   "set_fill_color",

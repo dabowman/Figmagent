@@ -65,6 +65,7 @@ export type FigmaCommand =
   | "export_node_as_image"
   | "join"
   | "set_corner_radius"
+  | "rename_node"
   | "clone_node"
   | "set_text_content"
   | "scan_text_nodes"
