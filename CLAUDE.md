@@ -37,7 +37,7 @@ Lightweight Bun WebSocket server on port 3055 (configurable via `PORT` env). Rou
 ### Figma Plugin (`src/cursor_mcp_plugin/`)
 Runs inside Figma. `code.js` is the plugin main thread handling 30+ commands via a dispatcher. `ui.html` is the plugin UI for WebSocket connection management. `manifest.json` declares permissions (dynamic-page access, localhost network). The plugin is **not built/bundled** — `code.js` is written directly as the runtime artifact.
 
-**JS constraints**: `code.js` runs in Figma's sandboxed JS VM, not a modern browser engine. Do **not** use optional chaining (`?.`), nullish coalescing (`??`), catch binding omission (`catch {}`), or other post-ES2017 syntax. These cause syntax errors at plugin load time.
+**JS constraints**: `code.js` runs in Figma's sandboxed JS VM, not a modern browser engine. Do **not** use optional chaining (`?.`), nullish coalescing (`??`), catch binding omission (`catch {}`), or other post-ES2017 syntax. These cause syntax errors at plugin load time. `let`/`const` are fine, but `var` inside nested functions triggers Biome's `noInnerDeclarations`.
 
 ### Build (`tsup.config.ts`)
 Bundles only the MCP server (`src/talk_to_figma_mcp/server.ts`) into `dist/` as both CJS and ESM. DTS (type declaration) generation is disabled. The WebSocket relay and Figma plugin are not part of the build output.
