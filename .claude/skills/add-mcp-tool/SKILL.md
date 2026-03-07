@@ -50,6 +50,7 @@ Add the tool in the relevant domain file under `src/talk_to_figma_mcp/tools/`:
 - `scan.ts` — scan_text_nodes, scan_nodes_by_types, get_annotations, set_annotation
 - `export.ts` — export_node_as_image
 - `libraries.ts` — remote library tools (REST API based)
+- `comments.ts` — get_comments, post_comment, delete_comment (REST API based, requires FIGMA_API_TOKEN)
 
 Also add the command name to the `FigmaCommand` union type in `src/talk_to_figma_mcp/types.ts`.
 

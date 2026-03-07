@@ -54,6 +54,7 @@ Bundles only the MCP server (`src/talk_to_figma_mcp/server.ts`) into `dist/` as 
 - **Large nodes**: Use `get_node_info` with `depth=1` or `depth=2` for large component sets to avoid token overflow. Use `depth=2` or `depth=3` when first inspecting component sets or complex frames. Omit `depth` for full tree on small nodes.
 - **Design tokens**: Use `get_local_variables` to discover variables, then `batch_bind_variables` to bind them to node properties in bulk. For single bindings, `bind_variable` also works. Color variables bind via `setBoundVariableForPaint`; scalar variables bind via `setBoundVariable`.
 - **Text styles**: Use `get_styles` to discover text styles, then `batch_set_text_styles` to apply them to multiple text nodes at once (deduplicates font loading). For single nodes, `set_text_style` also works.
+- **Comments**: Use `get_comments`, `post_comment`, `delete_comment` to read/write Figma file comments via REST API. Requires `FIGMA_API_TOKEN` with `file_comments:read` and `file_comments:write` scopes. The `fileKey` param comes from the Figma URL: `https://www.figma.com/design/<fileKey>/...`
 
 ## Local Development
 

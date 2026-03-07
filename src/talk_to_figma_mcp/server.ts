@@ -18,6 +18,7 @@ import "./tools/components.js";
 import "./tools/export.js";
 import "./tools/scan.js";
 import "./tools/libraries.js";
+import "./tools/comments.js";
 import "./prompts/index.js";
 
 // Start the server
