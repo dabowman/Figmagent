@@ -49,12 +49,6 @@
   },
   "overrides": [
     {
-      "includes": ["src/figma_plugin/setcharacters.js"],
-      "linter": {
-        "enabled": false
-      }
-    },
-    {
       "includes": ["src/figma_plugin/code.js"],
       "linter": {
         "rules": {
