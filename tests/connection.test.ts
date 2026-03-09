@@ -199,9 +199,7 @@ describe("sendCommandToFigma", () => {
   });
 
   test("request times out and rejects after specified timeout", async () => {
-    const { connectToFigma, joinChannel, sendCommandToFigma } = await import(
-      "../src/figmagent_mcp/connection.js"
-    );
+    const { connectToFigma, joinChannel, sendCommandToFigma } = await import("../src/figmagent_mcp/connection.js");
 
     connectToFigma(PORT);
     await new Promise((resolve) => setTimeout(resolve, 300));

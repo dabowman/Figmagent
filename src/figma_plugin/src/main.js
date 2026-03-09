@@ -1,0 +1,407 @@
+// Main entry point for the Figma plugin
+// Bundles into code.js via `bun build`
+
+import { state } from "./helpers.js";
+
+// Command imports — document
+import {
+  getDocumentInfo,
+  getSelection,
+  getNodeInfo,
+  getNodesInfo,
+  readMyDesign,
+  getReactions,
+  exportNodeAsImage,
+} from "./commands/document.js";
+
+// Command imports — create
+import { createRectangle, createFrame, createText, createFrameTree } from "./commands/create.js";
+
+// Command imports — modify
+import {
+  setFillColor,
+  setStrokeColor,
+  moveNode,
+  resizeNode,
+  setCornerRadius,
+  renameNode,
+  deleteNode,
+  deleteMultipleNodes,
+  setMultipleProperties,
+  reorderChildren,
+  cloneNode,
+  cloneAndModify,
+} from "./commands/modify.js";
+
+// Command imports — text
+import { setTextContent, setMultipleTextContents } from "./commands/text.js";
+
+// Command imports — layout
+import { setLayoutMode, setPadding, setAxisAlign, setLayoutSizing, setItemSpacing } from "./commands/layout.js";
+
+// Command imports — components
+import {
+  createComponent,
+  combineAsVariants,
+  createComponentInstance,
+  importLibraryComponent,
+  swapComponentVariant,
+  getMainComponent,
+  getInstanceOverrides,
+  getValidTargetInstances,
+  getSourceInstanceData,
+  setInstanceOverrides,
+} from "./commands/components.js";
+
+// Command imports — scan & annotations
+import {
+  scanTextNodes,
+  scanNodesByTypes,
+  getAnnotations,
+  setAnnotation,
+  setMultipleAnnotations,
+} from "./commands/scan.js";
+
+// Command imports — styles & variables
+import {
+  getStyles,
+  getLocalVariables,
+  getLocalComponents,
+  bindVariable,
+  batchBindVariables,
+  setTextStyle,
+  batchSetTextStyles,
+} from "./commands/styles.js";
+
+// Command imports — connections & navigation
+import { setDefaultConnector, createConnections, setFocus, setSelections } from "./commands/connections.js";
+
+// ─── Performance ─────────────────────────────────────────────────────────────
+figma.skipInvisibleInstanceChildren = true;
+
+// ─── Concurrency Control ─────────────────────────────────────────────────────
+
+var READ_OPS = {
+  get_document_info: true,
+  get_selection: true,
+  get_node_info: true,
+  get_nodes_info: true,
+  read_my_design: true,
+  scan_text_nodes: true,
+  scan_nodes_by_types: true,
+  get_styles: true,
+  get_local_variables: true,
+  get_local_components: true,
+  get_library_variables: true,
+  get_library_components: true,
+  search_library_components: true,
+  get_annotations: true,
+  get_reactions: true,
+  get_component_variants: true,
+  get_instance_overrides: true,
+  get_main_component: true,
+  export_node_as_image: true,
+  set_selections: true,
+  set_focus: true,
+};
+
+var GLOBAL_OPS = {
+  create_frame_tree: true,
+  delete_multiple_nodes: true,
+  combine_as_variants: true,
+  reorder_children: true,
+  create_connections: true,
+  set_multiple_properties: true,
+  batch_bind_variables: true,
+  batch_set_text_styles: true,
+  set_multiple_text_contents: true,
+  set_multiple_annotations: true,
+  set_instance_overrides: true,
+};
+
+// Node-level write locks
+var nodeLocks = {};
+
+function acquireNodeLock(nodeId) {
+  if (!nodeId) {
+    return Promise.resolve(() => {});
+  }
+  var entry = nodeLocks[nodeId];
+  if (!entry) {
+    entry = { queue: Promise.resolve() };
+    nodeLocks[nodeId] = entry;
+  }
+  var release;
+  var prev = entry.queue;
+  entry.queue = new Promise((resolve) => {
+    release = resolve;
+  });
+  return prev.then(() => release);
+}
+
+// Global mutex
+var globalLockQueue = Promise.resolve();
+
+function acquireGlobalLock() {
+  var release;
+  var prev = globalLockQueue;
+  globalLockQueue = new Promise((resolve) => {
+    release = resolve;
+  });
+  return prev.then(() => release);
+}
+
+// Concurrency limiter
+var inFlightCount = 0;
+var MAX_CONCURRENT = 6;
+var waitQueue = [];
+
+function waitForSlot() {
+  if (inFlightCount < MAX_CONCURRENT) {
+    inFlightCount++;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    waitQueue.push(resolve);
+  });
+}
+
+function releaseSlot() {
+  inFlightCount--;
+  if (waitQueue.length > 0 && inFlightCount < MAX_CONCURRENT) {
+    inFlightCount++;
+    waitQueue.shift()();
+  }
+}
+
+// Concurrency-safe request router
+async function routeCommand(id, command, params) {
+  await waitForSlot();
+  let result;
+  let release;
+  try {
+    if (GLOBAL_OPS[command]) {
+      release = await acquireGlobalLock();
+      try {
+        result = await handleCommand(command, params);
+      } finally {
+        release();
+      }
+    } else if (!READ_OPS[command] && params && params.nodeId) {
+      release = await acquireNodeLock(params.nodeId);
+      try {
+        result = await handleCommand(command, params);
+      } finally {
+        release();
+      }
+    } else {
+      result = await handleCommand(command, params);
+    }
+    figma.ui.postMessage({
+      type: "command-result",
+      id: id,
+      result: result,
+    });
+  } catch (error) {
+    figma.ui.postMessage({
+      type: "command-error",
+      id: id,
+      error: error.message || "Error executing command",
+    });
+  } finally {
+    releaseSlot();
+  }
+}
+
+// ─── Command Dispatcher ──────────────────────────────────────────────────────
+
+async function handleCommand(command, params) {
+  switch (command) {
+    case "get_document_info":
+      return await getDocumentInfo();
+    case "get_selection":
+      return await getSelection();
+    case "get_node_info":
+      if (!params || !params.nodeId) {
+        throw new Error("Missing nodeId parameter");
+      }
+      return await getNodeInfo(params.nodeId);
+    case "get_nodes_info":
+      if (!params || !params.nodeIds || !Array.isArray(params.nodeIds)) {
+        throw new Error("Missing or invalid nodeIds parameter");
+      }
+      return await getNodesInfo(params.nodeIds);
+    case "read_my_design":
+      return await readMyDesign();
+    case "create_rectangle":
+      return await createRectangle(params);
+    case "create_frame":
+      return await createFrame(params);
+    case "create_text":
+      return await createText(params);
+    case "set_fill_color":
+      return await setFillColor(params);
+    case "set_stroke_color":
+      return await setStrokeColor(params);
+    case "move_node":
+      return await moveNode(params);
+    case "resize_node":
+      return await resizeNode(params);
+    case "delete_node":
+      return await deleteNode(params);
+    case "delete_multiple_nodes":
+      return await deleteMultipleNodes(params);
+    case "get_styles":
+      return await getStyles();
+    case "get_local_variables":
+      return await getLocalVariables();
+    case "get_local_components":
+      return await getLocalComponents();
+    case "create_component":
+      return await createComponent(params);
+    case "combine_as_variants":
+      return await combineAsVariants(params);
+    case "create_component_instance":
+      return await createComponentInstance(params);
+    case "import_library_component":
+      return await importLibraryComponent(params);
+    case "export_node_as_image":
+      return await exportNodeAsImage(params);
+    case "set_corner_radius":
+      return await setCornerRadius(params);
+    case "set_text_content":
+      return await setTextContent(params);
+    case "rename_node":
+      return await renameNode(params);
+    case "clone_node":
+      return await cloneNode(params);
+    case "scan_text_nodes":
+      return await scanTextNodes(params);
+    case "set_multiple_text_contents":
+      return await setMultipleTextContents(params);
+    case "get_annotations":
+      return await getAnnotations(params);
+    case "set_annotation":
+      return await setAnnotation(params);
+    case "scan_nodes_by_types":
+      return await scanNodesByTypes(params);
+    case "set_multiple_annotations":
+      return await setMultipleAnnotations(params);
+    case "get_instance_overrides":
+      if (params && params.instanceNodeId) {
+        const instanceNode = await figma.getNodeByIdAsync(params.instanceNodeId);
+        if (!instanceNode) {
+          throw new Error(`Instance node not found with ID: ${params.instanceNodeId}`);
+        }
+        return await getInstanceOverrides(instanceNode);
+      }
+      return await getInstanceOverrides();
+
+    case "set_instance_overrides":
+      if (params && params.targetNodeIds) {
+        if (!Array.isArray(params.targetNodeIds)) {
+          throw new Error("targetNodeIds must be an array");
+        }
+
+        const targetNodes = await getValidTargetInstances(params.targetNodeIds);
+        if (!targetNodes.success) {
+          figma.notify(targetNodes.message);
+          return { success: false, message: targetNodes.message };
+        }
+
+        if (params.sourceInstanceId) {
+          let sourceInstanceData = null;
+          sourceInstanceData = await getSourceInstanceData(params.sourceInstanceId);
+
+          if (!sourceInstanceData.success) {
+            figma.notify(sourceInstanceData.message);
+            return { success: false, message: sourceInstanceData.message };
+          }
+          return await setInstanceOverrides(targetNodes.targetInstances, sourceInstanceData);
+        } else {
+          throw new Error("Missing sourceInstanceId parameter");
+        }
+      }
+      throw new Error("Missing targetNodeIds parameter");
+    case "swap_component_variant":
+      return await swapComponentVariant(params);
+    case "set_layout_mode":
+      return await setLayoutMode(params);
+    case "set_padding":
+      return await setPadding(params);
+    case "set_axis_align":
+      return await setAxisAlign(params);
+    case "set_layout_sizing":
+      return await setLayoutSizing(params);
+    case "set_item_spacing":
+      return await setItemSpacing(params);
+    case "get_reactions":
+      if (!params || !params.nodeIds || !Array.isArray(params.nodeIds)) {
+        throw new Error("Missing or invalid nodeIds parameter");
+      }
+      return await getReactions(params.nodeIds);
+    case "set_default_connector":
+      return await setDefaultConnector(params);
+    case "create_connections":
+      return await createConnections(params);
+    case "set_focus":
+      return await setFocus(params);
+    case "set_selections":
+      return await setSelections(params);
+    case "reorder_children":
+      return await reorderChildren(params);
+    case "create_frame_tree":
+      return await createFrameTree(params);
+    case "set_multiple_properties":
+      return await setMultipleProperties(params);
+    case "clone_and_modify":
+      return await cloneAndModify(params);
+    case "get_main_component":
+      return await getMainComponent(params);
+    case "bind_variable":
+      return await bindVariable(params);
+    case "batch_bind_variables":
+      return await batchBindVariables(params);
+    case "set_text_style":
+      return await setTextStyle(params);
+    case "batch_set_text_styles":
+      return await batchSetTextStyles(params);
+    default:
+      throw new Error(`Unknown command: ${command}`);
+  }
+}
+
+// ─── Plugin UI & Message Handling ────────────────────────────────────────────
+
+figma.showUI(__html__, { width: 320, height: 56 });
+
+figma.ui.onmessage = async (msg) => {
+  switch (msg.type) {
+    case "update-settings":
+      updateSettings(msg);
+      break;
+    case "notify":
+      figma.notify(msg.message);
+      break;
+    case "close-plugin":
+      figma.closePlugin();
+      break;
+    case "execute-command":
+      routeCommand(msg.id, msg.command, msg.params);
+      break;
+  }
+};
+
+figma.on("run", ({ command }) => {
+  figma.ui.postMessage({ type: "auto-connect" });
+});
+
+function updateSettings(settings) {
+  if (settings.serverPort) {
+    state.serverPort = settings.serverPort;
+  }
+
+  figma.clientStorage.setAsync("settings", {
+    serverPort: state.serverPort,
+  });
+}

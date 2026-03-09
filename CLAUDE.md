@@ -16,6 +16,7 @@ Claude Code / Cursor <-(stdio)-> MCP Server <-(WebSocket)-> WebSocket Relay <-(W
 bun install              # Install dependencies
 bun socket               # Start WebSocket relay server (port 3055)
 bun setup                # Full setup (install + write .cursor/mcp.json + .mcp.json)
+bun run build:plugin     # Bundle Figma plugin (src/figma_plugin/src/ → code.js)
 bun run test             # Run tests (bun:test)
 bun run lint             # Lint with Biome
 bun run lint:fix         # Auto-fix lint + format issues
@@ -32,9 +33,23 @@ Modular server implementing MCP via `@modelcontextprotocol/sdk`. Entry point is 
 Lightweight Bun WebSocket server on port 3055 (configurable via `PORT` env). Routes messages between MCP server and Figma plugin using channel-based isolation. Clients call `join` to enter a channel; messages broadcast only within the same channel. Exposes `GET /channels` HTTP endpoint for auto-discovery of active channels.
 
 ### Figma Plugin (`src/figma_plugin/`)
-Runs inside Figma. `code.js` is the plugin main thread handling 55+ commands via a dispatcher. `ui.html` is the plugin UI for WebSocket connection management. `manifest.json` declares permissions (dynamic-page access, localhost network). The plugin is **not built/bundled** — `code.js` is written directly as the runtime artifact.
+Runs inside Figma. Source lives in `src/figma_plugin/src/` as ES modules, bundled into a single `code.js` via `bun run build:plugin`. `code.js` is the plugin main thread handling 55+ commands via a dispatcher. `ui.html` is the plugin UI for WebSocket connection management. `manifest.json` declares permissions (dynamic-page access, localhost network).
 
-**JS constraints**: `code.js` runs in Figma's sandboxed JS VM, not a modern browser engine. Do **not** use optional chaining (`?.`), nullish coalescing (`??`), catch binding omission (`catch {}`), or other post-ES2017 syntax. These cause syntax errors at plugin load time. `let`/`const` are fine, but `var` inside nested functions triggers Biome's `noInnerDeclarations`.
+**Source structure** (mirrors the MCP server's `tools/` layout):
+- `src/main.js` — entry point: imports, concurrency control, command dispatcher, plugin UI handlers
+- `src/helpers.js` — shared utilities: state, progress updates, toNumber, filterFigmaNode, etc.
+- `src/setcharacters.js` — font-safe text replacement (handles mixed fonts)
+- `src/commands/document.js` — getDocumentInfo, getSelection, getNodeInfo, readMyDesign, etc.
+- `src/commands/create.js` — createRectangle, createFrame, createText, createFrameTree
+- `src/commands/modify.js` — setFillColor, moveNode, deleteNode, cloneAndModify, etc.
+- `src/commands/text.js` — setTextContent, setMultipleTextContents
+- `src/commands/layout.js` — setLayoutMode, setPadding, setAxisAlign, setLayoutSizing, setItemSpacing
+- `src/commands/components.js` — createComponent, combineAsVariants, instance overrides, etc.
+- `src/commands/scan.js` — scanTextNodes, scanNodesByTypes, annotations
+- `src/commands/styles.js` — getStyles, getLocalVariables, bindVariable, batchSetTextStyles, etc.
+- `src/commands/connections.js` — setDefaultConnector, createConnections, setFocus, setSelections
+
+**JS constraints**: The bundled `code.js` runs in Figma's sandboxed JS VM. The source files are modern ES modules (arrow functions, let/const, template literals are all fine — bun bundles them into an IIFE). However, do **not** use optional chaining (`?.`) or nullish coalescing (`??`) in source files — Biome enforces this via `useOptionalChain: off` override. After editing source files, run `bun run build:plugin` to regenerate `code.js`.
 
 ## Key Patterns
 
