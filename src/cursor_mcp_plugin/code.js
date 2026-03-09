@@ -57,7 +57,7 @@ function toNumber(val, fallback) {
 figma.skipInvisibleInstanceChildren = true;
 
 // Show UI
-figma.showUI(__html__, { width: 350, height: 600 });
+figma.showUI(__html__, { width: 320, height: 56 });
 
 // Plugin commands from UI
 figma.ui.onmessage = async (msg) => {
