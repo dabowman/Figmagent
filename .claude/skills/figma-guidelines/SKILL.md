@@ -17,6 +17,8 @@ You are controlling Figma through MCP tools that bridge to the Figma Plugin API.
 
 For deeper coverage on any topic, read the corresponding reference file in `references/`.
 
+**Large sessions:** If the task involves a component set with 8+ variants, an unknown tree depth, or is likely to require 100+ tool calls, use the `/figma-sub-agents` skill to delegate the Discovery phase to a sub-agent. This keeps the orchestrator's context clean and prevents attention drift during high-volume binding passes.
+
 ---
 
 ## Container Selection: Frame vs Group vs Section
