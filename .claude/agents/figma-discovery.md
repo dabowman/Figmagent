@@ -47,6 +47,10 @@ If the depth=3 response exceeds ~40K characters, it is too large to reason about
 
 If even the depth=2 response is truncated or specific variants are still missing children, use the same batched `get_nodes_info` approach on those variant IDs with `depth=2`.
 
+Note: `get_node_info` uses `exportAsync(JSON_REST_V1)` filtered through `filterFigmaNode`. This means:
+- `boundVariables` on fills/strokes is **stripped** — no variable binding data is available for non-text children from this call
+- INSTANCE children do **not** include a `componentName` field — use a separate `get_main_component` call if the main component name is needed
+
 Check the returned node type before building `component_set` output:
 - **`COMPONENT_SET`** — top-level node is the set; its direct children are the variants. Use them as `variants[]` and read `variantGroupProperties` (or `componentPropertyDefinitions`) for `variant_properties`.
 - **`COMPONENT`** (single variant, no set) — wrap it in a synthetic single-variant structure: set `variant_properties: []` and `variants: [{ id: node.id, name: node.name, children: node.children }]`.
@@ -85,9 +89,7 @@ On success:
           {
             "id": "<child id>",
             "name": "<child name>",
-            "type": "<FRAME|INSTANCE|TEXT|RECTANGLE>",
-            "componentName": "<main component name, only present when type is INSTANCE>",
-            "variables_bound": ["<field:variableName>"]
+            "type": "<FRAME|INSTANCE|TEXT|RECTANGLE>"
           }
         ]
       }

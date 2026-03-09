@@ -2251,6 +2251,38 @@ async function processTextNode(node, parentPath, depth) {
       }
     }
 
+    // Get applied text style name if present
+    let styleName = null;
+    if (node.textStyleId && typeof node.textStyleId === "string") {
+      try {
+        const style = figma.getStyleById(node.textStyleId);
+        if (style) {
+          styleName = style.name;
+        }
+      } catch (styleErr) {
+        // style not found
+      }
+    }
+
+    // Get fill color variable binding if present (stored on the paint object)
+    let fillsVariable = null;
+    try {
+      if (node.fills && node.fills.length > 0) {
+        const firstFill = node.fills[0];
+        if (firstFill && firstFill.boundVariables && firstFill.boundVariables.color) {
+          const colorAlias = firstFill.boundVariables.color;
+          if (colorAlias && colorAlias.id) {
+            const variable = await figma.variables.getVariableByIdAsync(colorAlias.id);
+            if (variable) {
+              fillsVariable = variable.name;
+            }
+          }
+        }
+      }
+    } catch (varErr) {
+      // variable lookup failed
+    }
+
     // Create a safe representation of the text node
     const safeTextNode = {
       id: node.id,
@@ -2266,6 +2298,8 @@ async function processTextNode(node, parentPath, depth) {
       height: typeof node.height === "number" ? node.height : 0,
       path: parentPath.join(" > "),
       depth: depth,
+      style: styleName,
+      fills_variable: fillsVariable,
     };
 
     return safeTextNode;
