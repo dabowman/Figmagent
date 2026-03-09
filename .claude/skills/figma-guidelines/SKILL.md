@@ -1,5 +1,5 @@
 ---
-name: figma-mcp
+name: figma-guidelines
 description: "Figma design knowledge for AI agents operating through MCP tools. Use whenever working in Figma via MCP — creating layouts, building components, managing design tokens/variables, organizing files, or manipulating any design element. Covers component architecture (variants, properties, slots, atomic design), auto layout (direction, spacing, sizing, wrap, absolute positioning), variables and styles (token architecture, modes, scoping, aliasing), collaboration features (comments, annotations, sections, Dev Mode), and critical gotchas (font loading, immutable properties, coordinate systems, instance limitations). Also trigger when the user asks to build a design system, create responsive layouts, set up design tokens, organize a Figma file, or work with component libraries. If the task involves Figma in any way, use this skill."
 ---
 

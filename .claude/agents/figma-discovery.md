@@ -59,25 +59,25 @@ Look at the Step 1 response. Three cases:
 | Target node type | Action | `component_sets_in_frame` |
 |-----------------|--------|--------------------------|
 | `COMPONENT_SET` | Use it directly as the primary component set. | `null` |
-| `COMPONENT` | Use it directly. | `null` |
-| Anything else (FRAME, etc.) | Scan its children for COMPONENT_SET nodes. Build `component_sets_in_frame` from all matches: `{id, name, type, variantCount}` where `variantCount` = number of children. Pick the **first** COMPONENT_SET as the primary. If none found, set `component_set: null` and skip to Step 5. | Array of matches |
+| `COMPONENT` | Use it directly as a single-variant component. | `null` |
+| Anything else (FRAME, etc.) | Scan its children for COMPONENT_SET and standalone COMPONENT nodes. Build `component_sets_in_frame` from all COMPONENT_SET matches: `{id, name, type, variantCount}` where `variantCount` = number of children. Pick the **first** COMPONENT_SET as the primary. If none found, set `component_set: null` and skip to Step 5. Note: standalone COMPONENTs (not inside a set) are listed separately with `variantCount: 1`. | Array of matches |
 
 ### Step 3: Map the primary component set
 
-Call `get_node_info` on the primary component set ID with `depth=3`.
+Call `get_node_info` on the primary component set (or standalone COMPONENT) ID with `depth=3`.
 
-**Overflow guard:** If the response exceeds ~40K characters, retry with `depth=2`, then batch-fill children with `get_nodes_info` (groups of 3–4 variant IDs). Note truncation in `summary`.
+**Overflow guard:** If the response exceeds ~40K characters, retry with `depth=2`. At depth=2 you only get variants as stubs — their children's properties are missing. Collect all **child node IDs** from each variant's children array, then batch-fill them with `get_nodes_info` (groups of 3–4 **child node IDs**, NOT variant IDs). Extract `boundVariables`, `layoutMode`, etc. from these batch responses. Note the fallback in `summary`.
 
 **Build `component_set`:**
 - `COMPONENT_SET` → children are variants. Read `componentPropertyDefinitions` for `variant_properties`.
-- `COMPONENT` (no parent set) → `variant_properties: []`, `variants: [single variant]`.
+- `COMPONENT` (no parent set) → call `get_node_info(targetNodeId, depth=3)` the same way. Set `variant_properties: []`, `variants: [single variant]`.
 
 **For each child node inside each variant, extract:**
 - `id`, `name`, `type` — always
 - `layoutMode` — include if present in the response (e.g. `"HORIZONTAL"`, `"VERTICAL"`)
 - `boundVariables` — look for the `boundVariables` object in the response. Extract just the **key names** as a string array (e.g. if the response has `"boundVariables": {"fills": ..., "cornerRadius": ...}`, output `["fills", "cornerRadius"]`). If `boundVariables` is missing or empty, output `[]`.
 
-**For INSTANCE children only:** Call `get_main_component(nodeId)` to resolve the source component. Add `componentName` and `componentId` to that child entry. Deduplicate — if multiple instances share the same component (same visual appearance), resolve once and reuse the name/ID. If `get_main_component` fails, set both to `null`. Do not retry more than once per unique instance.
+**For INSTANCE children only:** Call `get_main_component(nodeId)` to resolve the source component. Add `componentName` and `componentId` to that child entry. Deduplicate — if multiple instances share the same component (same visual appearance), resolve once and reuse the name/ID. **Call `get_main_component` in parallel** for all unique instance IDs (they are independent read-only calls). Cap at 20 unique instances — if more exist, resolve the first 20 and note the remainder in `summary`. If `get_main_component` fails for an instance, set both to `null`. Do not retry more than once per unique instance.
 
 ### Step 4: Scan text nodes (if `text_nodes` in `include`)
 
@@ -85,23 +85,26 @@ Call `get_node_info` on the primary component set ID with `depth=3`.
 
 Set `parentVariantId` on each text node to the variant it was scanned from.
 
+**CRITICAL: Include ALL text nodes from every scan.** Do NOT deduplicate or omit text nodes that appear similar across variants. Each variant's text nodes are independent — even if variant A and variant B both have a "Search" text node, BOTH must appear in the output with their respective `parentVariantId`. Dropping "repetitive" nodes breaks downstream Styler agents.
+
+**Build `text_node_counts`:** After all scans complete, build a map of `{ variantId: count }` where `count` is the number of text nodes the `scan_text_nodes` tool returned for that variant. Include this in the output so the orchestrator can detect truncation. If a scan returned 11 nodes but you only included 1 in `text_nodes`, that's a bug — go back and include all 11.
+
+**Field mapping:** The plugin returns `characters` for text content. Rename this to `content` in the output. Also include `fontSize` and `fontFamily` from the response — these help downstream Styler agents match text styles.
+
 If a single-variant scan fails, note it in `summary` but keep results from other variants. Never discard everything because one scan failed.
 
-### Step 5: Fetch design tokens (if `variables` or `text_styles` in `include`)
+### Step 5: Fetch design tokens and components
 
-Call in parallel:
+Call all applicable tools **in parallel**:
 - `variables` in include → `get_local_variables`
 - `text_styles` in include → `get_styles`
+- `components` in include → `get_local_components` (with `nameFilter` if provided)
 
-### Step 6: Fetch components (if `components` in `include`)
-
-Call `get_local_components` with `nameFilter` if provided.
-
-### Step 7: Compute `unbound_nodes`
+### Step 6: Compute `unbound_nodes`
 
 Count child nodes from Step 3 that have an empty `boundVariables` array. If you don't have `boundVariables` data (e.g. depth fallback stripped it), set `unbound_nodes: null`. Never guess.
 
-### Step 8: Return JSON
+### Step 7: Return JSON
 
 Return ONLY the JSON object below. No prose before or after.
 
@@ -141,9 +144,11 @@ Return ONLY the JSON object below. No prose before or after.
   "text_nodes": [
     {
       "id": "...", "name": "...", "parentVariantId": "...",
-      "content": "...", "style": "style name or null", "fills_variable": "variable name or null"
+      "content": "...", "fontSize": 14, "fontFamily": "Inter",
+      "style": "style name or null", "fills_variable": "variable name or null"
     }
   ],
+  "text_node_counts": { "variantId": 11, "otherVariantId": 5 },
   "variables": {
     "collections": ["..."],
     "total_count": 0,
@@ -163,6 +168,7 @@ Return ONLY the JSON object below. No prose before or after.
 - Sections not in `include` → set to `null` (keep the key).
 - `component_sets_in_frame` → `null` when the target IS a COMPONENT_SET.
 - `unbound_nodes` → `null` if you couldn't compute it. Never default to 0.
+- `text_node_counts` → map of `variantId → count` from each `scan_text_nodes` call. The sum of all counts MUST equal `text_nodes.length`. If they don't match, you dropped text nodes — fix it before returning.
 
 **Blocked response:**
 ```json
@@ -182,5 +188,6 @@ Stop and return `blocked` if:
 - Same error on same tool twice in a row
 - Two consecutive timeouts
 - Total data exceeds ~100K characters (return what you have, note truncation)
+- Total tool calls exceed 60 (return what you have, note in `summary`)
 
 If `get_node_info` returns "Node not found": do NOT retry, set `component_set: null`, continue with remaining steps.
