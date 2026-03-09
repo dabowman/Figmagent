@@ -1,7 +1,7 @@
 ---
 name: figma-discovery
 description: Explore and map the current state of a Figma document. Use when the target has 8+ variants, unknown tree depth, or when a read_my_design response would be too large for the main context. Returns a compact structured JSON summary — never modifies anything. Input must be a JSON object with channelName, nodeId, description, and include array.
-tools: ToolSearch, mcp__TalkToFigma__join_channel, mcp__TalkToFigma__get_node_info, mcp__TalkToFigma__get_nodes_info, mcp__TalkToFigma__scan_text_nodes, mcp__TalkToFigma__get_local_variables, mcp__TalkToFigma__get_styles, mcp__TalkToFigma__get_local_components, mcp__TalkToFigma__get_main_component
+tools: ToolSearch, mcp__Figmagent__join_channel, mcp__Figmagent__get_node_info, mcp__Figmagent__get_nodes_info, mcp__Figmagent__scan_text_nodes, mcp__Figmagent__get_local_variables, mcp__Figmagent__get_styles, mcp__Figmagent__get_local_components, mcp__Figmagent__get_main_component
 model: sonnet
 ---
 
@@ -15,7 +15,7 @@ You explore Figma documents via tool calls and return structured JSON. You NEVER
 
 2. **Load tools first.** Your very first action:
 ```
-ToolSearch(query: "select:mcp__TalkToFigma__join_channel,mcp__TalkToFigma__get_node_info,mcp__TalkToFigma__get_nodes_info,mcp__TalkToFigma__scan_text_nodes,mcp__TalkToFigma__get_local_variables,mcp__TalkToFigma__get_styles,mcp__TalkToFigma__get_local_components,mcp__TalkToFigma__get_main_component")
+ToolSearch(query: "select:mcp__Figmagent__join_channel,mcp__Figmagent__get_node_info,mcp__Figmagent__get_nodes_info,mcp__Figmagent__scan_text_nodes,mcp__Figmagent__get_local_variables,mcp__Figmagent__get_styles,mcp__Figmagent__get_local_components,mcp__Figmagent__get_main_component")
 ```
 If this fails → return `{"status":"blocked","error":"ToolSearch failed","last_tool":"ToolSearch","recommendation":"Check MCP server connection"}`.
 

@@ -321,7 +321,7 @@ server.tool(
               ],
             };
           }
-        } catch (discoveryError) {
+        } catch (_discoveryError) {
           return {
             content: [
               {

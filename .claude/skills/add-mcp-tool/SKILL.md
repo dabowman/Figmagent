@@ -1,4 +1,4 @@
-# Skill: Adding a New MCP Tool to Talk-to-Figma
+# Skill: Adding a New MCP Tool to Figmagent
 
 Use this skill when adding new tools or commands that let AI agents control Figma through the MCP server.
 
@@ -11,13 +11,13 @@ MCP Server (server.ts) ←WebSocket→ Relay (socket.ts) ←WebSocket→ Plugin 
 ```
 
 **Files you MUST edit:**
-1. `src/talk_to_figma_mcp/tools/<domain>.ts` — tool registration (e.g., `modify.ts`, `components.ts`, `create.ts`)
-2. `src/talk_to_figma_mcp/types.ts` — add command name to `FigmaCommand` union type
-3. `src/cursor_mcp_plugin/code.js` — command case in `handleCommand` switch + handler function
+1. `src/figmagent_mcp/tools/<domain>.ts` — tool registration (e.g., `modify.ts`, `components.ts`, `create.ts`)
+2. `src/figmagent_mcp/types.ts` — add command name to `FigmaCommand` union type
+3. `src/figma_plugin/code.js` — command case in `handleCommand` switch + handler function
 
 **Files you do NOT edit** (generic message routers):
 - `src/socket.ts` — relay, just broadcasts messages within channels
-- `src/cursor_mcp_plugin/ui.html` — forwards commands/results between WebSocket and code.js
+- `src/figma_plugin/ui.html` — forwards commands/results between WebSocket and code.js
 
 ## Request/Response Lifecycle
 
@@ -40,7 +40,7 @@ When an AI agent calls a tool:
 
 ### Step 1: Define the tool in the appropriate tools/ module
 
-Add the tool in the relevant domain file under `src/talk_to_figma_mcp/tools/`:
+Add the tool in the relevant domain file under `src/figmagent_mcp/tools/`:
 - `document.ts` — get_document_info, get_selection, get_node_info, read_my_design
 - `create.ts` — create_rectangle, create_frame, create_text
 - `modify.ts` — rename_node, set_fill_color, set_stroke_color, move_node, resize_node, delete_node, set_corner_radius
@@ -52,7 +52,7 @@ Add the tool in the relevant domain file under `src/talk_to_figma_mcp/tools/`:
 - `libraries.ts` — remote library tools (REST API based)
 - `comments.ts` — get_comments, post_comment, delete_comment (REST API based, requires FIGMA_API_TOKEN)
 
-Also add the command name to the `FigmaCommand` union type in `src/talk_to_figma_mcp/types.ts`.
+Also add the command name to the `FigmaCommand` union type in `src/figmagent_mcp/types.ts`.
 
 ```typescript
 server.tool(
@@ -286,7 +286,7 @@ Key points:
 
 ### Dead file: setcharacters.js
 
-`src/cursor_mcp_plugin/setcharacters.js` contains duplicated `setCharacters` and `uniqBy` functions from code.js. The manifest only loads `code.js` — this file is unused. Do not edit it; always edit `code.js` directly.
+`src/figma_plugin/setcharacters.js` contains duplicated `setCharacters` and `uniqBy` functions from code.js. The manifest only loads `code.js` — this file is unused. Do not edit it; always edit `code.js` directly.
 
 ## Checklist
 

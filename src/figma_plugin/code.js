@@ -65,42 +65,42 @@ figma.skipInvisibleInstanceChildren = true;
 
 // Operation classification: which commands are read-only?
 var READ_OPS = {
-  "get_document_info": true,
-  "get_selection": true,
-  "get_node_info": true,
-  "get_nodes_info": true,
-  "read_my_design": true,
-  "scan_text_nodes": true,
-  "scan_nodes_by_types": true,
-  "get_styles": true,
-  "get_local_variables": true,
-  "get_local_components": true,
-  "get_library_variables": true,
-  "get_library_components": true,
-  "search_library_components": true,
-  "get_annotations": true,
-  "get_reactions": true,
-  "get_component_variants": true,
-  "get_instance_overrides": true,
-  "get_main_component": true,
-  "export_node_as_image": true,
-  "set_selections": true,
-  "set_focus": true
+  get_document_info: true,
+  get_selection: true,
+  get_node_info: true,
+  get_nodes_info: true,
+  read_my_design: true,
+  scan_text_nodes: true,
+  scan_nodes_by_types: true,
+  get_styles: true,
+  get_local_variables: true,
+  get_local_components: true,
+  get_library_variables: true,
+  get_library_components: true,
+  search_library_components: true,
+  get_annotations: true,
+  get_reactions: true,
+  get_component_variants: true,
+  get_instance_overrides: true,
+  get_main_component: true,
+  export_node_as_image: true,
+  set_selections: true,
+  set_focus: true,
 };
 
 // Global operations that touch multiple nodes or tree structure — serialize globally
 var GLOBAL_OPS = {
-  "create_frame_tree": true,
-  "delete_multiple_nodes": true,
-  "combine_as_variants": true,
-  "reorder_children": true,
-  "create_connections": true,
-  "set_multiple_properties": true,
-  "batch_bind_variables": true,
-  "batch_set_text_styles": true,
-  "set_multiple_text_contents": true,
-  "set_multiple_annotations": true,
-  "set_instance_overrides": true
+  create_frame_tree: true,
+  delete_multiple_nodes: true,
+  combine_as_variants: true,
+  reorder_children: true,
+  create_connections: true,
+  set_multiple_properties: true,
+  batch_bind_variables: true,
+  batch_set_text_styles: true,
+  set_multiple_text_contents: true,
+  set_multiple_annotations: true,
+  set_instance_overrides: true,
 };
 // Everything else is a per-node write operation (locked by params.nodeId)
 
@@ -162,11 +162,12 @@ function releaseSlot() {
 // Concurrency-safe request router
 async function routeCommand(id, command, params) {
   await waitForSlot();
+  let result;
+  let release;
   try {
-    var result;
     if (GLOBAL_OPS[command]) {
       // Global operations: acquire global mutex (serializes with all other global ops)
-      var release = await acquireGlobalLock();
+      release = await acquireGlobalLock();
       try {
         result = await handleCommand(command, params);
       } finally {
@@ -174,7 +175,7 @@ async function routeCommand(id, command, params) {
       }
     } else if (!READ_OPS[command] && params && params.nodeId) {
       // Per-node write: acquire lock for this specific node
-      var release = await acquireNodeLock(params.nodeId);
+      release = await acquireNodeLock(params.nodeId);
       try {
         result = await handleCommand(command, params);
       } finally {
@@ -2391,7 +2392,7 @@ async function processTextNode(node, parentPath, depth) {
         if (style) {
           styleName = style.name;
         }
-      } catch (styleErr) {
+      } catch (_styleErr) {
         // style not found
       }
     }
@@ -2411,7 +2412,7 @@ async function processTextNode(node, parentPath, depth) {
           }
         }
       }
-    } catch (varErr) {
+    } catch (_varErr) {
       // variable lookup failed
     }
 
@@ -4932,8 +4933,8 @@ async function batchBindVariables(params) {
     end = Math.min(start + CHUNK_SIZE, totalOps);
     chunk = bindings.slice(start, end);
 
-    chunkPromises = chunk.map(function (binding) {
-      return (async function (b) {
+    chunkPromises = chunk.map((binding) =>
+      (async (b) => {
         try {
           const node = await figma.getNodeByIdAsync(b.nodeId);
           if (!node) throw new Error("Node not found: " + b.nodeId);
@@ -4964,8 +4965,8 @@ async function batchBindVariables(params) {
         } catch (e) {
           return { success: false, nodeId: b.nodeId, field: b.field, error: e.message || String(e) };
         }
-      })(binding);
-    });
+      })(binding),
+    );
 
     chunkResults = await Promise.all(chunkPromises);
     for (ri = 0; ri < chunkResults.length; ri++) {
@@ -4977,14 +4978,29 @@ async function batchBindVariables(params) {
     if (commandId) {
       processed = Math.min(end, totalOps);
       pct = Math.round((processed / totalOps) * 100);
-      sendProgressUpdate(commandId, "batch_bind_variables", "in_progress", pct, totalOps, processed,
+      sendProgressUpdate(
+        commandId,
+        "batch_bind_variables",
+        "in_progress",
+        pct,
+        totalOps,
+        processed,
         "Processed " + processed + " of " + totalOps,
-        { currentChunk: chunkIdx + 1, totalChunks: totalChunks, chunkSize: CHUNK_SIZE });
+        { currentChunk: chunkIdx + 1, totalChunks: totalChunks, chunkSize: CHUNK_SIZE },
+      );
     }
   }
 
   if (commandId) {
-    sendProgressUpdate(commandId, "batch_bind_variables", "completed", 100, totalOps, totalOps, "All bindings completed");
+    sendProgressUpdate(
+      commandId,
+      "batch_bind_variables",
+      "completed",
+      100,
+      totalOps,
+      totalOps,
+      "All bindings completed",
+    );
   }
 
   return {
@@ -5068,7 +5084,15 @@ async function batchSetTextStyles(params) {
   var si, sk, style;
 
   if (commandId) {
-    sendProgressUpdate(commandId, "batch_set_text_styles", "started", 0, totalOps, 0, "Starting text style assignments");
+    sendProgressUpdate(
+      commandId,
+      "batch_set_text_styles",
+      "started",
+      0,
+      totalOps,
+      0,
+      "Starting text style assignments",
+    );
   }
 
   // Phase 1: Pre-load all unique styles and their fonts
@@ -5102,8 +5126,8 @@ async function batchSetTextStyles(params) {
     end = Math.min(start + CHUNK_SIZE, totalOps);
     chunk = assignments.slice(start, end);
 
-    chunkPromises = chunk.map(function (assignment) {
-      return (async function (a) {
+    chunkPromises = chunk.map((assignment) =>
+      (async (a) => {
         try {
           const node = await figma.getNodeByIdAsync(a.nodeId);
           if (!node) throw new Error("Node not found: " + a.nodeId);
@@ -5136,8 +5160,8 @@ async function batchSetTextStyles(params) {
         } catch (e) {
           return { success: false, nodeId: a.nodeId, styleId: a.styleId, error: e.message || String(e) };
         }
-      })(assignment);
-    });
+      })(assignment),
+    );
 
     chunkResults = await Promise.all(chunkPromises);
     for (ri = 0; ri < chunkResults.length; ri++) {
@@ -5149,14 +5173,29 @@ async function batchSetTextStyles(params) {
     if (commandId) {
       processed = Math.min(end, totalOps);
       pct = Math.round((processed / totalOps) * 100);
-      sendProgressUpdate(commandId, "batch_set_text_styles", "in_progress", pct, totalOps, processed,
+      sendProgressUpdate(
+        commandId,
+        "batch_set_text_styles",
+        "in_progress",
+        pct,
+        totalOps,
+        processed,
         "Processed " + processed + " of " + totalOps,
-        { currentChunk: chunkIdx + 1, totalChunks: totalChunks, chunkSize: CHUNK_SIZE });
+        { currentChunk: chunkIdx + 1, totalChunks: totalChunks, chunkSize: CHUNK_SIZE },
+      );
     }
   }
 
   if (commandId) {
-    sendProgressUpdate(commandId, "batch_set_text_styles", "completed", 100, totalOps, totalOps, "All style assignments completed");
+    sendProgressUpdate(
+      commandId,
+      "batch_set_text_styles",
+      "completed",
+      100,
+      totalOps,
+      totalOps,
+      "All style assignments completed",
+    );
   }
 
   return {

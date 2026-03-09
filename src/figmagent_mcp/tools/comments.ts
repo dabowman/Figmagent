@@ -9,13 +9,8 @@ server.tool(
   {
     fileKey: z
       .string()
-      .describe(
-        "The Figma file key. Extract from a Figma URL: https://www.figma.com/design/<fileKey>/...",
-      ),
-    nodeId: z
-      .string()
-      .optional()
-      .describe("Optional node ID to filter comments pinned to a specific node"),
+      .describe("The Figma file key. Extract from a Figma URL: https://www.figma.com/design/<fileKey>/..."),
+    nodeId: z.string().optional().describe("Optional node ID to filter comments pinned to a specific node"),
     includeResolved: z
       .boolean()
       .optional()
@@ -35,9 +30,7 @@ server.tool(
 
       // Filter to specific node if requested (include replies to matching comments)
       if (nodeId) {
-        const nodeComments = comments.filter(
-          (c) => c.client_meta && c.client_meta.node_id === nodeId,
-        );
+        const nodeComments = comments.filter((c) => c.client_meta && c.client_meta.node_id === nodeId);
         const nodeCommentIds = new Set(nodeComments.map((c) => c.id));
         // Include replies (comments whose parent_id matches a node comment)
         const replies = comments.filter((c) => c.parent_id && nodeCommentIds.has(c.parent_id));
@@ -83,14 +76,9 @@ server.tool(
   {
     fileKey: z
       .string()
-      .describe(
-        "The Figma file key. Extract from a Figma URL: https://www.figma.com/design/<fileKey>/...",
-      ),
+      .describe("The Figma file key. Extract from a Figma URL: https://www.figma.com/design/<fileKey>/..."),
     message: z.string().describe("The comment text to post"),
-    commentId: z
-      .string()
-      .optional()
-      .describe("ID of an existing comment to reply to (creates a thread reply)"),
+    commentId: z.string().optional().describe("ID of an existing comment to reply to (creates a thread reply)"),
     nodeId: z
       .string()
       .optional()
@@ -138,9 +126,7 @@ server.tool(
   {
     fileKey: z
       .string()
-      .describe(
-        "The Figma file key. Extract from a Figma URL: https://www.figma.com/design/<fileKey>/...",
-      ),
+      .describe("The Figma file key. Extract from a Figma URL: https://www.figma.com/design/<fileKey>/..."),
     commentId: z.string().describe("The ID of the comment to delete"),
   },
   async ({ fileKey, commentId }: any) => {

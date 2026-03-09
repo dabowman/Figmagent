@@ -3,11 +3,11 @@
 # Get the directory where this script lives, then resolve to repo root
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-SERVER_PATH="$REPO_DIR/src/talk_to_figma_mcp/server.ts"
+SERVER_PATH="$REPO_DIR/src/figmagent_mcp/server.ts"
 
 MCP_CONFIG="{
   \"mcpServers\": {
-    \"TalkToFigma\": {
+    \"Figmagent\": {
       \"command\": \"bun\",
       \"args\": [
         \"$SERVER_PATH\"

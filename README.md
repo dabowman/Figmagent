@@ -29,7 +29,7 @@ This writes MCP config for both Cursor (`.cursor/mcp.json`) and Claude Code (`.m
 bun socket
 ```
 
-3. In Figma: Plugins > Development > Link existing plugin > select `src/cursor_mcp_plugin/manifest.json`
+3. In Figma: Plugins > Development > Link existing plugin > select `src/figma_plugin/manifest.json`
 
 4. Run the plugin in Figma, click Connect, then call `join_channel` from your AI agent (no arguments needed — auto-discovers the active channel).
 
@@ -38,7 +38,7 @@ bun socket
 Add the MCP server manually:
 
 ```bash
-claude mcp add TalkToFigma -- bun /path-to-repo/src/talk_to_figma_mcp/server.ts
+claude mcp add Figmagent -- bun /path-to-repo/src/figmagent_mcp/server.ts
 ```
 
 ### Cursor Setup
@@ -48,9 +48,9 @@ Add to your MCP configuration:
 ```json
 {
   "mcpServers": {
-    "TalkToFigma": {
+    "Figmagent": {
       "command": "bun",
-      "args": ["/path-to-repo/src/talk_to_figma_mcp/server.ts"]
+      "args": ["/path-to-repo/src/figmagent_mcp/server.ts"]
     }
   }
 }
@@ -203,8 +203,6 @@ Requires `FIGMA_API_TOKEN` with `file_comments:read` and `file_comments:write` s
 
 ```bash
 bun install              # Install dependencies
-bun run build            # Build MCP server (tsup -> dist/)
-bun run dev              # Build in watch mode
 bun socket               # Start WebSocket relay (port 3055)
 bun run test             # Run tests
 bun run lint             # Lint with Biome
@@ -214,14 +212,14 @@ bun run check            # Lint + format check
 
 ### Architecture
 
-The MCP server is modular (`src/talk_to_figma_mcp/`):
+The MCP server is modular (`src/figmagent_mcp/`):
 - `server.ts` — entry point
 - `tools/` — domain-grouped tool registrations (document, create, modify, text, layout, components, export, scan, libraries, comments)
 - `prompts/` — AI prompt definitions
 - `connection.ts` — WebSocket management and channel auto-discovery
 - `types.ts`, `utils.ts` — shared types and utilities
 
-The Figma plugin (`src/cursor_mcp_plugin/code.js`) is **not bundled** — it runs directly in Figma's sandboxed JS VM. It includes concurrency control (node-level locks, global mutex, max 6 concurrent operations) for safe parallel agent execution.
+The Figma plugin (`src/figma_plugin/code.js`) is **not bundled** — it runs directly in Figma's sandboxed JS VM. It includes concurrency control (node-level locks, global mutex, max 6 concurrent operations) for safe parallel agent execution.
 
 See [CLAUDE.md](CLAUDE.md) for detailed agent guidance, design patterns, and known gotchas.
 

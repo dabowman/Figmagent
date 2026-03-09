@@ -49,13 +49,13 @@
   },
   "overrides": [
     {
-      "includes": ["src/cursor_mcp_plugin/setcharacters.js"],
+      "includes": ["src/figma_plugin/setcharacters.js"],
       "linter": {
         "enabled": false
       }
     },
     {
-      "includes": ["src/cursor_mcp_plugin/code.js"],
+      "includes": ["src/figma_plugin/code.js"],
       "linter": {
         "rules": {
           "complexity": {

@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeAll, afterAll, afterEach } from "bun:test";
+import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import type { Subprocess } from "bun";
 
 /**
@@ -83,7 +83,7 @@ describe("discoverChannels", () => {
       ws.onmessage = resolve;
     }); // join result
 
-    const { discoverChannels } = await import("../src/talk_to_figma_mcp/connection.js");
+    const { discoverChannels } = await import("../src/figmagent_mcp/connection.js");
     const channels = await discoverChannels(PORT);
     expect(channels["fn-discover-ch"]).toBeDefined();
     expect(channels["fn-discover-ch"].clientCount).toBeGreaterThanOrEqual(1);
@@ -96,7 +96,7 @@ describe("discoverChannels", () => {
 describe("sendCommandToFigma", () => {
   test("rejects when not connected", async () => {
     // Fresh import — ws starts as null
-    const { sendCommandToFigma } = await import("../src/talk_to_figma_mcp/connection.js");
+    const { sendCommandToFigma } = await import("../src/figmagent_mcp/connection.js");
 
     // Patch connectToFigma to not actually connect (avoid side-effect reconnect)
     // sendCommandToFigma calls connectToFigma() when ws is null, then rejects
@@ -105,9 +105,7 @@ describe("sendCommandToFigma", () => {
   });
 
   test("rejects non-join commands when no channel is joined", async () => {
-    const { connectToFigma, sendCommandToFigma, pendingRequests } = await import(
-      "../src/talk_to_figma_mcp/connection.js"
-    );
+    const { connectToFigma, sendCommandToFigma, pendingRequests } = await import("../src/figmagent_mcp/connection.js");
 
     connectToFigma(PORT);
     // Wait for connection
@@ -119,7 +117,7 @@ describe("sendCommandToFigma", () => {
   });
 
   test("join command succeeds and sets channel", async () => {
-    const { connectToFigma, joinChannel } = await import("../src/talk_to_figma_mcp/connection.js");
+    const { connectToFigma, joinChannel } = await import("../src/figmagent_mcp/connection.js");
 
     connectToFigma(PORT);
     await new Promise((resolve) => setTimeout(resolve, 300));
@@ -152,7 +150,7 @@ describe("sendCommandToFigma", () => {
     }); // join result
 
     // Now connect the MCP module to the same channel
-    const { connectToFigma, joinChannel, sendCommandToFigma } = await import("../src/talk_to_figma_mcp/connection.js");
+    const { connectToFigma, joinChannel, sendCommandToFigma } = await import("../src/figmagent_mcp/connection.js");
     connectToFigma(PORT);
     await new Promise((resolve) => setTimeout(resolve, 300));
     await joinChannel("shape-test-ch");
@@ -201,8 +199,8 @@ describe("sendCommandToFigma", () => {
   });
 
   test("request times out and rejects after specified timeout", async () => {
-    const { connectToFigma, joinChannel, sendCommandToFigma, pendingRequests } = await import(
-      "../src/talk_to_figma_mcp/connection.js"
+    const { connectToFigma, joinChannel, sendCommandToFigma } = await import(
+      "../src/figmagent_mcp/connection.js"
     );
 
     connectToFigma(PORT);
@@ -237,7 +235,7 @@ describe("sendCommandToFigma", () => {
       spy.onmessage = resolve;
     }); // join result
 
-    const { connectToFigma, joinChannel, sendCommandToFigma } = await import("../src/talk_to_figma_mcp/connection.js");
+    const { connectToFigma, joinChannel, sendCommandToFigma } = await import("../src/figmagent_mcp/connection.js");
     connectToFigma(PORT);
     await new Promise((resolve) => setTimeout(resolve, 300));
     await joinChannel("err-test-ch");

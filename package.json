@@ -2,23 +2,10 @@
   "name": "figmagent",
   "description": "Figmagent - AI Agent to Figma MCP",
   "version": "0.3.3",
-  "module": "dist/server.js",
-  "main": "dist/server.js",
-  "bin": {
-    "figmagent": "dist/server.js"
-  },
-  "files": [
-    "dist",
-    "README.md"
-  ],
   "type": "module",
   "scripts": {
-    "start": "bun run dist/server.js",
     "socket": "bun run src/socket.ts",
     "setup": "./scripts/setup.sh",
-    "build": "tsup",
-    "build:watch": "tsup --watch",
-    "dev": "bun run build:watch",
     "test": "bun test",
     "lint": "bunx biome lint .",
     "lint:fix": "bunx biome check --write .",
@@ -29,14 +16,13 @@
   "devDependencies": {
     "@biomejs/biome": "^2.4.6",
     "@types/bun": "latest",
-    "bun-types": "^1.2.5",
-    "tsup": "^8.4.0",
-    "typescript": "^5.0.0"
+    "bun-types": "^1.3.10",
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
     "uuid": "latest",
     "ws": "latest",
-    "zod": "^3.24.0"
+    "zod": "^3.25.76"
   }
 }

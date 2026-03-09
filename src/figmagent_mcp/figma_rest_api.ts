@@ -183,9 +183,7 @@ async function figmaPost<T>(path: string, body: any): Promise<T> {
 
   if (!response.ok) {
     if (response.status === 403) {
-      throw new Error(
-        `Figma API returned 403 Forbidden. Your token may lack the file_comments:write scope.`,
-      );
+      throw new Error(`Figma API returned 403 Forbidden. Your token may lack the file_comments:write scope.`);
     }
     if (response.status === 404) {
       throw new Error(`Figma API returned 404 Not Found. The file or comment may not exist.`);

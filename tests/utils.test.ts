@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { rgbaToHex, filterFigmaNode } from "../src/talk_to_figma_mcp/utils.js";
+import { rgbaToHex, filterFigmaNode } from "../src/figmagent_mcp/utils.js";
 
 describe("rgbaToHex", () => {
   test("converts full-opacity white", () => {
