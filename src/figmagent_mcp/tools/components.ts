@@ -71,7 +71,9 @@ Alias one variable to another:
 
 Variable types: COLOR (rgba object), FLOAT (number), STRING (text), BOOLEAN (true/false).
 If modes is omitted for a new collection, Figma creates a default "Mode 1".
-If modes is provided, existing modes are renamed and new ones added as needed.`,
+If modes is provided, existing modes are renamed and new ones added as needed.
+Scopes are validated before creation — invalid scopes return an error without creating the variable.
+Duplicate variable names in the same collection are skipped with an error suggesting update_variables instead.`,
   {
     collectionName: z
       .string()
@@ -98,7 +100,13 @@ If modes is provided, existing modes are renamed and new ones added as needed.`,
           scopes: z
             .array(z.string())
             .optional()
-            .describe("Variable scopes (e.g. ['FILL_COLOR', 'STROKE_COLOR'] for color variables)"),
+            .describe(
+              "Variable scopes — controls where the variable appears in the Figma UI picker. " +
+                "COLOR: ALL_FILLS, FRAME_FILL, SHAPE_FILL, TEXT_FILL, STROKE_COLOR, EFFECT_COLOR. " +
+                "FLOAT: CORNER_RADIUS, WIDTH_HEIGHT, GAP, OPACITY, STROKE_FLOAT, EFFECT_FLOAT, FONT_SIZE, FONT_WEIGHT, LINE_HEIGHT, LETTER_SPACING, PARAGRAPH_SPACING, PARAGRAPH_INDENT. " +
+                "STRING: TEXT_CONTENT, FONT_FAMILY, FONT_STYLE. " +
+                "ALL_SCOPES can be used for any type (cannot combine with other scopes).",
+            ),
           values: z
             .record(z.string(), z.any())
             .describe(

@@ -205,6 +205,37 @@ export async function createVariables(params) {
     modeByName[finalModes[i].name] = finalModes[i].modeId;
   }
 
+  // Build a set of existing variable names in this collection for duplicate detection
+  const existingNames = {};
+  for (let i = 0; i < collection.variableIds.length; i++) {
+    const existing = await figma.variables.getVariableByIdAsync(collection.variableIds[i]);
+    if (existing) {
+      existingNames[existing.name] = existing.id;
+    }
+  }
+
+  // Valid scopes per type for validation
+  var VALID_SCOPES = {
+    COLOR: ["ALL_SCOPES", "ALL_FILLS", "FRAME_FILL", "SHAPE_FILL", "TEXT_FILL", "STROKE_COLOR", "EFFECT_COLOR"],
+    FLOAT: [
+      "ALL_SCOPES",
+      "CORNER_RADIUS",
+      "WIDTH_HEIGHT",
+      "GAP",
+      "OPACITY",
+      "STROKE_FLOAT",
+      "EFFECT_FLOAT",
+      "FONT_SIZE",
+      "FONT_WEIGHT",
+      "LINE_HEIGHT",
+      "LETTER_SPACING",
+      "PARAGRAPH_SPACING",
+      "PARAGRAPH_INDENT",
+    ],
+    STRING: ["ALL_SCOPES", "TEXT_CONTENT", "FONT_FAMILY", "FONT_STYLE"],
+    BOOLEAN: ["ALL_SCOPES", "TEXT_CONTENT"],
+  };
+
   // Create variables and set values
   const results = [];
   const commandId = params.commandId;
@@ -218,7 +249,35 @@ export async function createVariables(params) {
     const spec = variableSpecs[i];
     try {
       const resolvedType = spec.type || "COLOR";
-      const variable = figma.variables.createVariable(spec.name, collection.id, resolvedType);
+
+      // Check for duplicate names — skip if already exists
+      if (existingNames[spec.name]) {
+        results.push({
+          success: false,
+          name: spec.name,
+          error: "Variable already exists with id " + existingNames[spec.name] + ". Use update_variables to modify it.",
+        });
+        continue;
+      }
+
+      // Validate scopes before creating the variable
+      if (spec.scopes && Array.isArray(spec.scopes)) {
+        const validForType = VALID_SCOPES[resolvedType] || VALID_SCOPES.COLOR;
+        for (let s = 0; s < spec.scopes.length; s++) {
+          if (validForType.indexOf(spec.scopes[s]) === -1) {
+            throw new Error(
+              "Invalid scope '" +
+                spec.scopes[s] +
+                "' for type " +
+                resolvedType +
+                ". Valid: " +
+                validForType.join(", "),
+            );
+          }
+        }
+      }
+
+      const variable = figma.variables.createVariable(spec.name, collection, resolvedType);
 
       if (spec.description) {
         variable.description = spec.description;
@@ -249,6 +308,8 @@ export async function createVariables(params) {
         }
       }
 
+      // Track for in-batch duplicate detection
+      existingNames[spec.name] = variable.id;
       results.push({ success: true, name: spec.name, id: variable.id, type: resolvedType });
     } catch (e) {
       results.push({ success: false, name: spec.name, error: e.message || String(e) });
