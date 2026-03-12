@@ -79,10 +79,7 @@ Duplicate variable names in the same collection are skipped with an error sugges
       .string()
       .optional()
       .describe("Name of the collection to create or find. Creates new if not found."),
-    collectionId: z
-      .string()
-      .optional()
-      .describe("ID of an existing collection. Takes precedence over collectionName."),
+    collectionId: z.string().optional().describe("ID of an existing collection. Takes precedence over collectionName."),
     modes: z
       .array(z.string())
       .optional()
@@ -119,7 +116,11 @@ Duplicate variable names in the same collection are skipped with an error sugges
   },
   async ({ collectionName, collectionId, modes, variables }: any) => {
     try {
-      const result = await sendCommandToFigma("create_variables", { collectionName, collectionId, modes, variables }, 60000);
+      const result = await sendCommandToFigma(
+        "create_variables",
+        { collectionName, collectionId, modes, variables },
+        60000,
+      );
       return {
         content: [
           {
@@ -206,6 +207,217 @@ Multiple operations in one call:
           {
             type: "text",
             text: `Error updating variables: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  },
+);
+
+// Create Styles Tool — create paint, text, effect, and grid styles in batch
+server.tool(
+  "create_styles",
+  `Create local styles in the current Figma document.
+
+Supports four style types: PAINT (colors/gradients), TEXT (typography), EFFECT (shadows/blurs), GRID (layout grids).
+
+Create paint styles:
+  { styles: [
+    { type: "PAINT", name: "Brand/Primary", color: { r: 0.2, g: 0.4, b: 0.9, a: 1 } },
+    { type: "PAINT", name: "Brand/Gradient", paints: [{ type: "GRADIENT_LINEAR", gradientStops: [...], gradientTransform: [...] }] }
+  ]}
+
+Create text styles:
+  { styles: [
+    { type: "TEXT", name: "Heading/H1", fontFamily: "Inter", fontStyle: "Bold", fontSize: 32, lineHeight: 40, letterSpacing: -0.5 },
+    { type: "TEXT", name: "Body/Regular", fontFamily: "Inter", fontStyle: "Regular", fontSize: 16, lineHeight: { value: 150, unit: "PERCENT" } }
+  ]}
+
+Create effect styles:
+  { styles: [
+    { type: "EFFECT", name: "Elevation/200", effects: [
+      { type: "DROP_SHADOW", color: { r: 0, g: 0, b: 0, a: 0.15 }, offset: { x: 0, y: 4 }, radius: 8, spread: 0, visible: true, blendMode: "NORMAL" }
+    ]}
+  ]}
+
+Create grid styles:
+  { styles: [
+    { type: "GRID", name: "Grid/12Column", grids: [
+      { pattern: "COLUMNS", count: 12, gutterSize: 16, offset: 0, alignment: "STRETCH" }
+    ]}
+  ]}
+
+Notes:
+- PAINT styles accept either a 'color' object (solid color shorthand) or a 'paints' array (full Figma paint objects for gradients/images/stacks).
+- TEXT styles require valid fontFamily+fontStyle — fonts are loaded automatically. lineHeight accepts a number (pixels), "AUTO", or { value, unit: "PIXELS"|"PERCENT" }.
+- Colors use RGBA 0-1 range.
+- Duplicate style names within the same type are skipped with an error suggesting update_styles.`,
+  {
+    styles: z
+      .array(
+        z.object({
+          type: z.enum(["PAINT", "TEXT", "EFFECT", "GRID"]).describe("Style type"),
+          name: z.string().describe("Style name (use / for grouping, e.g. 'Brand/Primary')"),
+          description: z.string().optional().describe("Style description"),
+          // Paint style properties
+          color: z
+            .object({
+              r: z.number(),
+              g: z.number(),
+              b: z.number(),
+              a: z.number().optional(),
+            })
+            .optional()
+            .describe("Solid color shorthand for PAINT styles (RGBA 0-1)"),
+          paints: z
+            .array(z.any())
+            .optional()
+            .describe("Full Figma paint objects array for PAINT styles (gradients, images, stacks)"),
+          // Text style properties
+          fontFamily: z.string().optional().describe("Font family for TEXT styles (default: 'Inter')"),
+          fontStyle: z.string().optional().describe("Font style for TEXT styles (default: 'Regular')"),
+          fontSize: z.number().optional().describe("Font size for TEXT styles"),
+          lineHeight: z
+            .any()
+            .optional()
+            .describe("Line height: number (pixels), 'AUTO', or { value, unit: 'PIXELS'|'PERCENT' }"),
+          letterSpacing: z
+            .any()
+            .optional()
+            .describe("Letter spacing: number (pixels) or { value, unit: 'PIXELS'|'PERCENT' }"),
+          paragraphSpacing: z.number().optional().describe("Paragraph spacing in pixels"),
+          paragraphIndent: z.number().optional().describe("Paragraph indent in pixels"),
+          textDecoration: z.enum(["NONE", "UNDERLINE", "STRIKETHROUGH"]).optional().describe("Text decoration"),
+          textCase: z
+            .enum(["ORIGINAL", "UPPER", "LOWER", "TITLE", "SMALL_CAPS", "SMALL_CAPS_FORCED"])
+            .optional()
+            .describe("Text case transformation"),
+          // Effect style properties
+          effects: z.array(z.any()).optional().describe("Figma effect objects array for EFFECT styles"),
+          // Grid style properties
+          grids: z.array(z.any()).optional().describe("Figma layout grid objects array for GRID styles"),
+        }),
+      )
+      .min(1)
+      .describe("Array of styles to create"),
+  },
+  async ({ styles }: any) => {
+    try {
+      const result = await sendCommandToFigma("create_styles", { styles }, 60000);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error creating styles: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  },
+);
+
+// Update Styles Tool — modify properties, rename, or delete existing styles
+server.tool(
+  "update_styles",
+  `Update, rename, or delete existing local styles.
+
+Update paint style color:
+  { updates: [
+    { styleId: "S:abc...", color: { r: 1, g: 0, b: 0, a: 1 } }
+  ]}
+
+Update text style properties:
+  { updates: [
+    { styleId: "S:abc...", fontSize: 24, fontFamily: "Roboto", fontStyle: "Medium" }
+  ]}
+
+Rename a style:
+  { updates: [{ styleId: "S:abc...", name: "Brand/NewName" }] }
+
+Delete styles:
+  { updates: [
+    { styleId: "S:abc...", delete: true },
+    { styleId: "S:def...", delete: true }
+  ]}
+
+Update effect style:
+  { updates: [
+    { styleId: "S:abc...", effects: [{ type: "DROP_SHADOW", color: { r: 0, g: 0, b: 0, a: 0.2 }, offset: { x: 0, y: 8 }, radius: 16, spread: 0, visible: true, blendMode: "NORMAL" }] }
+  ]}
+
+Multiple operations in one call:
+  { updates: [
+    { styleId: "S:1", name: "NewName" },
+    { styleId: "S:2", fontSize: 20, lineHeight: 28 },
+    { styleId: "S:3", delete: true }
+  ]}`,
+  {
+    updates: z
+      .array(
+        z.object({
+          styleId: z.string().describe("ID of the style to update or delete"),
+          delete: z.boolean().optional().describe("Set true to delete this style"),
+          name: z.string().optional().describe("New name for the style"),
+          description: z.string().optional().describe("New description"),
+          // Paint style properties
+          color: z
+            .object({
+              r: z.number(),
+              g: z.number(),
+              b: z.number(),
+              a: z.number().optional(),
+            })
+            .optional()
+            .describe("New solid color for PAINT styles (RGBA 0-1)"),
+          paints: z.array(z.any()).optional().describe("New paints array for PAINT styles"),
+          // Text style properties
+          fontFamily: z.string().optional().describe("New font family for TEXT styles"),
+          fontStyle: z.string().optional().describe("New font style for TEXT styles"),
+          fontSize: z.number().optional().describe("New font size for TEXT styles"),
+          lineHeight: z.any().optional().describe("New line height: number (pixels), 'AUTO', or { value, unit }"),
+          letterSpacing: z.any().optional().describe("New letter spacing: number (pixels) or { value, unit }"),
+          paragraphSpacing: z.number().optional().describe("New paragraph spacing"),
+          paragraphIndent: z.number().optional().describe("New paragraph indent"),
+          textDecoration: z.enum(["NONE", "UNDERLINE", "STRIKETHROUGH"]).optional().describe("New text decoration"),
+          textCase: z
+            .enum(["ORIGINAL", "UPPER", "LOWER", "TITLE", "SMALL_CAPS", "SMALL_CAPS_FORCED"])
+            .optional()
+            .describe("New text case"),
+          // Effect style properties
+          effects: z.array(z.any()).optional().describe("New effects array for EFFECT styles"),
+          // Grid style properties
+          grids: z.array(z.any()).optional().describe("New grids array for GRID styles"),
+        }),
+      )
+      .min(1)
+      .describe("Array of style update operations"),
+  },
+  async ({ updates }: any) => {
+    try {
+      const result = await sendCommandToFigma("update_styles", { updates }, 60000);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error updating styles: ${error instanceof Error ? error.message : String(error)}`,
           },
         ],
       };

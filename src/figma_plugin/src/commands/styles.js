@@ -1,5 +1,5 @@
 // Styles commands: getStyles, getLocalVariables, getLocalComponents,
-// getDesignSystem, createVariables, updateVariables
+// getDesignSystem, createVariables, updateVariables, createStyles, updateStyles
 
 import { sendProgressUpdate } from "../helpers.js";
 
@@ -16,24 +16,49 @@ export async function getStyles() {
       id: style.id,
       name: style.name,
       key: style.key,
-      paint: style.paints[0],
+      description: style.description || undefined,
+      paints: style.paints,
     })),
-    texts: styles.texts.map((style) => ({
-      id: style.id,
-      name: style.name,
-      key: style.key,
-      fontSize: style.fontSize,
-      fontName: style.fontName,
-    })),
+    texts: styles.texts.map((style) => {
+      const entry = {
+        id: style.id,
+        name: style.name,
+        key: style.key,
+        description: style.description || undefined,
+        fontFamily: style.fontName.family,
+        fontStyle: style.fontName.style,
+        fontSize: style.fontSize,
+      };
+      if (style.lineHeight && style.lineHeight.unit !== "AUTO") {
+        entry.lineHeight = style.lineHeight;
+      }
+      if (style.letterSpacing && style.letterSpacing.value !== 0) {
+        entry.letterSpacing = style.letterSpacing;
+      }
+      if (style.paragraphSpacing && style.paragraphSpacing !== 0) {
+        entry.paragraphSpacing = style.paragraphSpacing;
+      }
+      if (style.textDecoration && style.textDecoration !== "NONE") {
+        entry.textDecoration = style.textDecoration;
+      }
+      if (style.textCase && style.textCase !== "ORIGINAL") {
+        entry.textCase = style.textCase;
+      }
+      return entry;
+    }),
     effects: styles.effects.map((style) => ({
       id: style.id,
       name: style.name,
       key: style.key,
+      description: style.description || undefined,
+      effects: style.effects,
     })),
     grids: styles.grids.map((style) => ({
       id: style.id,
       name: style.name,
       key: style.key,
+      description: style.description || undefined,
+      grids: style.layoutGrids,
     })),
   };
 }
@@ -266,12 +291,7 @@ export async function createVariables(params) {
         for (let s = 0; s < spec.scopes.length; s++) {
           if (validForType.indexOf(spec.scopes[s]) === -1) {
             throw new Error(
-              "Invalid scope '" +
-                spec.scopes[s] +
-                "' for type " +
-                resolvedType +
-                ". Valid: " +
-                validForType.join(", "),
+              "Invalid scope '" + spec.scopes[s] + "' for type " + resolvedType + ". Valid: " + validForType.join(", "),
             );
           }
         }
@@ -317,12 +337,28 @@ export async function createVariables(params) {
 
     if (commandId && (i + 1) % 5 === 0) {
       const pct = Math.round(((i + 1) / totalVars) * 100);
-      sendProgressUpdate(commandId, "create_variables", "in_progress", pct, totalVars, i + 1, "Created " + (i + 1) + " of " + totalVars);
+      sendProgressUpdate(
+        commandId,
+        "create_variables",
+        "in_progress",
+        pct,
+        totalVars,
+        i + 1,
+        "Created " + (i + 1) + " of " + totalVars,
+      );
     }
   }
 
   if (commandId) {
-    sendProgressUpdate(commandId, "create_variables", "completed", 100, totalVars, totalVars, "Variable creation completed");
+    sendProgressUpdate(
+      commandId,
+      "create_variables",
+      "completed",
+      100,
+      totalVars,
+      totalVars,
+      "Variable creation completed",
+    );
   }
 
   const successCount = results.filter((r) => r.success).length;
@@ -416,12 +452,348 @@ export async function updateVariables(params) {
 
     if (commandId && (i + 1) % 5 === 0) {
       const pct = Math.round(((i + 1) / totalOps) * 100);
-      sendProgressUpdate(commandId, "update_variables", "in_progress", pct, totalOps, i + 1, "Updated " + (i + 1) + " of " + totalOps);
+      sendProgressUpdate(
+        commandId,
+        "update_variables",
+        "in_progress",
+        pct,
+        totalOps,
+        i + 1,
+        "Updated " + (i + 1) + " of " + totalOps,
+      );
     }
   }
 
   if (commandId) {
-    sendProgressUpdate(commandId, "update_variables", "completed", 100, totalOps, totalOps, "Variable updates completed");
+    sendProgressUpdate(
+      commandId,
+      "update_variables",
+      "completed",
+      100,
+      totalOps,
+      totalOps,
+      "Variable updates completed",
+    );
+  }
+
+  const successCount = results.filter((r) => r.success).length;
+  return {
+    success: successCount === results.length,
+    totalUpdated: successCount,
+    totalFailed: results.length - successCount,
+    results: results,
+  };
+}
+
+// Create styles — paint, text, effect, and grid styles in batch
+export async function createStyles(params) {
+  const styleSpecs = params.styles;
+  const commandId = params.commandId;
+
+  if (!styleSpecs || !Array.isArray(styleSpecs) || styleSpecs.length === 0) {
+    throw new Error("Missing or empty styles array");
+  }
+
+  // Build set of existing style names for duplicate detection
+  var existingPaintNames = {};
+  var existingTextNames = {};
+  var existingEffectNames = {};
+  var existingGridNames = {};
+
+  const paintStyles = await figma.getLocalPaintStylesAsync();
+  for (let i = 0; i < paintStyles.length; i++) {
+    existingPaintNames[paintStyles[i].name] = paintStyles[i].id;
+  }
+  const textStyles = await figma.getLocalTextStylesAsync();
+  for (let i = 0; i < textStyles.length; i++) {
+    existingTextNames[textStyles[i].name] = textStyles[i].id;
+  }
+  const effectStyles = await figma.getLocalEffectStylesAsync();
+  for (let i = 0; i < effectStyles.length; i++) {
+    existingEffectNames[effectStyles[i].name] = effectStyles[i].id;
+  }
+  const gridStyles = await figma.getLocalGridStylesAsync();
+  for (let i = 0; i < gridStyles.length; i++) {
+    existingGridNames[gridStyles[i].name] = gridStyles[i].id;
+  }
+
+  var existingByType = {
+    PAINT: existingPaintNames,
+    TEXT: existingTextNames,
+    EFFECT: existingEffectNames,
+    GRID: existingGridNames,
+  };
+
+  const results = [];
+  const totalStyles = styleSpecs.length;
+
+  if (commandId) {
+    sendProgressUpdate(commandId, "create_styles", "started", 0, totalStyles, 0, "Creating styles");
+  }
+
+  for (let i = 0; i < styleSpecs.length; i++) {
+    const spec = styleSpecs[i];
+    try {
+      const styleType = spec.type;
+      if (!styleType || ["PAINT", "TEXT", "EFFECT", "GRID"].indexOf(styleType) === -1) {
+        throw new Error("Invalid style type: " + styleType + ". Must be PAINT, TEXT, EFFECT, or GRID");
+      }
+
+      // Check for duplicates
+      const existingNames = existingByType[styleType];
+      if (existingNames[spec.name]) {
+        results.push({
+          success: false,
+          name: spec.name,
+          type: styleType,
+          error: "Style already exists with id " + existingNames[spec.name] + ". Use update_styles to modify it.",
+        });
+        continue;
+      }
+
+      let style;
+
+      if (styleType === "PAINT") {
+        style = figma.createPaintStyle();
+        style.name = spec.name;
+        if (spec.paints && Array.isArray(spec.paints)) {
+          style.paints = spec.paints;
+        } else if (spec.color) {
+          // Convenience: accept a single solid color
+          const paint = { type: "SOLID", color: { r: spec.color.r, g: spec.color.g, b: spec.color.b } };
+          if (spec.color.a !== undefined && spec.color.a < 1) {
+            paint.opacity = spec.color.a;
+          }
+          style.paints = [paint];
+        } else {
+          throw new Error("PAINT style requires 'paints' array or 'color' object");
+        }
+      } else if (styleType === "TEXT") {
+        style = figma.createTextStyle();
+        style.name = spec.name;
+
+        // Load and set font
+        const family = spec.fontFamily || "Inter";
+        const fontStyle = spec.fontStyle || "Regular";
+        await figma.loadFontAsync({ family: family, style: fontStyle });
+        style.fontName = { family: family, style: fontStyle };
+
+        if (spec.fontSize !== undefined) {
+          style.fontSize = spec.fontSize;
+        }
+        if (spec.lineHeight !== undefined) {
+          // Accept number (PIXELS), object { value, unit }, or "AUTO"
+          if (spec.lineHeight === "AUTO") {
+            style.lineHeight = { unit: "AUTO" };
+          } else if (typeof spec.lineHeight === "number") {
+            style.lineHeight = { value: spec.lineHeight, unit: "PIXELS" };
+          } else {
+            style.lineHeight = spec.lineHeight;
+          }
+        }
+        if (spec.letterSpacing !== undefined) {
+          if (typeof spec.letterSpacing === "number") {
+            style.letterSpacing = { value: spec.letterSpacing, unit: "PIXELS" };
+          } else {
+            style.letterSpacing = spec.letterSpacing;
+          }
+        }
+        if (spec.paragraphSpacing !== undefined) {
+          style.paragraphSpacing = spec.paragraphSpacing;
+        }
+        if (spec.paragraphIndent !== undefined) {
+          style.paragraphIndent = spec.paragraphIndent;
+        }
+        if (spec.textDecoration !== undefined) {
+          style.textDecoration = spec.textDecoration;
+        }
+        if (spec.textCase !== undefined) {
+          style.textCase = spec.textCase;
+        }
+      } else if (styleType === "EFFECT") {
+        style = figma.createEffectStyle();
+        style.name = spec.name;
+        if (spec.effects && Array.isArray(spec.effects)) {
+          style.effects = spec.effects;
+        } else {
+          throw new Error("EFFECT style requires 'effects' array");
+        }
+      } else if (styleType === "GRID") {
+        style = figma.createGridStyle();
+        style.name = spec.name;
+        if (spec.grids && Array.isArray(spec.grids)) {
+          style.layoutGrids = spec.grids;
+        } else {
+          throw new Error("GRID style requires 'grids' array");
+        }
+      }
+
+      if (spec.description) {
+        style.description = spec.description;
+      }
+
+      // Track for in-batch duplicate detection
+      existingNames[spec.name] = style.id;
+      results.push({ success: true, name: spec.name, id: style.id, key: style.key, type: styleType });
+    } catch (e) {
+      results.push({ success: false, name: spec.name, type: spec.type, error: e.message || String(e) });
+    }
+
+    if (commandId && (i + 1) % 5 === 0) {
+      const pct = Math.round(((i + 1) / totalStyles) * 100);
+      sendProgressUpdate(
+        commandId,
+        "create_styles",
+        "in_progress",
+        pct,
+        totalStyles,
+        i + 1,
+        "Created " + (i + 1) + " of " + totalStyles,
+      );
+    }
+  }
+
+  if (commandId) {
+    sendProgressUpdate(
+      commandId,
+      "create_styles",
+      "completed",
+      100,
+      totalStyles,
+      totalStyles,
+      "Style creation completed",
+    );
+  }
+
+  const successCount = results.filter((r) => r.success).length;
+  return {
+    success: successCount === results.length,
+    totalCreated: successCount,
+    totalFailed: results.length - successCount,
+    results: results,
+  };
+}
+
+// Update, rename, or delete existing styles
+export async function updateStyles(params) {
+  const updates = params.updates;
+  const commandId = params.commandId;
+
+  if (!updates || !Array.isArray(updates) || updates.length === 0) {
+    throw new Error("Missing or empty updates array");
+  }
+
+  const totalOps = updates.length;
+  const results = [];
+
+  if (commandId) {
+    sendProgressUpdate(commandId, "update_styles", "started", 0, totalOps, 0, "Updating styles");
+  }
+
+  for (let i = 0; i < updates.length; i++) {
+    const update = updates[i];
+    try {
+      const style = await figma.getStyleByIdAsync(update.styleId);
+      if (!style) throw new Error("Style not found: " + update.styleId);
+
+      if (update.delete) {
+        const styleName = style.name;
+        style.remove();
+        results.push({ success: true, styleId: update.styleId, action: "deleted", name: styleName });
+        continue;
+      }
+
+      // Common properties
+      if (update.name !== undefined) {
+        style.name = update.name;
+      }
+      if (update.description !== undefined) {
+        style.description = update.description;
+      }
+
+      // Type-specific properties
+      const styleType = style.type;
+
+      if (styleType === "PAINT") {
+        if (update.paints && Array.isArray(update.paints)) {
+          style.paints = update.paints;
+        } else if (update.color) {
+          const paint = { type: "SOLID", color: { r: update.color.r, g: update.color.g, b: update.color.b } };
+          if (update.color.a !== undefined && update.color.a < 1) {
+            paint.opacity = update.color.a;
+          }
+          style.paints = [paint];
+        }
+      } else if (styleType === "TEXT") {
+        // Font name change requires loading the font
+        if (update.fontFamily !== undefined || update.fontStyle !== undefined) {
+          const family = update.fontFamily || style.fontName.family;
+          const fStyle = update.fontStyle || style.fontName.style;
+          await figma.loadFontAsync({ family: family, style: fStyle });
+          style.fontName = { family: family, style: fStyle };
+        }
+        if (update.fontSize !== undefined) {
+          style.fontSize = update.fontSize;
+        }
+        if (update.lineHeight !== undefined) {
+          if (update.lineHeight === "AUTO") {
+            style.lineHeight = { unit: "AUTO" };
+          } else if (typeof update.lineHeight === "number") {
+            style.lineHeight = { value: update.lineHeight, unit: "PIXELS" };
+          } else {
+            style.lineHeight = update.lineHeight;
+          }
+        }
+        if (update.letterSpacing !== undefined) {
+          if (typeof update.letterSpacing === "number") {
+            style.letterSpacing = { value: update.letterSpacing, unit: "PIXELS" };
+          } else {
+            style.letterSpacing = update.letterSpacing;
+          }
+        }
+        if (update.paragraphSpacing !== undefined) {
+          style.paragraphSpacing = update.paragraphSpacing;
+        }
+        if (update.paragraphIndent !== undefined) {
+          style.paragraphIndent = update.paragraphIndent;
+        }
+        if (update.textDecoration !== undefined) {
+          style.textDecoration = update.textDecoration;
+        }
+        if (update.textCase !== undefined) {
+          style.textCase = update.textCase;
+        }
+      } else if (styleType === "EFFECT") {
+        if (update.effects && Array.isArray(update.effects)) {
+          style.effects = update.effects;
+        }
+      } else if (styleType === "GRID") {
+        if (update.grids && Array.isArray(update.grids)) {
+          style.layoutGrids = update.grids;
+        }
+      }
+
+      results.push({ success: true, styleId: update.styleId, action: "updated", name: style.name });
+    } catch (e) {
+      results.push({ success: false, styleId: update.styleId, error: e.message || String(e) });
+    }
+
+    if (commandId && (i + 1) % 5 === 0) {
+      const pct = Math.round(((i + 1) / totalOps) * 100);
+      sendProgressUpdate(
+        commandId,
+        "update_styles",
+        "in_progress",
+        pct,
+        totalOps,
+        i + 1,
+        "Updated " + (i + 1) + " of " + totalOps,
+      );
+    }
+  }
+
+  if (commandId) {
+    sendProgressUpdate(commandId, "update_styles", "completed", 100, totalOps, totalOps, "Style updates completed");
   }
 
   const successCount = results.filter((r) => r.success).length;
@@ -459,4 +831,3 @@ export var FIELD_MAP = {
   visible: "visible",
   characters: "characters",
 };
-
