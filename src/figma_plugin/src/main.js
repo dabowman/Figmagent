@@ -12,6 +12,7 @@ import {
   readMyDesign,
   getReactions,
   exportNodeAsImage,
+  getNodeTree,
 } from "./commands/document.js";
 
 // Command imports — create
@@ -91,6 +92,7 @@ var READ_OPS = {
   get_selection: true,
   get_node_info: true,
   get_nodes_info: true,
+  get_node_tree: true,
   read_my_design: true,
   scan_text_nodes: true,
   scan_nodes_by_types: true,
@@ -237,6 +239,11 @@ async function handleCommand(command, params) {
         throw new Error("Missing or invalid nodeIds parameter");
       }
       return await getNodesInfo(params.nodeIds);
+    case "get_node_tree":
+      if (!params || !params.nodeId) {
+        throw new Error("Missing nodeId parameter");
+      }
+      return await getNodeTree(params);
     case "read_my_design":
       return await readMyDesign();
     case "create_rectangle":

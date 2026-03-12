@@ -39,7 +39,7 @@ Runs inside Figma. Source lives in `src/figma_plugin/src/` as ES modules, bundle
 - `src/main.js` — entry point: imports, concurrency control, command dispatcher, plugin UI handlers
 - `src/helpers.js` — shared utilities: state, progress updates, toNumber, filterFigmaNode, etc.
 - `src/setcharacters.js` — font-safe text replacement (handles mixed fonts)
-- `src/commands/document.js` — getDocumentInfo, getSelection, getNodeInfo, readMyDesign, etc.
+- `src/commands/document.js` — getDocumentInfo, getSelection, getNodeInfo, readMyDesign, getNodeTree (FSGN traversal), exportNodeAsImage
 - `src/commands/create.js` — createRectangle, createFrame, createText, createFrameTree
 - `src/commands/modify.js` — setFillColor, moveNode, deleteNode, cloneAndModify, etc.
 - `src/commands/text.js` — setTextContent, setMultipleTextContents
@@ -60,8 +60,9 @@ Runs inside Figma. Source lives in `src/figma_plugin/src/` as ES modules, bundle
 - **Reconnection**: WebSocket auto-reconnects after 2 seconds on disconnect.
 - **Zod validation**: All tool parameters are validated with Zod schemas.
 - **Batch operations**: Prefer `set_multiple_text_contents`, `delete_multiple_nodes`, `set_multiple_annotations`, `set_multiple_properties`, `create_frame_tree` over repeated single-node calls.
-- **Large nodes**: Use `get_node_info` with `depth=1` or `depth=2` for large component sets to avoid token overflow. Use `depth=2` or `depth=3` when first inspecting component sets or complex frames. Omit `depth` for full tree on small nodes.
-- **Layout inspection**: `get_node_info` and `read_my_design` return auto-layout properties (layoutMode, sizing modes, alignment, spacing, padding, layoutWrap) on frames with active auto-layout. Default values (MIN alignment, zero spacing/padding, NO_WRAP) are omitted to keep output concise.
+- **Tree inspection**: Prefer `get_node_tree` over `read_my_design` or repeated `get_node_info` calls. Use `detail="structure"` for orientation (~5 tokens/node), `detail="layout"` for building/cloning (~15 tokens/node), `detail="full"` for variable/style audits (~30 tokens/node). Start with `depth=3` for component internals. Instances are leaf nodes by default — call `get_node_tree` on an instance ID to expand its internals. If `tokenEstimate > 8000`, narrow with `depth` or `filter`.
+- **Layout inspection**: `get_node_tree` and `get_node_info` return auto-layout properties (layoutMode, sizing modes, alignment, spacing, padding, layoutWrap) on frames with active auto-layout. Default values (MIN alignment, zero spacing/padding, NO_WRAP) are omitted to keep output concise.
+- **FSGN format**: `get_node_tree` returns YAML in Figma Scene Graph Notation. The `meta` section has `nodeCount` and `tokenEstimate`. The `defs` section deduplicates variables (`v1`, `v2`…), styles (`s1`, `s2`…), and components (`c1`, `c2`…) referenced throughout `nodes`. Use the short IDs from `defs` when calling `bind_variable` or `set_text_style`.
 - **Design tokens**: Use `get_local_variables` to discover variables, then `batch_bind_variables` to bind them to node properties in bulk. For single bindings, `bind_variable` also works. Color variables bind via `setBoundVariableForPaint`; scalar variables bind via `setBoundVariable`.
 - **Text styles**: Use `get_styles` to discover text styles, then `batch_set_text_styles` to apply them to multiple text nodes at once (deduplicates font loading). For single nodes, `set_text_style` also works.
 - **Component properties**: Use `get_component_properties` to discover property definitions (names with #suffix, types, defaults). Then `add_component_property` to add BOOLEAN/TEXT/INSTANCE_SWAP/VARIANT properties, `edit_component_property` to rename or change defaults, `delete_component_property` to remove. BOOLEAN defaults are real booleans; all others are strings. Use `set_exposed_instance` on a nested INSTANCE to create a slot.
@@ -123,7 +124,7 @@ Uncomment the `hostname: "0.0.0.0"` line in `src/socket.ts` to allow connections
 
 - Always call `join_channel` before issuing any Figma commands (no arguments needed — auto-discovers the active plugin channel via the relay's `GET /channels` endpoint)
 - Call `get_document_info` first to understand the design structure
-- Use `read_my_design` or `get_selection` before making modifications
+- Use `get_node_tree(detail="structure", depth=2)` on a target node to orient before making modifications. Prefer this over `read_my_design` (raw JSON dump) and repeated `get_node_info` depth escalation
 - Use `get_styles` and `get_local_variables` to discover the design system before applying styles/tokens
 - The plugin and relay must both be running before any tool calls succeed
 - After 2 consecutive identical errors on the same tool, stop retrying and diagnose the root cause (wrong node ID, lost connection, or type mismatch)

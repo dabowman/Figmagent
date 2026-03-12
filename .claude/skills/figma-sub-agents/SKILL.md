@@ -5,7 +5,9 @@ description: "Orchestrator guide for delegating Figma MCP phases to specialized 
 
 # Figma MCP Sub-Agent Orchestration
 
-Large Figma sessions hit three problems in a single-agent context: **context pressure** (300K-character `read_my_design` responses), **attention drift** (losing track of which nodes are done after 30+ sequential calls), and **error pollution** (9 retries of a failing tool consuming planning context). Sub-agents solve this by giving each phase its own clean context window.
+Large Figma sessions hit three problems in a single-agent context: **context pressure** (large `read_my_design` responses, raw JSON dumps), **attention drift** (losing track of which nodes are done after 30+ sequential calls), and **error pollution** (9 retries of a failing tool consuming planning context). Sub-agents solve this by giving each phase its own clean context window.
+
+The primary tool for discovery is **`get_node_tree`**, which returns structured YAML (FSGN format) instead of raw JSON, with deduplicated variable/style/component defs and a `tokenEstimate` in the meta. It replaces the old `read_my_design` → `get_node_info` depth escalation pattern.
 
 Sub-agents also enable **parallel execution**: multiple agents can modify different parts of the Figma document simultaneously, with plugin-level concurrency control ensuring safety.
 
@@ -22,7 +24,7 @@ Sub-agents also enable **parallel execution**: multiple agents can modify differ
 - Target component set has **8+ variants**
 - Frame tree depth is unknown or likely > 4 levels
 - This is the first time seeing this Figma file in the session
-- A `read_my_design` or `get_node_info` response was truncated or very large (>50K characters)
+- A `get_node_tree` response has `tokenEstimate > 8000` even at `detail=structure`
 - You need both a full text node inventory AND a variable binding audit in the same pass
 
 **Skip it when** you already have the node IDs and structure, the target has < 20 children, or you only need one piece of info (just call the tool directly).
@@ -256,6 +258,10 @@ RULES:
 ## Styler Sub-Agent
 
 Applies variable bindings and text styles. Uses general-purpose agent type.
+
+### Pre-flight with get_node_tree
+
+Before spawning Styler agents, the orchestrator can call `get_node_tree(nodeId, detail="full")` on the built subtree. The FSGN `defs` section lists all variables and styles already present; `variableBindings` on each node shows what's already bound. This makes the binding plan explicit — pass it directly to the Styler via `VARIABLE BINDINGS TO APPLY`.
 
 ### Spawning
 

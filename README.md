@@ -1,6 +1,6 @@
 # Talk to Figma MCP
 
-MCP server that bridges AI agents (Claude Code, Cursor) with Figma through a WebSocket relay and Figma plugin. Forked from [sonnylazuardi/cursor-talk-to-figma-mcp](https://github.com/sonnylazuardi/cursor-talk-to-figma-mcp) with significant additions: 67 tools, design token binding, batch operations, component property management, library access, file comments, plugin concurrency control, and sub-agent orchestration.
+MCP server that bridges AI agents (Claude Code, Cursor) with Figma through a WebSocket relay and Figma plugin. Forked from [sonnylazuardi/cursor-talk-to-figma-mcp](https://github.com/sonnylazuardi/cursor-talk-to-figma-mcp) with significant additions: 63 tools, structured tree inspection (FSGN), design token binding, batch operations, component property management, library access, file comments, plugin concurrency control, and sub-agent orchestration.
 
 ```
 AI Agent <-(stdio)-> MCP Server <-(WebSocket)-> Relay <-(WebSocket)-> Figma Plugin
@@ -60,7 +60,7 @@ Add to your MCP configuration:
 
 Uncomment the `hostname: "0.0.0.0"` line in `src/socket.ts` to allow connections from the Windows host.
 
-## Tools (62)
+## Tools (63)
 
 ### Document & Navigation
 
@@ -72,6 +72,7 @@ Uncomment the `hostname: "0.0.0.0"` line in `src/socket.ts` to allow connections
 | `read_my_design` | Get detailed info about current selection |
 | `get_node_info` | Get node details (supports `depth` param to limit tree) |
 | `get_nodes_info` | Get details for multiple nodes by ID |
+| `get_node_tree` | Structured YAML tree (FSGN format) with detail levels: `structure` / `layout` / `full`. Deduplicated variable, style, and component defs. Prefer over `read_my_design` and repeated `get_node_info` calls. |
 | `set_focus` | Select and scroll to a node |
 | `set_selections` | Select multiple nodes |
 

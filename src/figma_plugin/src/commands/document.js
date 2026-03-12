@@ -1,6 +1,6 @@
 // Document, selection, node info, and export commands
 
-import { filterFigmaNode, sendProgressUpdate, generateCommandId, customBase64Encode } from "../helpers.js";
+import { filterFigmaNode, sendProgressUpdate, generateCommandId, customBase64Encode, rgbaToHex } from "../helpers.js";
 
 export async function getDocumentInfo() {
   await figma.currentPage.loadAsync();
@@ -264,6 +264,326 @@ export async function getReactions(nodeIds) {
   } catch (error) {
     throw new Error(`Failed to get reactions: ${error.message}`);
   }
+}
+
+// ─── get_node_tree helpers ────────────────────────────────────────────────────
+
+function buildNodeOutput(n, detail, inclVars, inclStyles, inclComp, collVarIds, collStyleIds, collCompIds) {
+  if (detail === "structure") {
+    return { id: n.id, name: n.name, type: n.type };
+  }
+
+  const out = { id: n.id, name: n.name, type: n.type };
+
+  // dimensions
+  if (n.absoluteBoundingBox) {
+    out.x = n.absoluteBoundingBox.x;
+    out.y = n.absoluteBoundingBox.y;
+    out.width = n.absoluteBoundingBox.width;
+    out.height = n.absoluteBoundingBox.height;
+  }
+
+  // auto-layout (omit defaults)
+  if (n.layoutMode && n.layoutMode !== "NONE") {
+    out.layoutMode = n.layoutMode;
+    if (n.primaryAxisSizingMode) out.primaryAxisSizingMode = n.primaryAxisSizingMode;
+    if (n.counterAxisSizingMode) out.counterAxisSizingMode = n.counterAxisSizingMode;
+    if (n.primaryAxisAlignItems && n.primaryAxisAlignItems !== "MIN")
+      out.primaryAxisAlignItems = n.primaryAxisAlignItems;
+    if (n.counterAxisAlignItems && n.counterAxisAlignItems !== "MIN")
+      out.counterAxisAlignItems = n.counterAxisAlignItems;
+    if (n.itemSpacing && n.itemSpacing > 0) out.itemSpacing = n.itemSpacing;
+    if (n.paddingLeft && n.paddingLeft > 0) out.paddingLeft = n.paddingLeft;
+    if (n.paddingRight && n.paddingRight > 0) out.paddingRight = n.paddingRight;
+    if (n.paddingTop && n.paddingTop > 0) out.paddingTop = n.paddingTop;
+    if (n.paddingBottom && n.paddingBottom > 0) out.paddingBottom = n.paddingBottom;
+    if (n.layoutWrap === "WRAP") out.layoutWrap = "WRAP";
+  }
+
+  if (n.clipsContent) out.clipsContent = true;
+
+  // text content
+  if (n.type === "TEXT" && n.characters) {
+    out.text = n.characters;
+  }
+
+  // instance: componentRef + componentProperties
+  if (n.type === "INSTANCE" && inclComp) {
+    const mc = n.mainComponent;
+    if (mc) {
+      out.componentRef = "COMP::" + mc.id;
+      collCompIds[mc.id] = true;
+    } else {
+      out.componentRef = "(unresolved)";
+    }
+    if (n.componentProperties) {
+      out.componentProperties = n.componentProperties;
+    }
+  }
+
+  // variant properties (COMPONENT nodes)
+  if (n.variantProperties) {
+    out.variantProperties = n.variantProperties;
+  }
+
+  // full level: fills, strokes, variable bindings, text style
+  if (detail === "full") {
+    if (n.fills && n.fills.length > 0) {
+      out.fills = n.fills.map((fill) => {
+        const f = { type: fill.type };
+        if (fill.color) f.color = rgbaToHex(fill.color);
+        if (fill.opacity !== undefined && fill.opacity !== 1) f.opacity = fill.opacity;
+        if (fill.visible !== undefined && !fill.visible) f.visible = false;
+        return f;
+      });
+    }
+
+    if (n.strokes && n.strokes.length > 0) {
+      out.strokes = n.strokes.map((stroke) => {
+        const s = { type: stroke.type };
+        if (stroke.color) s.color = rgbaToHex(stroke.color);
+        if (n.strokeWeight) s.weight = n.strokeWeight;
+        if (n.strokeAlign) s.align = n.strokeAlign;
+        return s;
+      });
+    }
+
+    if (n.cornerRadius !== undefined && n.cornerRadius !== null) {
+      out.cornerRadius = n.cornerRadius;
+    }
+
+    if (n.opacity !== undefined && n.opacity !== 1) {
+      out.opacity = n.opacity;
+    }
+
+    // variable bindings
+    if (inclVars && n.boundVariables) {
+      const bindings = {};
+      const bvKeys = Object.keys(n.boundVariables);
+      for (const field of bvKeys) {
+        const binding = n.boundVariables[field];
+        if (Array.isArray(binding)) {
+          const refs = [];
+          for (const slot of binding) {
+            if (slot && slot.id) {
+              refs.push("VAR::" + slot.id);
+              collVarIds[slot.id] = true;
+            }
+          }
+          if (refs.length > 0) bindings[field] = refs;
+        } else if (binding && binding.id) {
+          bindings[field] = "VAR::" + binding.id;
+          collVarIds[binding.id] = true;
+        }
+      }
+      if (Object.keys(bindings).length > 0) {
+        out.variableBindings = bindings;
+      }
+    }
+
+    // text style
+    if (inclStyles && n.textStyleId && typeof n.textStyleId === "string") {
+      out.textStyle = "STYLE::" + n.textStyleId;
+      collStyleIds[n.textStyleId] = true;
+    }
+  }
+
+  return out;
+}
+
+export async function getNodeTree(params) {
+  const nodeId = params && params.nodeId ? params.nodeId : null;
+  const detail = params && params.detail ? params.detail : "layout";
+  const userDepth = params && params.depth !== undefined && params.depth !== null ? params.depth : undefined;
+  const filter = params && params.filter ? params.filter : {};
+  const visibleOnly = filter.visibleOnly !== false;
+  const typeWhitelist = filter.types && filter.types.length > 0 ? filter.types : null;
+  const namePattern = filter.namePattern && filter.namePattern.length > 0 ? filter.namePattern : null;
+  const inclVars = params && params.includeVariables !== false;
+  const inclStyles = params && params.includeStyles !== false;
+  const inclComp = params && params.includeComponentMeta !== false;
+
+  if (!nodeId) {
+    throw new Error("Missing nodeId parameter");
+  }
+
+  let nameRegex = null;
+  if (namePattern) {
+    try {
+      nameRegex = new RegExp(namePattern);
+    } catch (_e) {
+      throw new Error("Invalid namePattern regex: " + namePattern);
+    }
+  }
+
+  const root = await figma.getNodeByIdAsync(nodeId);
+  if (!root) {
+    throw new Error("Node not found: " + nodeId);
+  }
+
+  // Collectors (keyed by full ID, deduplicated)
+  const collVarIds = {};
+  const collStyleIds = {};
+  const collCompIds = {};
+  let nodeCount = 0;
+
+  // walkNode returns an array of output nodes.
+  // When a node is filtered out (type/name mismatch), its matching children are promoted up.
+  function walkNode(n, currentDepthFromRoot) {
+    nodeCount++;
+
+    const isVisible = n.visible !== false;
+    if (visibleOnly && !isVisible) return [];
+
+    const typeOk = !typeWhitelist || typeWhitelist.indexOf(n.type) !== -1;
+    const nameOk = !nameRegex || nameRegex.test(n.name);
+
+    const isInstance = n.type === "INSTANCE";
+    const hasChildren = n.children && n.children.length > 0;
+    const atDepthLimit = userDepth !== undefined && currentDepthFromRoot >= userDepth;
+    // Stop at instance boundary when no explicit depth, except at root
+    const stopAtInstance = isInstance && userDepth === undefined && currentDepthFromRoot > 0;
+    const shouldExpand = hasChildren && !atDepthLimit && !stopAtInstance;
+
+    // Collect child results (always descend even if this node is filtered)
+    const childResults = [];
+    if (shouldExpand) {
+      for (const child of n.children) {
+        const sub = walkNode(child, currentDepthFromRoot + 1);
+        for (const item of sub) {
+          childResults.push(item);
+        }
+      }
+    }
+
+    // If this node is filtered, promote children
+    if (!typeOk || !nameOk) {
+      return childResults;
+    }
+
+    const out = buildNodeOutput(n, detail, inclVars, inclStyles, inclComp, collVarIds, collStyleIds, collCompIds);
+
+    if (childResults.length > 0) {
+      out.children = childResults;
+    }
+
+    if (hasChildren && (atDepthLimit || stopAtInstance)) {
+      out.childCount = n.children.length;
+    }
+
+    return [out];
+  }
+
+  const treeNodes = walkNode(root, 0);
+
+  // Phase 2: batch async resolution of collected IDs
+  const resolvedVars = {};
+  const resolvedStyles = {};
+  const resolvedComponents = {};
+
+  if (inclVars && figma.variables) {
+    const varIdList = Object.keys(collVarIds);
+    const varResults = await Promise.all(
+      varIdList.map(async (vid) => {
+        try {
+          const v = await figma.variables.getVariableByIdAsync(vid);
+          if (!v) return null;
+          let coll = null;
+          if (v.variableCollectionId) {
+            coll = await figma.variables.getVariableCollectionByIdAsync(v.variableCollectionId);
+          }
+          return {
+            id: vid,
+            name: v.name,
+            resolvedType: v.resolvedType,
+            collection: coll ? coll.name : null,
+          };
+        } catch (_e) {
+          return null;
+        }
+      }),
+    );
+    for (const entry of varResults) {
+      if (entry) resolvedVars[entry.id] = entry;
+    }
+  }
+
+  if (inclStyles) {
+    const styleIdList = Object.keys(collStyleIds);
+    const styleResults = await Promise.all(
+      styleIdList.map(async (sid) => {
+        try {
+          const s = await figma.getStyleByIdAsync(sid);
+          if (!s) return null;
+          return { id: sid, name: s.name, type: s.type };
+        } catch (_e) {
+          return null;
+        }
+      }),
+    );
+    for (const entry of styleResults) {
+      if (entry) resolvedStyles[entry.id] = entry;
+    }
+  }
+
+  if (inclComp) {
+    const compIdList = Object.keys(collCompIds);
+    const compResults = await Promise.all(
+      compIdList.map(async (cid) => {
+        try {
+          const comp = await figma.getNodeByIdAsync(cid);
+          if (!comp) return null;
+          return {
+            id: cid,
+            name: comp.name,
+            key: comp.key || null,
+            parentType: comp.parent ? comp.parent.type : null,
+            parentName: comp.parent ? comp.parent.name : null,
+          };
+        } catch (_e) {
+          return null;
+        }
+      }),
+    );
+    for (const entry of compResults) {
+      if (entry) resolvedComponents[entry.id] = entry;
+    }
+  }
+
+  // COMPONENT_SET: build variantAxes from children
+  let variantAxes = null;
+  let defaultVariant = null;
+  if (root.type === "COMPONENT_SET" && root.children) {
+    const axesMap = {};
+    for (const child of root.children) {
+      if (child.type !== "COMPONENT") continue;
+      const pairs = child.name.split(",");
+      for (const pairRaw of pairs) {
+        const pair = pairRaw.trim();
+        const eqIdx = pair.indexOf("=");
+        if (eqIdx === -1) continue;
+        const propName = pair.substring(0, eqIdx).trim();
+        const propVal = pair.substring(eqIdx + 1).trim();
+        if (!axesMap[propName]) axesMap[propName] = [];
+        if (axesMap[propName].indexOf(propVal) === -1) axesMap[propName].push(propVal);
+      }
+    }
+    variantAxes = axesMap;
+    defaultVariant = root.defaultVariant && root.defaultVariant.name ? root.defaultVariant.name : null;
+  }
+
+  return {
+    rootId: root.id,
+    rootName: root.name,
+    rootType: root.type,
+    nodeCount: nodeCount,
+    rawTree: treeNodes,
+    collectedVars: resolvedVars,
+    collectedStyles: resolvedStyles,
+    collectedComponents: resolvedComponents,
+    variantAxes: variantAxes,
+    defaultVariant: defaultVariant,
+  };
 }
 
 export async function exportNodeAsImage(params) {

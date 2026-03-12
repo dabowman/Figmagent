@@ -590,14 +590,10 @@ server.tool(
   {
     nodeId: z.string().describe("The ID of the COMPONENT or COMPONENT_SET node"),
     name: z.string().describe("Property name (e.g. 'Show Icon', 'Label', 'Size')"),
-    type: z
-      .enum(["BOOLEAN", "TEXT", "INSTANCE_SWAP", "VARIANT"])
-      .describe("Property type"),
+    type: z.enum(["BOOLEAN", "TEXT", "INSTANCE_SWAP", "VARIANT"]).describe("Property type"),
     defaultValue: z
       .union([z.string(), z.boolean()])
-      .describe(
-        "Default value. Boolean for BOOLEAN type, string for TEXT/VARIANT, node ID for INSTANCE_SWAP.",
-      ),
+      .describe("Default value. Boolean for BOOLEAN type, string for TEXT/VARIANT, node ID for INSTANCE_SWAP."),
     preferredValues: z
       .array(
         z.object({
@@ -644,14 +640,9 @@ server.tool(
   "Edit an existing property definition on a COMPONENT or COMPONENT_SET. Can rename, change default value, or update preferred values. Use get_component_properties first to discover the full property name (with #suffix).",
   {
     nodeId: z.string().describe("The ID of the COMPONENT or COMPONENT_SET node"),
-    propertyName: z
-      .string()
-      .describe("Full property name including #suffix (e.g. 'Label#12:0')"),
+    propertyName: z.string().describe("Full property name including #suffix (e.g. 'Label#12:0')"),
     newName: z.string().optional().describe("New name for the property"),
-    defaultValue: z
-      .union([z.string(), z.boolean()])
-      .optional()
-      .describe("New default value"),
+    defaultValue: z.union([z.string(), z.boolean()]).optional().describe("New default value"),
     preferredValues: z
       .array(
         z.object({
@@ -698,9 +689,7 @@ server.tool(
   "Delete a property from a COMPONENT or COMPONENT_SET. Use get_component_properties first to discover the full property name (with #suffix).",
   {
     nodeId: z.string().describe("The ID of the COMPONENT or COMPONENT_SET node"),
-    propertyName: z
-      .string()
-      .describe("Full property name including #suffix (e.g. 'Label#12:0')"),
+    propertyName: z.string().describe("Full property name including #suffix (e.g. 'Label#12:0')"),
   },
   async ({ nodeId, propertyName }: any) => {
     try {

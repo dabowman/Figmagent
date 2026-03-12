@@ -46,6 +46,7 @@ export type FigmaCommand =
   | "get_selection"
   | "get_node_info"
   | "get_nodes_info"
+  | "get_node_tree"
   | "read_my_design"
   | "create_rectangle"
   | "create_frame"
