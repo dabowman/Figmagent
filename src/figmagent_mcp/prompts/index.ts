@@ -416,7 +416,7 @@ This strategy enables transferring content and property overrides from a source 
 ### 1. Selection Analysis
 - Use \`get_selection()\` to identify the parent component or selected instances
 - For parent components, scan for instances with \`scan_nodes_by_types({ nodeId: "parent-id", types: ["INSTANCE"] })\`
-- Identify custom slots by name patterns (e.g. "Custom Slot*" or "Instance Slot") or by examining text content
+- Identify source instances by name patterns or by examining text content
 - Determine which is the source instance (with content to copy) and which are targets (where to apply content)
 
 ### 2. Extract Source Overrides

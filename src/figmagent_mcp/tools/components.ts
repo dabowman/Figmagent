@@ -718,13 +718,13 @@ server.tool(
   },
 );
 
-// Set Exposed Instance (Slot) Tool
+// Set Exposed Instance Tool
 server.tool(
   "set_exposed_instance",
-  "Set isExposedInstance on a nested INSTANCE inside a COMPONENT, creating or removing a slot. When exposed, instance users can freely add/rearrange layers in that area (like React children/slot pattern).",
+  "Set isExposedInstance on a nested INSTANCE inside a COMPONENT. When exposed, the nested instance's component properties are surfaced at the parent component level, so users don't need to deep-select to find them. This is NOT the same as Figma's 'Slot' feature (which allows free content insertion and has no plugin API support).",
   {
     nodeId: z.string().describe("The ID of the INSTANCE node inside a component"),
-    exposed: z.boolean().describe("Whether to expose this instance as a slot"),
+    exposed: z.boolean().describe("Whether to expose this instance's properties at the parent level"),
   },
   async ({ nodeId, exposed }: any) => {
     try {

@@ -83,11 +83,12 @@ Variants define axes of variation within a component set. Common axes: Size (S/M
 
 ### Component Properties (Non-Variant)
 
-Four additional property types customize instances without needing variants:
+Three property types are available via the plugin API:
 - **Boolean** — toggles layer visibility only (nothing else). Example: show/hide an icon.
 - **Text** — exposes editable text content. Example: button label.
 - **Instance swap** — allows swapping nested component instances. Example: changing an icon.
-- **Slot** — open content areas where users can freely add/rearrange layers.
+
+A fourth type, **Slot** (open content areas where users can freely add/remove/reorder any content), exists in the Figma UI but has no plugin API support — it cannot be created or managed programmatically. Do not confuse slots with `isExposedInstance` (which only surfaces nested instance properties at the parent level) or with INSTANCE_SWAP properties (which restrict swapping to a picker of components).
 
 **Critical gotcha**: Boolean, Text, and Instance Swap property names include a `#uniqueId` suffix (e.g., `'Label#12:0'`). Variant properties do not have this suffix. Always use the full suffixed name in API calls.
 

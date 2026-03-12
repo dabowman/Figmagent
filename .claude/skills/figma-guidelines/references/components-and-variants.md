@@ -4,7 +4,7 @@
 - Component fundamentals
 - Creating components
 - Variants and component sets
-- Component properties (boolean, text, instance swap, slot)
+- Component properties (boolean, text, instance swap, slot — API limitations)
 - Component property naming (the #suffix gotcha)
 - Overrides and how they transfer
 - Atomic design patterns
@@ -75,7 +75,7 @@ Variant property values are always **strings**. Common patterns:
 
 ## Component Properties
 
-Four non-variant property types provide customization without creating additional variants:
+Three non-variant property types are available via the plugin API:
 
 ### Boolean Properties
 - Toggle **layer visibility only** — they cannot control anything else
@@ -93,11 +93,13 @@ Four non-variant property types provide customization without creating additiona
 - Support **preferred values** — a curated shortlist of components shown first in the picker
 - Nested instance must already exist in the component structure
 
-### Slot Properties
-- Create flexible content areas where instance users can freely add and rearrange layers
-- Similar to React's `children` or slot pattern
-- **Destructive warning**: Removing a slot from a main component destroys all instance modifications
-- Available through the exposed `isExposedInstance` property on nested instances
+### Slot Properties (UI-only, no plugin API)
+- Slots are a native Figma feature for creating flexible content areas where instance users can freely add, remove, and reorder any content (similar to React's `children` or web component `<slot>`)
+- Created via Figma UI: right-click a nested frame > "Convert to slot", or select objects > "Wrap in new slot"
+- **Not available via the plugin API** — `ComponentPropertyType` only has BOOLEAN, TEXT, INSTANCE_SWAP, and VARIANT. There is no SLOT type.
+- **Destructive warning**: Removing a slot property from a main component destroys all instance modifications
+- **Not the same as `isExposedInstance`**: Exposed instances only surface a nested instance's component properties at the parent level (so users don't have to deep-select). Slots allow arbitrary content insertion/reordering.
+- **Not the same as INSTANCE_SWAP**: Instance swap restricts users to picking from a list of components. Slots allow any content.
 
 ---
 
