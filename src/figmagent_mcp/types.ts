@@ -90,4 +90,7 @@ export type FigmaCommand =
   | "import_library_component"
   | "get_design_system"
   | "create_variables"
-  | "update_variables";
+  | "update_variables"
+  | "create_styles"
+  | "update_styles"
+  | "lint_design";

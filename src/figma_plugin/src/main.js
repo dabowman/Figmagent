@@ -76,6 +76,9 @@ import {
   updateStyles,
 } from "./commands/styles.js";
 
+// Command imports — lint
+import { lintDesign } from "./commands/lint.js";
+
 // Command imports — connections & navigation
 import { setDefaultConnector, createConnections, setFocus, setSelections } from "./commands/connections.js";
 
@@ -109,6 +112,7 @@ var READ_OPS = {
   set_selections: true,
   set_focus: true,
   get_design_system: true,
+  lint_design: true,
 };
 
 var GLOBAL_OPS = {
@@ -188,7 +192,15 @@ async function routeCommand(id, command, params) {
   let result;
   let release;
   try {
-    if (GLOBAL_OPS[command]) {
+    if (command === "lint_design" && params && params.autoFix) {
+      // lint_design is read-only by default, but autoFix mutates nodes
+      release = await acquireGlobalLock();
+      try {
+        result = await handleCommand(command, params);
+      } finally {
+        release();
+      }
+    } else if (GLOBAL_OPS[command]) {
       release = await acquireGlobalLock();
       try {
         result = await handleCommand(command, params);
@@ -369,6 +381,8 @@ async function handleCommand(command, params) {
       return await deleteComponentProperty(params);
     case "set_exposed_instance":
       return await setExposedInstance(params);
+    case "lint_design":
+      return await lintDesign(params);
     default:
       throw new Error(`Unknown command: ${command}`);
   }
