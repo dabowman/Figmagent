@@ -1,6 +1,6 @@
 // Apply command: unified property application for existing nodes.
-// Handles direct values, layout properties, variable bindings, and text styles
-// in a single call. Accepts a flat list or nested tree of node references.
+// Handles direct values, layout properties, variable bindings, text styles,
+// and effect styles in a single call. Accepts a flat list or nested tree of node references.
 
 import { toNumber, sendProgressUpdate } from "../helpers.js";
 import { FIELD_MAP } from "./styles.js";
@@ -90,6 +90,15 @@ async function applyTextStyle(node, styleId, styleCache) {
   }
 
   await node.setTextStyleIdAsync(styleId);
+}
+
+async function applyEffectStyle(node, styleId, styleCache) {
+  if (!("effects" in node)) throw new Error("Node does not support effects: " + node.id + " (type: " + node.type + ")");
+
+  const style = styleCache[styleId];
+  if (!style) throw new Error("Effect style not found or not cached: " + styleId);
+
+  await node.setEffectStyleIdAsync(styleId);
 }
 
 async function processNode(op, styleCache) {
@@ -206,6 +215,11 @@ async function processNode(op, styleCache) {
     await applyTextStyle(node, op.textStyleId, styleCache);
   }
 
+  // Phase 5: Effect style (drop shadows, inner shadows, blurs)
+  if (op.effectStyleId) {
+    await applyEffectStyle(node, op.effectStyleId, styleCache);
+  }
+
   return { success: true, nodeId: op.nodeId, nodeName: node.name };
 }
 
@@ -225,10 +239,11 @@ export async function apply(params) {
     sendProgressUpdate(commandId, "apply", "started", 0, totalOps, 0, "Starting property application");
   }
 
-  // Pre-load all unique text styles and their fonts
+  // Pre-load all unique text and effect styles
   const uniqueStyleIds = {};
   for (let i = 0; i < allOps.length; i++) {
     if (allOps[i].textStyleId) uniqueStyleIds[allOps[i].textStyleId] = true;
+    if (allOps[i].effectStyleId) uniqueStyleIds[allOps[i].effectStyleId] = true;
   }
   const styleCache = {};
   const styleKeys = Object.keys(uniqueStyleIds);
@@ -237,6 +252,8 @@ export async function apply(params) {
       const style = await figma.getStyleByIdAsync(styleKeys[i]);
       if (style && style.type === "TEXT") {
         if (style.fontName) await figma.loadFontAsync(style.fontName);
+        styleCache[styleKeys[i]] = style;
+      } else if (style && style.type === "EFFECT") {
         styleCache[styleKeys[i]] = style;
       }
     } catch (_e) {

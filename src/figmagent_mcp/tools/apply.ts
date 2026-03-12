@@ -83,8 +83,9 @@ const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
         "Map of field names to variable IDs. Binds design tokens to node properties. Fields: fill, stroke, cornerRadius, padding*, itemSpacing, width, height, opacity, visible, characters, etc.",
       ),
 
-    // Text style reference
+    // Style references
     textStyleId: z.string().optional().describe("Text style ID to apply (from get_styles). Loads fonts automatically."),
+    effectStyleId: z.string().optional().describe("Effect style ID to apply (from get_design_system). Applies drop shadows, inner shadows, blurs."),
 
     // Nested children — apply to child nodes in the same call
     children: z
@@ -122,10 +123,11 @@ For nested structures (mirrors create tool pattern):
     { nodeId: "child2", textStyleId: "S:style123," }
   ]}]}
 
-Execution order per node: layout mode → direct values → font properties → variable bindings → text style.
+Execution order per node: layout mode → direct values → font properties → variable bindings → text style → effect style.
 Variable bindings override direct values (set both to get a fallback + token).
 Width and height resize the node. Use variables.width/height to bind dimension tokens.
-Font properties load fonts automatically. fontColor is a convenience alias for fillColor on TEXT nodes.`,
+Font properties load fonts automatically. fontColor is a convenience alias for fillColor on TEXT nodes.
+Effect styles apply drop shadows, inner shadows, and blurs from the design system.`,
   {
     nodes: z
       .array(nodeOpSchema)

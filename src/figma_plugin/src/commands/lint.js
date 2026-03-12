@@ -1,6 +1,7 @@
 // Lint command: scan subtree for properties not bound to design token variables.
 // Reports unbound fills, strokes, corner radii, spacing, opacity, font properties.
-// Optionally suggests matching variables and auto-fixes exact matches.
+// Scope-aware: matches variables based on their declared scopes and node context.
+// Flags ambiguous matches (multiple scope-compatible variables at same distance).
 
 import { sendProgressUpdate, generateCommandId, delay, rgbaToHex } from "../helpers.js";
 
@@ -40,6 +41,49 @@ function deltaE(lab1, lab2) {
   return Math.sqrt(dL * dL + da * da + db * db);
 }
 
+// ─── Scope Mapping ──────────────────────────────────────────────────────────
+
+// Maps lint property + node type → array of compatible Figma variable scopes.
+// A variable matches if its scopes include ALL_SCOPES or any scope in the list.
+// Node type "TEXT" gets text-specific fill scope; "FRAME" gets frame fill; others get shape fill.
+function getCompatibleScopes(propName, nodeType) {
+  if (propName === "fills") {
+    if (nodeType === "TEXT") return ["ALL_SCOPES", "ALL_FILLS", "TEXT_FILL"];
+    if (nodeType === "FRAME" || nodeType === "COMPONENT" || nodeType === "COMPONENT_SET" || nodeType === "INSTANCE")
+      return ["ALL_SCOPES", "ALL_FILLS", "FRAME_FILL"];
+    return ["ALL_SCOPES", "ALL_FILLS", "SHAPE_FILL"];
+  }
+  if (propName === "strokes") return ["ALL_SCOPES", "STROKE_COLOR"];
+  if (propName === "cornerRadius") return ["ALL_SCOPES", "CORNER_RADIUS"];
+  if (propName === "opacity") return ["ALL_SCOPES", "OPACITY"];
+  if (propName === "itemSpacing" || propName === "counterAxisSpacing") return ["ALL_SCOPES", "GAP"];
+  if (
+    propName === "paddingTop" ||
+    propName === "paddingRight" ||
+    propName === "paddingBottom" ||
+    propName === "paddingLeft"
+  )
+    return ["ALL_SCOPES", "GAP"];
+  if (propName === "fontSize") return ["ALL_SCOPES", "FONT_SIZE"];
+  if (propName === "fontFamily") return ["ALL_SCOPES", "FONT_FAMILY"];
+  return ["ALL_SCOPES"];
+}
+
+// Check if a variable's scopes are compatible with the required scopes.
+// A variable with an empty scopes array is treated as ALL_SCOPES (Figma default).
+function isScopeCompatible(variableScopes, requiredScopes) {
+  // Empty scopes = unrestricted (Figma default when no scopes are set)
+  if (!variableScopes || variableScopes.length === 0) return true;
+
+  for (let i = 0; i < variableScopes.length; i++) {
+    if (variableScopes[i] === "ALL_SCOPES") return true;
+    for (let j = 0; j < requiredScopes.length; j++) {
+      if (variableScopes[i] === requiredScopes[j]) return true;
+    }
+  }
+  return false;
+}
+
 // ─── Variable Index Builder ─────────────────────────────────────────────────
 
 async function buildVariableIndexes() {
@@ -60,11 +104,14 @@ async function buildVariableIndexes() {
       // Skip aliases — we only match against resolved values
       if (val && typeof val === "object" && "type" in val && val.type === "VARIABLE_ALIAS") continue;
 
+      const scopes = variable.scopes || [];
+
       if (variable.resolvedType === "COLOR" && val && typeof val === "object" && "r" in val) {
         colorIndex.push({
           id: variable.id,
           name: variable.name,
           collectionName: collectionName,
+          scopes: scopes,
           r: val.r,
           g: val.g,
           b: val.b,
@@ -76,6 +123,7 @@ async function buildVariableIndexes() {
           id: variable.id,
           name: variable.name,
           collectionName: collectionName,
+          scopes: scopes,
           value: val,
         });
       } else if (variable.resolvedType === "STRING" && typeof val === "string") {
@@ -83,6 +131,7 @@ async function buildVariableIndexes() {
           id: variable.id,
           name: variable.name,
           collectionName: collectionName,
+          scopes: scopes,
           value: val,
         });
       }
@@ -138,70 +187,161 @@ function isInsideInstance(node) {
   return false;
 }
 
-function findBestColorMatch(r, g, b, colorIndex, threshold) {
+// Find best color match, filtering by scope. Returns { match, ambiguous, alternatives }.
+// ambiguous=true when multiple scope-compatible variables tie at the same distance.
+function findBestColorMatch(r, g, b, colorIndex, threshold, requiredScopes) {
   const lab = rgbToLab(r, g, b);
   let bestDist = Infinity;
   let bestMatch = null;
+  let tieCount = 0;
+  const alternatives = [];
 
   for (let i = 0; i < colorIndex.length; i++) {
-    const d = deltaE(lab, colorIndex[i].lab);
+    const entry = colorIndex[i];
+    if (!isScopeCompatible(entry.scopes, requiredScopes)) continue;
+
+    const d = deltaE(lab, entry.lab);
+    if (d > threshold) continue;
+
     if (d < bestDist) {
+      // New best — demote previous best to alternatives if it was close enough
+      if (bestMatch && bestDist <= threshold) {
+        alternatives.push({
+          id: bestMatch.id,
+          name: bestMatch.name,
+          collection: bestMatch.collectionName,
+          distance: Math.round(bestDist * 100) / 100,
+        });
+      }
       bestDist = d;
-      bestMatch = colorIndex[i];
+      bestMatch = entry;
+      tieCount = 1;
+    } else if (d === bestDist && bestMatch) {
+      tieCount++;
+      alternatives.push({
+        id: entry.id,
+        name: entry.name,
+        collection: entry.collectionName,
+        distance: Math.round(d * 100) / 100,
+      });
+    } else if (d <= threshold) {
+      alternatives.push({
+        id: entry.id,
+        name: entry.name,
+        collection: entry.collectionName,
+        distance: Math.round(d * 100) / 100,
+      });
     }
   }
 
-  if (!bestMatch || bestDist > threshold) return null;
+  if (!bestMatch) return { match: null, ambiguous: false, alternatives: [] };
 
-  return {
+  const match = {
     id: bestMatch.id,
     name: bestMatch.name,
     collection: bestMatch.collectionName,
     distance: Math.round(bestDist * 100) / 100,
   };
+
+  // Ambiguous if multiple scope-compatible vars tie at the exact same distance
+  // and the distance qualifies as exact_match (< 1.0)
+  const isExactRange = bestDist < 1.0;
+  const ambiguous = tieCount > 1 && isExactRange;
+
+  return { match, ambiguous, alternatives: ambiguous ? alternatives : [] };
 }
 
-function findBestScalarMatch(value, scalarList) {
+// Find best scalar match, filtering by scope. Returns { match, ambiguous, alternatives }.
+function findBestScalarMatch(value, scalarList, requiredScopes) {
   let bestDist = Infinity;
   let bestMatch = null;
+  let tieCount = 0;
+  const alternatives = [];
 
   for (let i = 0; i < scalarList.length; i++) {
-    const d = Math.abs(value - scalarList[i].value);
+    const entry = scalarList[i];
+    if (!isScopeCompatible(entry.scopes, requiredScopes)) continue;
+
+    const d = Math.abs(value - entry.value);
     if (d < bestDist) {
+      if (bestMatch) {
+        const prevNear = bestDist <= Math.max(Math.abs(value) * 0.1, 1);
+        if (prevNear) {
+          alternatives.push({
+            id: bestMatch.id,
+            name: bestMatch.name,
+            collection: bestMatch.collectionName,
+            distance: Math.round(bestDist * 100) / 100,
+          });
+        }
+      }
       bestDist = d;
-      bestMatch = scalarList[i];
+      bestMatch = entry;
+      tieCount = 1;
+    } else if (d === bestDist && bestMatch) {
+      tieCount++;
+      alternatives.push({
+        id: entry.id,
+        name: entry.name,
+        collection: entry.collectionName,
+        distance: Math.round(d * 100) / 100,
+      });
+    } else {
+      const isNear = d <= Math.max(Math.abs(value) * 0.1, 1);
+      if (isNear) {
+        alternatives.push({
+          id: entry.id,
+          name: entry.name,
+          collection: entry.collectionName,
+          distance: Math.round(d * 100) / 100,
+        });
+      }
     }
   }
 
-  if (!bestMatch) return null;
+  if (!bestMatch) return { match: null, ambiguous: false, alternatives: [] };
 
-  // Exact: equal. Near: within 10% or 1 unit absolute
+  // Check if best match is within near range
   const isNear = bestDist <= Math.max(Math.abs(value) * 0.1, 1);
-  if (!isNear) return null;
+  if (!isNear) return { match: null, ambiguous: false, alternatives: [] };
 
-  return {
+  const match = {
     id: bestMatch.id,
     name: bestMatch.name,
     collection: bestMatch.collectionName,
     distance: Math.round(bestDist * 100) / 100,
   };
+
+  const ambiguous = tieCount > 1 && bestDist === 0;
+
+  return { match, ambiguous, alternatives: ambiguous ? alternatives : [] };
 }
 
-function findExactStringMatch(value, stringList) {
+// Find exact string match, filtering by scope. Returns { match, ambiguous, alternatives }.
+function findExactStringMatch(value, stringList, requiredScopes) {
+  const matches = [];
   for (let i = 0; i < stringList.length; i++) {
-    if (stringList[i].value === value) {
-      return {
-        id: stringList[i].id,
-        name: stringList[i].name,
-        collection: stringList[i].collectionName,
+    const entry = stringList[i];
+    if (!isScopeCompatible(entry.scopes, requiredScopes)) continue;
+    if (entry.value === value) {
+      matches.push({
+        id: entry.id,
+        name: entry.name,
+        collection: entry.collectionName,
         distance: 0,
-      };
+      });
     }
   }
-  return null;
+
+  if (matches.length === 0) return { match: null, ambiguous: false, alternatives: [] };
+  if (matches.length === 1) return { match: matches[0], ambiguous: false, alternatives: [] };
+
+  // Multiple exact matches — ambiguous
+  return { match: matches[0], ambiguous: true, alternatives: matches.slice(1) };
 }
 
-function classifySeverity(distance, isColor) {
+function classifySeverity(distance, isColor, ambiguous) {
+  if (ambiguous) return "ambiguous";
   if (distance === 0) return "exact_match";
   if (isColor) {
     return distance < 1.0 ? "exact_match" : "near_match";
@@ -209,7 +349,7 @@ function classifySeverity(distance, isColor) {
   return "near_match";
 }
 
-function checkColorProperty(node, fieldName, colorIndex, threshold) {
+function checkColorProperty(node, fieldName, colorIndex, threshold, requiredScopes) {
   if (!(fieldName in node)) return null;
 
   const paints = node[fieldName];
@@ -224,17 +364,28 @@ function checkColorProperty(node, fieldName, colorIndex, threshold) {
   }
 
   const color = paint.color;
-  const match = findBestColorMatch(color.r, color.g, color.b, colorIndex, threshold);
+  const { match, ambiguous, alternatives } = findBestColorMatch(
+    color.r,
+    color.g,
+    color.b,
+    colorIndex,
+    threshold,
+    requiredScopes,
+  );
   const hexVal = rgbaToHex({ r: color.r, g: color.g, b: color.b, a: paint.opacity !== undefined ? paint.opacity : 1 });
 
-  return {
+  const result = {
     currentValue: hexVal,
     suggestedVariable: match,
-    severity: match ? classifySeverity(match.distance, true) : "no_match",
+    severity: match ? classifySeverity(match.distance, true, ambiguous) : "no_match",
   };
+  if (ambiguous && alternatives.length > 0) {
+    result.alternatives = alternatives;
+  }
+  return result;
 }
 
-function checkScalarProperty(node, propName, figmaField, scalarList) {
+function checkScalarProperty(node, propName, figmaField, scalarList, requiredScopes) {
   if (!(figmaField in node)) return null;
 
   const value = node[figmaField];
@@ -257,16 +408,20 @@ function checkScalarProperty(node, propName, figmaField, scalarList) {
   const bv = node.boundVariables;
   if (bv && bv[figmaField]) return null;
 
-  const match = findBestScalarMatch(value, scalarList);
+  const { match, ambiguous, alternatives } = findBestScalarMatch(value, scalarList, requiredScopes);
 
-  return {
+  const result = {
     currentValue: value,
     suggestedVariable: match,
-    severity: match ? (match.distance === 0 ? "exact_match" : "near_match") : "no_match",
+    severity: match ? classifySeverity(match.distance, false, ambiguous) : "no_match",
   };
+  if (ambiguous && alternatives.length > 0) {
+    result.alternatives = alternatives;
+  }
+  return result;
 }
 
-function checkStringProperty(node, propName, figmaField, stringList) {
+function checkStringProperty(node, propName, figmaField, stringList, requiredScopes) {
   if (!(figmaField in node)) return null;
 
   let value = node[figmaField];
@@ -294,13 +449,17 @@ function checkStringProperty(node, propName, figmaField, stringList) {
   const bv = node.boundVariables;
   if (bv && bv[figmaField]) return null;
 
-  const match = findExactStringMatch(value, stringList);
+  const { match, ambiguous, alternatives } = findExactStringMatch(value, stringList, requiredScopes);
 
-  return {
+  const result = {
     currentValue: value,
     suggestedVariable: match,
-    severity: match ? "exact_match" : "no_match",
+    severity: match ? classifySeverity(match.distance, false, ambiguous) : "no_match",
   };
+  if (ambiguous && alternatives.length > 0) {
+    result.alternatives = alternatives;
+  }
+  return result;
 }
 
 // ─── Auto-fix ───────────────────────────────────────────────────────────────
@@ -398,7 +557,7 @@ export async function lintDesign(params) {
   const issues = [];
   let totalIssueCount = 0;
   const byProperty = {};
-  const bySeverity = { exact_match: 0, near_match: 0, no_match: 0 };
+  const bySeverity = { exact_match: 0, near_match: 0, no_match: 0, ambiguous: 0 };
   let autoFixedCount = 0;
 
   const totalChunks = Math.ceil(nodeList.length / CHUNK_SIZE);
@@ -426,14 +585,15 @@ export async function lintDesign(params) {
       for (let pi = 0; pi < propsToLint.length; pi++) {
         const propName = propsToLint[pi];
         const spec = LINT_PROPERTIES[propName];
+        const requiredScopes = getCompatibleScopes(propName, node.type);
         let result = null;
 
         if (spec.type === "color") {
-          result = checkColorProperty(node, spec.field, colorIndex, threshold);
+          result = checkColorProperty(node, spec.field, colorIndex, threshold, requiredScopes);
         } else if (spec.type === "scalar") {
-          result = checkScalarProperty(node, propName, spec.field, scalarIndex.FLOAT);
+          result = checkScalarProperty(node, propName, spec.field, scalarIndex.FLOAT, requiredScopes);
         } else if (spec.type === "string") {
-          result = checkStringProperty(node, propName, spec.field, scalarIndex.STRING);
+          result = checkStringProperty(node, propName, spec.field, scalarIndex.STRING, requiredScopes);
         }
 
         if (!result) continue;
@@ -444,6 +604,7 @@ export async function lintDesign(params) {
         bySeverity[result.severity]++;
 
         let fixed = false;
+        // Only auto-fix exact_match — never ambiguous (needs human review)
         if (autoFix && result.severity === "exact_match" && result.suggestedVariable && !insideInstance) {
           try {
             fixed = await autoFixProperty(node, propName, spec, result.suggestedVariable.id);
@@ -464,6 +625,9 @@ export async function lintDesign(params) {
             suggestedVariable: result.suggestedVariable,
             fixed: fixed,
           };
+          if (result.alternatives && result.alternatives.length > 0) {
+            issue.alternatives = result.alternatives;
+          }
           if (insideInstance && autoFix && result.severity === "exact_match") {
             issue.skipReason = "instance_child";
           }
