@@ -65,7 +65,7 @@ import {
 } from "./commands/scan.js";
 
 // Command imports — styles & variables
-import { getStyles, getLocalVariables, getLocalComponents } from "./commands/styles.js";
+import { getStyles, getLocalVariables, getLocalComponents, getDesignSystem, createVariables, updateVariables } from "./commands/styles.js";
 
 // Command imports — connections & navigation
 import { setDefaultConnector, createConnections, setFocus, setSelections } from "./commands/connections.js";
@@ -99,6 +99,7 @@ var READ_OPS = {
   export_node_as_image: true,
   set_selections: true,
   set_focus: true,
+  get_design_system: true,
 };
 
 var GLOBAL_OPS = {
@@ -111,6 +112,8 @@ var GLOBAL_OPS = {
   set_multiple_text_contents: true,
   set_multiple_annotations: true,
   set_instance_overrides: true,
+  create_variables: true,
+  update_variables: true,
 };
 
 // Node-level write locks
@@ -250,6 +253,12 @@ async function handleCommand(command, params) {
       return await getLocalVariables();
     case "get_local_components":
       return await getLocalComponents();
+    case "get_design_system":
+      return await getDesignSystem();
+    case "create_variables":
+      return await createVariables(params);
+    case "update_variables":
+      return await updateVariables(params);
     case "create_component":
       return await createComponent(params);
     case "combine_as_variants":

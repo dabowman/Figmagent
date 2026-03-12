@@ -87,4 +87,7 @@ export type FigmaCommand =
   | "edit_component_property"
   | "delete_component_property"
   | "set_exposed_instance"
-  | "import_library_component";
+  | "import_library_component"
+  | "get_design_system"
+  | "create_variables"
+  | "update_variables";

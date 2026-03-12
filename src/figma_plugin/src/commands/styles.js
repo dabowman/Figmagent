@@ -1,5 +1,5 @@
 // Styles commands: getStyles, getLocalVariables, getLocalComponents,
-// bindVariable, batchBindVariables, setTextStyle, batchSetTextStyles
+// getDesignSystem, createVariables, updateVariables
 
 import { sendProgressUpdate } from "../helpers.js";
 
@@ -147,6 +147,231 @@ export async function getLocalComponents() {
   };
 }
 
+// Combined design system discovery — returns styles + variables in one call
+export async function getDesignSystem() {
+  const [styles, variables] = await Promise.all([getStyles(), getLocalVariables()]);
+  return { styles: styles, variables: variables };
+}
+
+// Create variables — create a collection (or use existing) + variables + set values
+export async function createVariables(params) {
+  const collectionName = params.collectionName;
+  const collectionId = params.collectionId;
+  const modeNames = params.modes;
+  const variableSpecs = params.variables;
+
+  if (!variableSpecs || !Array.isArray(variableSpecs) || variableSpecs.length === 0) {
+    throw new Error("Missing or empty variables array");
+  }
+
+  // Find or create collection
+  let collection;
+  if (collectionId) {
+    const collections = await figma.variables.getLocalVariableCollectionsAsync();
+    collection = collections.find((c) => c.id === collectionId);
+    if (!collection) throw new Error("Collection not found: " + collectionId);
+  } else if (collectionName) {
+    const collections = await figma.variables.getLocalVariableCollectionsAsync();
+    collection = collections.find((c) => c.name === collectionName);
+    if (!collection) {
+      collection = figma.variables.createVariableCollection(collectionName);
+    }
+  } else {
+    throw new Error("Must provide collectionName or collectionId");
+  }
+
+  // Set up modes if specified
+  if (modeNames && Array.isArray(modeNames) && modeNames.length > 0) {
+    const existingModes = collection.modes;
+
+    // Rename existing modes to match requested names, add new ones as needed
+    for (let i = 0; i < modeNames.length; i++) {
+      if (i < existingModes.length) {
+        // Rename existing mode
+        if (existingModes[i].name !== modeNames[i]) {
+          collection.renameMode(existingModes[i].modeId, modeNames[i]);
+        }
+      } else {
+        // Add new mode
+        collection.addMode(modeNames[i]);
+      }
+    }
+  }
+
+  // Refresh modes after potential changes
+  const finalModes = collection.modes;
+  const modeByName = {};
+  for (let i = 0; i < finalModes.length; i++) {
+    modeByName[finalModes[i].name] = finalModes[i].modeId;
+  }
+
+  // Create variables and set values
+  const results = [];
+  const commandId = params.commandId;
+  const totalVars = variableSpecs.length;
+
+  if (commandId) {
+    sendProgressUpdate(commandId, "create_variables", "started", 0, totalVars, 0, "Creating variables");
+  }
+
+  for (let i = 0; i < variableSpecs.length; i++) {
+    const spec = variableSpecs[i];
+    try {
+      const resolvedType = spec.type || "COLOR";
+      const variable = figma.variables.createVariable(spec.name, collection.id, resolvedType);
+
+      if (spec.description) {
+        variable.description = spec.description;
+      }
+
+      if (spec.scopes && Array.isArray(spec.scopes)) {
+        variable.scopes = spec.scopes;
+      }
+
+      // Set values per mode
+      if (spec.values && typeof spec.values === "object") {
+        const valueKeys = Object.keys(spec.values);
+        for (let j = 0; j < valueKeys.length; j++) {
+          const modeName = valueKeys[j];
+          const modeId = modeByName[modeName];
+          if (!modeId) {
+            throw new Error("Mode not found: " + modeName + ". Available: " + Object.keys(modeByName).join(", "));
+          }
+          const value = spec.values[modeName];
+          // Handle alias references
+          if (value && typeof value === "object" && value.alias) {
+            const aliasVar = await figma.variables.getVariableByIdAsync(value.alias);
+            if (!aliasVar) throw new Error("Alias variable not found: " + value.alias);
+            variable.setValueForMode(modeId, { type: "VARIABLE_ALIAS", id: aliasVar.id });
+          } else {
+            variable.setValueForMode(modeId, value);
+          }
+        }
+      }
+
+      results.push({ success: true, name: spec.name, id: variable.id, type: resolvedType });
+    } catch (e) {
+      results.push({ success: false, name: spec.name, error: e.message || String(e) });
+    }
+
+    if (commandId && (i + 1) % 5 === 0) {
+      const pct = Math.round(((i + 1) / totalVars) * 100);
+      sendProgressUpdate(commandId, "create_variables", "in_progress", pct, totalVars, i + 1, "Created " + (i + 1) + " of " + totalVars);
+    }
+  }
+
+  if (commandId) {
+    sendProgressUpdate(commandId, "create_variables", "completed", 100, totalVars, totalVars, "Variable creation completed");
+  }
+
+  const successCount = results.filter((r) => r.success).length;
+  return {
+    success: successCount === results.length,
+    collectionId: collection.id,
+    collectionName: collection.name,
+    modes: collection.modes.map((m) => ({ id: m.modeId, name: m.name })),
+    totalCreated: successCount,
+    totalFailed: results.length - successCount,
+    results: results,
+  };
+}
+
+// Update existing variables — set values, rename, change description, delete
+export async function updateVariables(params) {
+  const updates = params.updates;
+  const commandId = params.commandId;
+
+  if (!updates || !Array.isArray(updates) || updates.length === 0) {
+    throw new Error("Missing or empty updates array");
+  }
+
+  const totalOps = updates.length;
+  const results = [];
+
+  if (commandId) {
+    sendProgressUpdate(commandId, "update_variables", "started", 0, totalOps, 0, "Updating variables");
+  }
+
+  for (let i = 0; i < updates.length; i++) {
+    const update = updates[i];
+    try {
+      if (update.delete) {
+        // Delete variable
+        const variable = await figma.variables.getVariableByIdAsync(update.variableId);
+        if (!variable) throw new Error("Variable not found: " + update.variableId);
+        variable.remove();
+        results.push({ success: true, variableId: update.variableId, action: "deleted" });
+      } else {
+        // Update variable
+        const variable = await figma.variables.getVariableByIdAsync(update.variableId);
+        if (!variable) throw new Error("Variable not found: " + update.variableId);
+
+        if (update.name !== undefined) {
+          variable.name = update.name;
+        }
+
+        if (update.description !== undefined) {
+          variable.description = update.description;
+        }
+
+        if (update.scopes && Array.isArray(update.scopes)) {
+          variable.scopes = update.scopes;
+        }
+
+        // Set values by mode name
+        if (update.values && typeof update.values === "object") {
+          // Resolve mode names to IDs via the variable's collection
+          const collection = await figma.variables.getVariableCollectionByIdAsync(variable.variableCollectionId);
+          if (!collection) throw new Error("Collection not found for variable: " + update.variableId);
+
+          const modeByName = {};
+          for (let m = 0; m < collection.modes.length; m++) {
+            modeByName[collection.modes[m].name] = collection.modes[m].modeId;
+          }
+
+          const valueKeys = Object.keys(update.values);
+          for (let j = 0; j < valueKeys.length; j++) {
+            const modeName = valueKeys[j];
+            const modeId = modeByName[modeName];
+            if (!modeId) {
+              throw new Error("Mode not found: " + modeName + ". Available: " + Object.keys(modeByName).join(", "));
+            }
+            const value = update.values[modeName];
+            if (value && typeof value === "object" && value.alias) {
+              const aliasVar = await figma.variables.getVariableByIdAsync(value.alias);
+              if (!aliasVar) throw new Error("Alias variable not found: " + value.alias);
+              variable.setValueForMode(modeId, { type: "VARIABLE_ALIAS", id: aliasVar.id });
+            } else {
+              variable.setValueForMode(modeId, value);
+            }
+          }
+        }
+
+        results.push({ success: true, variableId: update.variableId, action: "updated", name: variable.name });
+      }
+    } catch (e) {
+      results.push({ success: false, variableId: update.variableId, error: e.message || String(e) });
+    }
+
+    if (commandId && (i + 1) % 5 === 0) {
+      const pct = Math.round(((i + 1) / totalOps) * 100);
+      sendProgressUpdate(commandId, "update_variables", "in_progress", pct, totalOps, i + 1, "Updated " + (i + 1) + " of " + totalOps);
+    }
+  }
+
+  if (commandId) {
+    sendProgressUpdate(commandId, "update_variables", "completed", 100, totalOps, totalOps, "Variable updates completed");
+  }
+
+  const successCount = results.filter((r) => r.success).length;
+  return {
+    success: successCount === results.length,
+    totalUpdated: successCount,
+    totalFailed: results.length - successCount,
+    results: results,
+  };
+}
+
 export var FIELD_MAP = {
   fills: "fills",
   fill: "fills",
@@ -174,345 +399,3 @@ export var FIELD_MAP = {
   characters: "characters",
 };
 
-export async function bindVariable(params) {
-  var _a = params || {},
-    nodeId = _a.nodeId,
-    field = _a.field,
-    variableId = _a.variableId;
-
-  if (!nodeId) throw new Error("Missing nodeId parameter");
-  if (!field) throw new Error("Missing field parameter");
-  if (!variableId) throw new Error("Missing variableId parameter");
-
-  var node = await figma.getNodeByIdAsync(nodeId);
-  if (!node) throw new Error("Node not found: " + nodeId);
-
-  var variable = await figma.variables.getVariableByIdAsync(variableId);
-  if (!variable) throw new Error("Variable not found: " + variableId);
-
-  var figmaField = FIELD_MAP[field];
-  if (!figmaField) {
-    throw new Error("Unsupported field: " + field + ". Supported fields: " + Object.keys(FIELD_MAP).join(", "));
-  }
-
-  if (figmaField === "fills" || figmaField === "strokes") {
-    if (!(figmaField in node)) {
-      throw new Error("Node does not support " + figmaField + ": " + nodeId);
-    }
-    let paints = JSON.parse(JSON.stringify(node[figmaField]));
-    if (!paints || paints.length === 0) {
-      paints = [{ type: "SOLID", color: { r: 0, g: 0, b: 0 }, opacity: 1 }];
-      node[figmaField] = paints;
-    }
-    const paintCopy = JSON.parse(JSON.stringify(node[figmaField]));
-    paintCopy[0] = figma.variables.setBoundVariableForPaint(paintCopy[0], "color", variable);
-    node[figmaField] = paintCopy;
-  } else {
-    node.setBoundVariable(figmaField, variable);
-  }
-
-  return {
-    success: true,
-    nodeId: node.id,
-    nodeName: node.name,
-    field: field,
-    figmaField: figmaField,
-    variableId: variable.id,
-    variableName: variable.name,
-  };
-}
-
-export async function batchBindVariables(params) {
-  var bindings = (params || {}).bindings;
-  var commandId = (params || {}).commandId;
-
-  if (!bindings || !Array.isArray(bindings) || bindings.length === 0) {
-    throw new Error("Missing or empty bindings array");
-  }
-
-  var totalOps = bindings.length;
-  var successCount = 0;
-  var failureCount = 0;
-  var results = [];
-
-  if (commandId) {
-    sendProgressUpdate(commandId, "batch_bind_variables", "started", 0, totalOps, 0, "Starting variable bindings");
-  }
-
-  var CHUNK_SIZE = 10;
-  var totalChunks = Math.ceil(totalOps / CHUNK_SIZE);
-  var chunkIdx, start, end, chunk, chunkPromises, chunkResults, ri, processed, pct;
-
-  for (chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
-    start = chunkIdx * CHUNK_SIZE;
-    end = Math.min(start + CHUNK_SIZE, totalOps);
-    chunk = bindings.slice(start, end);
-
-    chunkPromises = chunk.map((binding) =>
-      (async (b) => {
-        try {
-          const node = await figma.getNodeByIdAsync(b.nodeId);
-          if (!node) throw new Error("Node not found: " + b.nodeId);
-
-          const variable = await figma.variables.getVariableByIdAsync(b.variableId);
-          if (!variable) throw new Error("Variable not found: " + b.variableId);
-
-          const figmaField = FIELD_MAP[b.field];
-          if (!figmaField) throw new Error("Unsupported field: " + b.field);
-
-          if (figmaField === "fills" || figmaField === "strokes") {
-            if (!(figmaField in node)) {
-              throw new Error("Node does not support " + figmaField + ": " + b.nodeId);
-            }
-            let paints = JSON.parse(JSON.stringify(node[figmaField]));
-            if (!paints || paints.length === 0) {
-              paints = [{ type: "SOLID", color: { r: 0, g: 0, b: 0 }, opacity: 1 }];
-              node[figmaField] = paints;
-            }
-            const paintCopy = JSON.parse(JSON.stringify(node[figmaField]));
-            paintCopy[0] = figma.variables.setBoundVariableForPaint(paintCopy[0], "color", variable);
-            node[figmaField] = paintCopy;
-          } else {
-            node.setBoundVariable(figmaField, variable);
-          }
-
-          return { success: true, nodeId: b.nodeId, field: b.field, variableId: b.variableId };
-        } catch (e) {
-          return { success: false, nodeId: b.nodeId, field: b.field, error: e.message || String(e) };
-        }
-      })(binding),
-    );
-
-    chunkResults = await Promise.all(chunkPromises);
-    for (ri = 0; ri < chunkResults.length; ri++) {
-      results.push(chunkResults[ri]);
-      if (chunkResults[ri].success) successCount++;
-      else failureCount++;
-    }
-
-    if (commandId) {
-      processed = Math.min(end, totalOps);
-      pct = Math.round((processed / totalOps) * 100);
-      sendProgressUpdate(
-        commandId,
-        "batch_bind_variables",
-        "in_progress",
-        pct,
-        totalOps,
-        processed,
-        "Processed " + processed + " of " + totalOps,
-        { currentChunk: chunkIdx + 1, totalChunks: totalChunks, chunkSize: CHUNK_SIZE },
-      );
-    }
-  }
-
-  if (commandId) {
-    sendProgressUpdate(
-      commandId,
-      "batch_bind_variables",
-      "completed",
-      100,
-      totalOps,
-      totalOps,
-      "All bindings completed",
-    );
-  }
-
-  return {
-    success: failureCount === 0,
-    totalBindings: totalOps,
-    successCount: successCount,
-    failureCount: failureCount,
-    results: results,
-  };
-}
-
-export async function setTextStyle(params) {
-  var _a = params || {},
-    nodeId = _a.nodeId,
-    styleId = _a.styleId;
-
-  if (!nodeId) throw new Error("Missing nodeId parameter");
-  if (!styleId) throw new Error("Missing styleId parameter");
-
-  var node = await figma.getNodeByIdAsync(nodeId);
-  if (!node) throw new Error("Node not found: " + nodeId);
-
-  if (node.type !== "TEXT") {
-    throw new Error("Node is not a TEXT node (type: " + node.type + ")");
-  }
-
-  var style = await figma.getStyleByIdAsync(styleId);
-  if (!style) throw new Error("Style not found: " + styleId);
-  if (style.type !== "TEXT") throw new Error("Style is not a text style (type: " + style.type + ")");
-
-  var fontName = style.fontName;
-  if (fontName) {
-    await figma.loadFontAsync(fontName);
-  }
-
-  if (node.fontName !== figma.mixed) {
-    await figma.loadFontAsync(node.fontName);
-  } else {
-    const len = node.characters.length;
-    const fontsToLoad = {};
-    for (let i = 0; i < len; i++) {
-      const f = node.getRangeFontName(i, i + 1);
-      const key = f.family + ":" + f.style;
-      if (!fontsToLoad[key]) {
-        fontsToLoad[key] = f;
-      }
-    }
-    const fontEntries = Object.keys(fontsToLoad);
-    for (let j = 0; j < fontEntries.length; j++) {
-      await figma.loadFontAsync(fontsToLoad[fontEntries[j]]);
-    }
-  }
-
-  await node.setTextStyleIdAsync(styleId);
-
-  return {
-    success: true,
-    nodeId: node.id,
-    nodeName: node.name,
-    styleId: styleId,
-    styleName: style.name,
-  };
-}
-
-export async function batchSetTextStyles(params) {
-  var assignments = (params || {}).assignments;
-  var commandId = (params || {}).commandId;
-
-  if (!assignments || !Array.isArray(assignments) || assignments.length === 0) {
-    throw new Error("Missing or empty assignments array");
-  }
-
-  var totalOps = assignments.length;
-  var successCount = 0;
-  var failureCount = 0;
-  var results = [];
-  var si, sk, style;
-
-  if (commandId) {
-    sendProgressUpdate(
-      commandId,
-      "batch_set_text_styles",
-      "started",
-      0,
-      totalOps,
-      0,
-      "Starting text style assignments",
-    );
-  }
-
-  // Phase 1: Pre-load all unique styles and their fonts
-  var uniqueStyleIds = {};
-  for (si = 0; si < assignments.length; si++) {
-    uniqueStyleIds[assignments[si].styleId] = true;
-  }
-  var styleCache = {};
-  var styleKeys = Object.keys(uniqueStyleIds);
-  for (sk = 0; sk < styleKeys.length; sk++) {
-    try {
-      style = await figma.getStyleByIdAsync(styleKeys[sk]);
-      if (style && style.type === "TEXT") {
-        if (style.fontName) {
-          await figma.loadFontAsync(style.fontName);
-        }
-        styleCache[styleKeys[sk]] = style;
-      }
-    } catch (_e) {
-      // Style load failure will be caught per-item later
-    }
-  }
-
-  // Phase 2: Process in chunks
-  var CHUNK_SIZE = 5;
-  var totalChunks = Math.ceil(totalOps / CHUNK_SIZE);
-  var chunkIdx, start, end, chunk, chunkPromises, chunkResults, ri, processed, pct;
-
-  for (chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
-    start = chunkIdx * CHUNK_SIZE;
-    end = Math.min(start + CHUNK_SIZE, totalOps);
-    chunk = assignments.slice(start, end);
-
-    chunkPromises = chunk.map((assignment) =>
-      (async (a) => {
-        try {
-          const node = await figma.getNodeByIdAsync(a.nodeId);
-          if (!node) throw new Error("Node not found: " + a.nodeId);
-          if (node.type !== "TEXT") throw new Error("Not a TEXT node: " + a.nodeId + " (type: " + node.type + ")");
-
-          const cachedStyle = styleCache[a.styleId];
-          if (!cachedStyle) throw new Error("Style not found or not a text style: " + a.styleId);
-
-          if (node.fontName !== figma.mixed) {
-            await figma.loadFontAsync(node.fontName);
-          } else {
-            const len = node.characters.length;
-            const fontsToLoad = {};
-            for (let i = 0; i < len; i++) {
-              const f = node.getRangeFontName(i, i + 1);
-              const key = f.family + ":" + f.style;
-              if (!fontsToLoad[key]) {
-                fontsToLoad[key] = f;
-              }
-            }
-            const fontEntries = Object.keys(fontsToLoad);
-            for (let j = 0; j < fontEntries.length; j++) {
-              await figma.loadFontAsync(fontsToLoad[fontEntries[j]]);
-            }
-          }
-
-          await node.setTextStyleIdAsync(a.styleId);
-          return { success: true, nodeId: a.nodeId, styleId: a.styleId, styleName: cachedStyle.name };
-        } catch (e) {
-          return { success: false, nodeId: a.nodeId, styleId: a.styleId, error: e.message || String(e) };
-        }
-      })(assignment),
-    );
-
-    chunkResults = await Promise.all(chunkPromises);
-    for (ri = 0; ri < chunkResults.length; ri++) {
-      results.push(chunkResults[ri]);
-      if (chunkResults[ri].success) successCount++;
-      else failureCount++;
-    }
-
-    if (commandId) {
-      processed = Math.min(end, totalOps);
-      pct = Math.round((processed / totalOps) * 100);
-      sendProgressUpdate(
-        commandId,
-        "batch_set_text_styles",
-        "in_progress",
-        pct,
-        totalOps,
-        processed,
-        "Processed " + processed + " of " + totalOps,
-        { currentChunk: chunkIdx + 1, totalChunks: totalChunks, chunkSize: CHUNK_SIZE },
-      );
-    }
-  }
-
-  if (commandId) {
-    sendProgressUpdate(
-      commandId,
-      "batch_set_text_styles",
-      "completed",
-      100,
-      totalOps,
-      totalOps,
-      "All style assignments completed",
-    );
-  }
-
-  return {
-    success: failureCount === 0,
-    totalAssignments: totalOps,
-    successCount: successCount,
-    failureCount: failureCount,
-    results: results,
-  };
-}

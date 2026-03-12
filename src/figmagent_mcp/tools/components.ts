@@ -3,38 +3,21 @@ import { server } from "../instance.js";
 import { sendCommandToFigma } from "../connection.js";
 import type { getInstanceOverridesResult, setInstanceOverridesResult } from "../types.js";
 
-// Get Styles Tool
-server.tool("get_styles", "Get all styles from the current Figma document", {}, async () => {
-  try {
-    const result = await sendCommandToFigma("get_styles");
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(result),
-        },
-      ],
-    };
-  } catch (error) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: `Error getting styles: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      ],
-    };
-  }
-});
-
-// Get Local Variables Tool
+// Get Design System Tool — unified styles + variables discovery
 server.tool(
-  "get_local_variables",
-  "Get all local design token variables from the Figma document. Returns variable collections with their modes and all variables (colors, numbers, strings, booleans). Works on any Figma plan — no Enterprise required.",
+  "get_design_system",
+  `Get all styles and design token variables from the current Figma document in one call.
+
+Returns:
+- styles: { colors (paint styles), texts (text styles with font info), effects, grids }
+- variables: array of collections, each with modes and variables (id, name, type, values per mode)
+
+Use this to discover the design system before applying styles/tokens with the apply tool.
+Works on any Figma plan — no Enterprise required.`,
   {},
   async () => {
     try {
-      const result = await sendCommandToFigma("get_local_variables");
+      const result = await sendCommandToFigma("get_design_system");
       return {
         content: [
           {
@@ -48,7 +31,173 @@ server.tool(
         content: [
           {
             type: "text",
-            text: `Error getting local variables: ${error instanceof Error ? error.message : String(error)}`,
+            text: `Error getting design system: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  },
+);
+
+// Create Variables Tool — create collections, modes, and variables with values
+server.tool(
+  "create_variables",
+  `Create design token variables in the current Figma document.
+
+Creates a variable collection (or uses an existing one by name/ID), sets up modes, and creates variables with initial values per mode.
+
+Create a color palette:
+  { collectionName: "Colors", modes: ["Light", "Dark"], variables: [
+    { name: "primary/500", type: "COLOR", values: { "Light": { r: 0.2, g: 0.4, b: 0.9, a: 1 }, "Dark": { r: 0.4, g: 0.6, b: 1, a: 1 } } },
+    { name: "primary/100", type: "COLOR", values: { "Light": { r: 0.9, g: 0.95, b: 1, a: 1 }, "Dark": { r: 0.1, g: 0.15, b: 0.3, a: 1 } } }
+  ]}
+
+Create a spacing scale:
+  { collectionName: "Spacing", variables: [
+    { name: "spacing/xs", type: "FLOAT", values: { "Mode 1": 4 } },
+    { name: "spacing/sm", type: "FLOAT", values: { "Mode 1": 8 } },
+    { name: "spacing/md", type: "FLOAT", values: { "Mode 1": 16 } }
+  ]}
+
+Add variables to an existing collection:
+  { collectionId: "VariableCollectionId:abc", variables: [
+    { name: "new-token", type: "FLOAT", values: { "Default": 24 } }
+  ]}
+
+Alias one variable to another:
+  { collectionName: "Semantic", modes: ["Light", "Dark"], variables: [
+    { name: "bg/primary", type: "COLOR", values: { "Light": { alias: "VariableID:abc" }, "Dark": { alias: "VariableID:def" } } }
+  ]}
+
+Variable types: COLOR (rgba object), FLOAT (number), STRING (text), BOOLEAN (true/false).
+If modes is omitted for a new collection, Figma creates a default "Mode 1".
+If modes is provided, existing modes are renamed and new ones added as needed.`,
+  {
+    collectionName: z
+      .string()
+      .optional()
+      .describe("Name of the collection to create or find. Creates new if not found."),
+    collectionId: z
+      .string()
+      .optional()
+      .describe("ID of an existing collection. Takes precedence over collectionName."),
+    modes: z
+      .array(z.string())
+      .optional()
+      .describe(
+        "Mode names for the collection. For new collections, renames the default mode and adds extras. For existing collections, renames/adds as needed.",
+      ),
+    variables: z
+      .array(
+        z.object({
+          name: z.string().describe("Variable name (use / for grouping, e.g. 'color/primary/500')"),
+          type: z
+            .enum(["COLOR", "FLOAT", "STRING", "BOOLEAN"])
+            .describe("Variable type. COLOR = rgba, FLOAT = number, STRING = text, BOOLEAN = true/false"),
+          description: z.string().optional().describe("Variable description"),
+          scopes: z
+            .array(z.string())
+            .optional()
+            .describe("Variable scopes (e.g. ['FILL_COLOR', 'STROKE_COLOR'] for color variables)"),
+          values: z
+            .record(z.string(), z.any())
+            .describe(
+              "Values per mode name. COLOR: { r, g, b, a } object. FLOAT: number. STRING: text. BOOLEAN: true/false. Alias: { alias: 'VariableID:xxx' }.",
+            ),
+        }),
+      )
+      .min(1)
+      .describe("Array of variables to create with their initial values per mode"),
+  },
+  async ({ collectionName, collectionId, modes, variables }: any) => {
+    try {
+      const result = await sendCommandToFigma("create_variables", { collectionName, collectionId, modes, variables }, 60000);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error creating variables: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  },
+);
+
+// Update Variables Tool — modify values, rename, or delete existing variables
+server.tool(
+  "update_variables",
+  `Update, rename, or delete existing design token variables.
+
+Update variable values (uses mode names, not IDs):
+  { updates: [
+    { variableId: "VariableID:abc", values: { "Light": { r: 1, g: 0, b: 0, a: 1 }, "Dark": { r: 0.8, g: 0, b: 0, a: 1 } } }
+  ]}
+
+Rename a variable:
+  { updates: [{ variableId: "VariableID:abc", name: "color/danger/500" }] }
+
+Delete variables:
+  { updates: [
+    { variableId: "VariableID:abc", delete: true },
+    { variableId: "VariableID:def", delete: true }
+  ]}
+
+Set alias references:
+  { updates: [
+    { variableId: "VariableID:abc", values: { "Light": { alias: "VariableID:xyz" } } }
+  ]}
+
+Multiple operations in one call:
+  { updates: [
+    { variableId: "VariableID:1", values: { "Default": 24 } },
+    { variableId: "VariableID:2", name: "spacing/lg" },
+    { variableId: "VariableID:3", delete: true }
+  ]}`,
+  {
+    updates: z
+      .array(
+        z.object({
+          variableId: z.string().describe("ID of the variable to update or delete"),
+          name: z.string().optional().describe("New name for the variable"),
+          description: z.string().optional().describe("New description"),
+          scopes: z.array(z.string()).optional().describe("New scopes array"),
+          values: z
+            .record(z.string(), z.any())
+            .optional()
+            .describe("New values per mode name. Same format as create_variables."),
+          delete: z.boolean().optional().describe("Set true to delete this variable"),
+        }),
+      )
+      .min(1)
+      .describe("Array of variable update operations"),
+  },
+  async ({ updates }: any) => {
+    try {
+      const result = await sendCommandToFigma("update_variables", { updates }, 60000);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error updating variables: ${error instanceof Error ? error.message : String(error)}`,
           },
         ],
       };
