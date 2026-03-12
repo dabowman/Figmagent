@@ -247,11 +247,20 @@ Create grid styles:
     ]}
   ]}
 
+Bind variables to style properties:
+  { styles: [
+    { type: "TEXT", name: "Body/MD", fontFamily: "Inter", fontStyle: "Regular", fontSize: 16, lineHeight: 24,
+      variables: { fontSize: "VariableID:abc", lineHeight: "VariableID:def" } },
+    { type: "PAINT", name: "Brand/Primary", color: { r: 0.2, g: 0.4, b: 0.9, a: 1 },
+      variables: { color: "VariableID:ghi" } }
+  ]}
+
 Notes:
 - PAINT styles accept either a 'color' object (solid color shorthand) or a 'paints' array (full Figma paint objects for gradients/images/stacks).
 - TEXT styles require valid fontFamily+fontStyle — fonts are loaded automatically. lineHeight accepts a number (pixels), "AUTO", or { value, unit: "PIXELS"|"PERCENT" }.
 - Colors use RGBA 0-1 range.
-- Duplicate style names within the same type are skipped with an error suggesting update_styles.`,
+- Duplicate style names within the same type are skipped with an error suggesting update_styles.
+- Use 'variables' to bind design token variables to style properties. TEXT: fontSize, fontFamily, fontStyle, lineHeight, letterSpacing, paragraphSpacing, paragraphIndent. PAINT: color (binds to first paint).`,
   {
     styles: z
       .array(
@@ -296,6 +305,13 @@ Notes:
           effects: z.array(z.any()).optional().describe("Figma effect objects array for EFFECT styles"),
           // Grid style properties
           grids: z.array(z.any()).optional().describe("Figma layout grid objects array for GRID styles"),
+          // Variable bindings
+          variables: z
+            .record(z.string(), z.string())
+            .optional()
+            .describe(
+              "Map of style property → variable ID. TEXT: fontSize, fontFamily, fontStyle, lineHeight, letterSpacing, paragraphSpacing, paragraphIndent. PAINT: color (binds to first paint).",
+            ),
         }),
       )
       .min(1)
@@ -354,6 +370,11 @@ Update effect style:
     { styleId: "S:abc...", effects: [{ type: "DROP_SHADOW", color: { r: 0, g: 0, b: 0, a: 0.2 }, offset: { x: 0, y: 8 }, radius: 16, spread: 0, visible: true, blendMode: "NORMAL" }] }
   ]}
 
+Bind variables to style properties:
+  { updates: [
+    { styleId: "S:abc...", variables: { fontSize: "VariableID:abc", lineHeight: "VariableID:def" } }
+  ]}
+
 Multiple operations in one call:
   { updates: [
     { styleId: "S:1", name: "NewName" },
@@ -396,6 +417,13 @@ Multiple operations in one call:
           effects: z.array(z.any()).optional().describe("New effects array for EFFECT styles"),
           // Grid style properties
           grids: z.array(z.any()).optional().describe("New grids array for GRID styles"),
+          // Variable bindings
+          variables: z
+            .record(z.string(), z.string())
+            .optional()
+            .describe(
+              "Map of style property → variable ID to bind. TEXT: fontSize, fontFamily, fontStyle, lineHeight, letterSpacing, paragraphSpacing, paragraphIndent. PAINT: color.",
+            ),
         }),
       )
       .min(1)

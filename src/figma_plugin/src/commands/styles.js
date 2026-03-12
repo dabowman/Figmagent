@@ -3,6 +3,23 @@
 
 import { sendProgressUpdate } from "../helpers.js";
 
+// Extract bound variable IDs from a style's boundVariables property.
+// Returns a flat map { field: "VariableID:xxx" } or undefined if none bound.
+function extractBoundVariables(style) {
+  const bv = style.boundVariables;
+  if (!bv) return undefined;
+
+  const result = {};
+  const fields = Object.keys(bv);
+  for (let i = 0; i < fields.length; i++) {
+    const binding = bv[fields[i]];
+    if (binding && binding.id) {
+      result[fields[i]] = binding.id;
+    }
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
 export async function getStyles() {
   const styles = {
     colors: await figma.getLocalPaintStylesAsync(),
@@ -12,13 +29,18 @@ export async function getStyles() {
   };
 
   return {
-    colors: styles.colors.map((style) => ({
-      id: style.id,
-      name: style.name,
-      key: style.key,
-      description: style.description || undefined,
-      paints: style.paints,
-    })),
+    colors: styles.colors.map((style) => {
+      const entry = {
+        id: style.id,
+        name: style.name,
+        key: style.key,
+        description: style.description || undefined,
+        paints: style.paints,
+      };
+      const bv = extractBoundVariables(style);
+      if (bv) entry.boundVariables = bv;
+      return entry;
+    }),
     texts: styles.texts.map((style) => {
       const entry = {
         id: style.id,
@@ -44,6 +66,8 @@ export async function getStyles() {
       if (style.textCase && style.textCase !== "ORIGINAL") {
         entry.textCase = style.textCase;
       }
+      const bv = extractBoundVariables(style);
+      if (bv) entry.boundVariables = bv;
       return entry;
     }),
     effects: styles.effects.map((style) => ({
@@ -485,6 +509,37 @@ export async function updateVariables(params) {
   };
 }
 
+// ─── Variable binding on styles ─────────────────────────────────────────────
+// TEXT styles: setBoundVariable for fontSize, lineHeight, letterSpacing, etc.
+// PAINT styles: setBoundVariableForPaint for color on first paint.
+// EFFECT styles: not yet supported (effect sub-properties lack setBoundVariable).
+
+async function bindVariablesToStyle(style, variables) {
+  if (!variables || typeof variables !== "object") return;
+
+  const entries = Object.keys(variables);
+  for (let i = 0; i < entries.length; i++) {
+    const field = entries[i];
+    const varId = variables[field];
+    const variable = await figma.variables.getVariableByIdAsync(varId);
+    if (!variable) throw new Error("Variable not found: " + varId);
+
+    if (field === "color" && style.type === "PAINT") {
+      // Bind color variable to the first paint in a PaintStyle
+      let paints = JSON.parse(JSON.stringify(style.paints));
+      if (!paints || paints.length === 0) {
+        paints = [{ type: "SOLID", color: { r: 0, g: 0, b: 0 }, opacity: 1 }];
+      }
+      paints[0] = figma.variables.setBoundVariableForPaint(paints[0], "color", variable);
+      style.paints = paints;
+    } else {
+      // Scalar fields on TEXT styles: fontSize, fontFamily, fontStyle,
+      // lineHeight, letterSpacing, paragraphSpacing, paragraphIndent
+      style.setBoundVariable(field, variable);
+    }
+  }
+}
+
 // Create styles — paint, text, effect, and grid styles in batch
 export async function createStyles(params) {
   const styleSpecs = params.styles;
@@ -632,6 +687,11 @@ export async function createStyles(params) {
         style.description = spec.description;
       }
 
+      // Bind variables to style properties (e.g., fontSize → FLOAT variable, color → COLOR variable)
+      if (spec.variables) {
+        await bindVariablesToStyle(style, spec.variables);
+      }
+
       // Track for in-batch duplicate detection
       existingNames[spec.name] = style.id;
       results.push({ success: true, name: spec.name, id: style.id, key: style.key, type: styleType });
@@ -771,6 +831,11 @@ export async function updateStyles(params) {
         if (update.grids && Array.isArray(update.grids)) {
           style.layoutGrids = update.grids;
         }
+      }
+
+      // Bind variables to style properties
+      if (update.variables) {
+        await bindVariablesToStyle(style, update.variables);
       }
 
       results.push({ success: true, styleId: update.styleId, action: "updated", name: style.name });
