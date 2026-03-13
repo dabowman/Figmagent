@@ -105,10 +105,10 @@ Variable bindings and text style assignments propagate from a COMPONENT to all i
 No `reparent_node` tool exists — `move_node` only changes x/y, not hierarchy. To move a node to a new parent: `clone_and_modify(nodeId, parentId=newParent)` + delete the original. Clones preserve all instance overrides.
 
 ### Silent connection drops
-If commands time out consistently, the plugin connection has likely dropped. Closing/reopening the plugin in Figma creates a NEW channel. Recovery: call `join_channel` again (auto-discovers the new channel). The relay stays running; it's the plugin↔relay WebSocket that breaks.
+If commands time out consistently, the plugin connection has likely dropped. Closing/reopening the plugin in Figma creates a NEW channel (named after the file). Recovery: call `join_channel` (auto-discovers the new channel) then retry. The relay stays running; it's the plugin↔relay WebSocket that breaks.
 
 ### MCP tool discovery after code changes
-When new tools are added to the MCP server source, they won't appear until the MCP connection is restarted (via `/mcp` in Claude Code). After restart, tools need re-discovery via `ToolSearch` and the channel needs re-joining.
+When new tools are added to the MCP server source, they won't appear until the MCP connection is restarted (via `/mcp` in Claude Code). After restart, tools need re-discovery via `ToolSearch`. The channel is re-joined automatically on the first tool call.
 
 ## Concurrency & Sub-Agents
 
@@ -128,7 +128,7 @@ Phases must be sequential: Discovery → Build → Style. Within Build or Style,
 1. Run `bun setup` — installs dependencies and writes MCP config for both Cursor (`.cursor/mcp.json`) and Claude Code (`.mcp.json`)
 2. `bun socket` in one terminal (WebSocket relay)
 3. In Figma: Plugins > Development > Link existing plugin > select `src/figma_plugin/manifest.json`
-4. Run plugin in Figma, click Connect, then call `join_channel` (no arguments needed — auto-discovers the active channel)
+4. Run plugin in Figma, click Connect — the plugin joins a channel named after the file (e.g. `my-design-file`). The MCP server auto-joins when you first issue a command.
 
 ### Windows/WSL
 
@@ -136,7 +136,7 @@ Uncomment the `hostname: "0.0.0.0"` line in `src/socket.ts` to allow connections
 
 ## Agent Notes
 
-- Always call `join_channel` before issuing any Figma commands (no arguments needed — auto-discovers the active plugin channel via the relay's `GET /channels` endpoint)
+- No need to call `join_channel` manually — the MCP server auto-joins when you issue the first Figma command. If multiple Figma files are open, the first command returns a list of file names; call `join_channel({ channel: "file-name" })` to pick one.
 - Call `get_document_info` first to understand the design structure
 - Use `find` to search for nodes by criteria (component usage, variable bindings, style usage, text content, name, type) — returns grouped matches with ancestry paths
 - Use `get(nodeId, detail="structure", depth=2)` on a target node to orient before making modifications
