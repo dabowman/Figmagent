@@ -86,12 +86,13 @@ For instances (componentId for local, componentKey for library):
 
 FRAME and COMPONENT nodes support auto-layout (layoutMode, padding, alignment, spacing, sizing), fill/stroke colors, and cornerRadius.
 TEXT nodes support text, fontSize, fontWeight, fontFamily, fontStyle, and fontColor.
-RECTANGLE nodes support fillColor, strokeColor, strokeWeight, and cornerRadius.
+RECTANGLE nodes support fillColor, strokeColor, strokeWeight, and cornerRadius. IMPORTANT: RECTANGLE cannot use FILL sizing — use a FRAME with fillColor instead when you need a shape that stretches.
 INSTANCE nodes require componentId or componentKey. Position and parentId work as usual.
 All nodes support width, height, x, y, and name.
 
 FILL sizing is applied in a second pass after children exist, so it works correctly even at creation time.
-Use parentId to append the created node(s) inside an existing frame.`,
+Use parentId to append the created node(s) inside an existing frame.
+Colors use RGBA 0-1 range (e.g. { r: 0.2, g: 0.4, b: 1.0 }), not 0-255.`,
   {
     parentId: z.string().optional().describe("Parent node ID to append the created node(s) to"),
     node: nodeSpecSchema.describe("Node spec — a single node or a nested tree with children"),

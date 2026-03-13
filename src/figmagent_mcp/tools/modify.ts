@@ -38,7 +38,7 @@ server.tool(
 // Move Node Tool
 server.tool(
   "move_node",
-  "Move a node to a new position in Figma",
+  "Move a node to a new x/y position in Figma. NOTE: This only changes coordinates, NOT parent hierarchy. To reparent a node, use clone_and_modify(nodeId, parentId=newParent) + delete_node(originalId).",
   {
     nodeId: z.string().describe("The ID of the node to move"),
     x: z.number().describe("New X position"),
@@ -243,7 +243,7 @@ server.tool(
 // Clone and Modify Tool
 server.tool(
   "clone_and_modify",
-  "Clone an existing node and optionally modify the clone's properties in one call. Clone is placed in the same parent as original by default.",
+  "Clone an existing node and optionally modify the clone's properties in one call. Clone is placed in the same parent as original by default. Also used to reparent nodes (no reparent tool exists): clone_and_modify(nodeId, parentId=newParent) + delete_node(originalId). Clones preserve all instance overrides.",
   {
     nodeId: z.string().describe("Node ID to clone"),
     parentId: z.string().optional().describe("Parent ID for the clone (default: same parent as original)"),

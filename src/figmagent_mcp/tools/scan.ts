@@ -281,7 +281,7 @@ server.tool(
 // Join Channel Tool
 server.tool(
   "join_channel",
-  "Join a channel to communicate with Figma. If no channel name is provided, auto-discovers active channels from the relay and joins if exactly one is found.",
+  "Join a channel to communicate with Figma. If no channel name is provided, auto-discovers active channels from the relay and joins if exactly one is found. You usually don't need to call this — the server auto-joins on first command. Call this explicitly when: (1) commands are timing out (connection may have dropped — re-joining reconnects), (2) you need to switch between multiple open Figma files.",
   {
     channel: z.string().describe("The name of the channel to join").default(""),
   },

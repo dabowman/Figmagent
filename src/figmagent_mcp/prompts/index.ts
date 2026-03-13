@@ -115,7 +115,29 @@ Prefer variable bindings over hardcoded values — this keeps designs connected 
 
 - \`get(nodeId, detail="structure")\` — confirm hierarchy looks right.
 - \`export_node_as_image(nodeId, format="PNG", scale=1)\` — visual spot-check.
-- \`lint_design(nodeId)\` — check token coverage.`,
+- \`lint_design(nodeId)\` — check token coverage.
+
+## Common Pitfalls
+
+These cause silent failures or wasted calls — learn them now:
+
+1. **FRAME, not RECTANGLE, for stretchy shapes.** RECTANGLE nodes cannot have \`layoutSizingVertical: FILL\` or \`layoutSizingHorizontal: FILL\`. Use a FRAME with a fill color instead. Example: a 1px-wide FRAME replaces a RECTANGLE for a divider line.
+
+2. **Bind variables on COMPONENTs, not instances.** Variable bindings and text style assignments propagate from a COMPONENT to all its instances automatically. Always bind at the component level.
+
+3. **No reparenting.** \`move_node\` only changes x/y position, not hierarchy. To move a node to a new parent: \`clone_and_modify(nodeId, parentId=newParent)\` + \`delete_node(originalId)\`.
+
+4. **Connection drops.** If 2+ commands time out in a row, the plugin↔relay WebSocket has likely dropped. Call \`join_channel()\` (no args) to re-discover and reconnect, then retry.
+
+5. **Stop after 2 identical errors.** If the same tool call fails twice with the same error, diagnose the root cause (wrong node ID, lost connection, type mismatch) instead of retrying.
+
+6. **Colors are RGBA 0-1.** All color values (fillColor, strokeColor, fontColor) use \`{ r, g, b, a? }\` where each channel is a float from 0 to 1. Not 0-255.
+
+7. **Use \`find\` → \`get\` → \`apply\` as your core loop.** \`find\` locates nodes by criteria, \`get\` reads their details, \`apply\` modifies them. Avoid brute-force traversals.
+
+8. **Batch over repeated singles.** Prefer \`set_multiple_text_contents\`, \`delete_multiple_nodes\`, \`set_multiple_annotations\` over repeated single-node calls. Use \`apply\` with multiple node entries instead of separate calls.
+
+9. **Instances are leaf nodes in \`get\`.** Call \`get(instanceId)\` separately to expand instance internals. The \`componentRef\` in \`defs.components\` resolves to the main component's id, name, key, and description.`,
         },
       },
     ],

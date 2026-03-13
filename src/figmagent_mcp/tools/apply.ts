@@ -147,7 +147,10 @@ Execution order per node: component ops → layout mode → direct values → fo
 Variable bindings override direct values (set both to get a fallback + token).
 Width and height resize the node. Use variables.width/height to bind dimension tokens.
 Font properties load fonts automatically. fontColor is a convenience alias for fillColor on TEXT nodes.
-Effect styles apply drop shadows, inner shadows, and blurs from the design system.`,
+Effect styles apply drop shadows, inner shadows, and blurs from the design system.
+Colors use RGBA 0-1 range (e.g. { r: 0.2, g: 0.4, b: 1.0 }), not 0-255.
+
+IMPORTANT: Bind variables and text styles on COMPONENT nodes, not instances — bindings propagate from component to all instances automatically.`,
   {
     nodes: z
       .array(nodeOpSchema)

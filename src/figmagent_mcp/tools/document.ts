@@ -108,7 +108,7 @@ function buildFsgn(raw: any, params: any): string {
 // ─── Tools ───────────────────────────────────────────────────────────────────
 
 // Document Info Tool
-server.tool("get_document_info", "Get detailed information about the current Figma document", {}, async () => {
+server.tool("get_document_info", "Get pages and top-level frames in the current Figma document. Call this first to orient yourself, then use get_selection() to find what the user is looking at, then get(nodeId) to read details.", {}, async () => {
   try {
     const result = await sendCommandToFigma("get_document_info");
     return {
@@ -132,7 +132,7 @@ server.tool("get_document_info", "Get detailed information about the current Fig
 });
 
 // Selection Tool
-server.tool("get_selection", "Get information about the current selection in Figma", {}, async () => {
+server.tool("get_selection", "Get the user's current selection in Figma. Returns selected node IDs and basic info. If empty, ask the user to select something. Use get(nodeId) on the result to read details.", {}, async () => {
   try {
     const result = await sendCommandToFigma("get_selection");
     return {
