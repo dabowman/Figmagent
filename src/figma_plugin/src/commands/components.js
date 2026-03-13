@@ -318,7 +318,27 @@ export async function componentProperties(params) {
           options.preferredValues = op.preferredValues;
         }
         const fullName = node.addComponentProperty(op.name, op.type, op.defaultValue, options);
-        results.push({ success: true, action: "add", propertyName: fullName });
+        const addResult = { success: true, action: "add", propertyName: fullName };
+
+        // Auto-bind to target node if targetNodeId is provided
+        if (op.targetNodeId) {
+          try {
+            const targetNode = await figma.getNodeByIdAsync(op.targetNodeId);
+            if (!targetNode) throw new Error("Target node not found: " + op.targetNodeId);
+            // Auto-detect binding field from property type
+            const fieldMap = { BOOLEAN: "visible", TEXT: "characters", INSTANCE_SWAP: "mainComponent" };
+            const targetField = op.targetField || fieldMap[op.type];
+            if (!targetField) throw new Error("Cannot auto-detect targetField for type: " + op.type);
+            const refs = targetNode.componentPropertyReferences || {};
+            refs[targetField] = fullName;
+            targetNode.componentPropertyReferences = refs;
+            addResult.boundTo = { nodeId: op.targetNodeId, field: targetField };
+          } catch (bindErr) {
+            addResult.bindError = bindErr.message || String(bindErr);
+          }
+        }
+
+        results.push(addResult);
       } else if (op.action === "edit") {
         if (!op.propertyName) throw new Error("edit requires propertyName");
         const edits = {};
@@ -331,8 +351,27 @@ export async function componentProperties(params) {
         if (!op.propertyName) throw new Error("delete requires propertyName");
         node.deleteComponentProperty(op.propertyName);
         results.push({ success: true, action: "delete", propertyName: op.propertyName });
+      } else if (op.action === "bind") {
+        if (!op.propertyName) throw new Error("bind requires propertyName (full name with #suffix)");
+        if (!op.targetNodeId) throw new Error("bind requires targetNodeId");
+        const targetNode = await figma.getNodeByIdAsync(op.targetNodeId);
+        if (!targetNode) throw new Error("Target node not found: " + op.targetNodeId);
+        // Detect field from property type in definitions, or use explicit targetField
+        let targetField = op.targetField;
+        if (!targetField) {
+          const defs = node.componentPropertyDefinitions;
+          const def = defs && defs[op.propertyName];
+          if (!def) throw new Error("Property not found in definitions: " + op.propertyName);
+          const fieldMap = { BOOLEAN: "visible", TEXT: "characters", INSTANCE_SWAP: "mainComponent" };
+          targetField = fieldMap[def.type];
+          if (!targetField) throw new Error("Cannot auto-detect targetField for type: " + def.type);
+        }
+        const refs = targetNode.componentPropertyReferences || {};
+        refs[targetField] = op.propertyName;
+        targetNode.componentPropertyReferences = refs;
+        results.push({ success: true, action: "bind", propertyName: op.propertyName, boundTo: { nodeId: op.targetNodeId, field: targetField } });
       } else {
-        throw new Error("Unknown action: " + op.action + ". Use add, edit, or delete.");
+        throw new Error("Unknown action: " + op.action + ". Use add, edit, or delete, or bind.");
       }
     } catch (e) {
       results.push({ success: false, action: op.action || "unknown", error: e.message || String(e) });

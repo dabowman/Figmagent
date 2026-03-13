@@ -394,21 +394,28 @@ Name each component with the variant property format: \`Property1=Value1, Proper
 
 ## Component Properties
 
-Use \`component_properties\` to add, edit, or delete property definitions in batch:
+Use \`component_properties\` to add, edit, delete, and **bind** property definitions in batch:
 
 \`\`\`
 component_properties({
   nodeId: "component-or-set-id",
   operations: [
-    { op: "add", name: "Show Icon", type: "BOOLEAN", defaultValue: true },
-    { op: "add", name: "Label", type: "TEXT", defaultValue: "Button" },
-    { op: "edit", propertyName: "Show Icon#123:0", newName: "Has Icon" },
-    { op: "delete", propertyName: "Deprecated Prop#456:0" }
+    // Add properties AND bind them to child nodes in one step:
+    { action: "add", name: "Show Icon", type: "BOOLEAN", defaultValue: true, targetNodeId: "icon-node-id" },
+    { action: "add", name: "Label", type: "TEXT", defaultValue: "Button", targetNodeId: "text-node-id" },
+    { action: "add", name: "Icon", type: "INSTANCE_SWAP", defaultValue: "icon-comp-id", targetNodeId: "icon-instance-id" },
+    // Edit and delete existing properties:
+    { action: "edit", propertyName: "Show Icon#123:0", newName: "Has Icon" },
+    { action: "delete", propertyName: "Deprecated Prop#456:0" },
+    // Bind an existing property to a different child node:
+    { action: "bind", propertyName: "Label#12:0", targetNodeId: "other-text-node-id" }
   ]
 })
 \`\`\`
 
-Use \`get(nodeId)\` on a COMPONENT or COMPONENT_SET to discover existing \`componentPropertyDefinitions\` (names include a \`#suffix\`).
+**Important**: Adding a property definition alone does NOT wire it to child nodes. Always pass \`targetNodeId\` on \`add\` operations (or use \`bind\` afterward) to connect the property to the actual child node. Auto-detection maps: BOOLEAN→visible, TEXT→characters, INSTANCE_SWAP→mainComponent.
+
+Use \`get(nodeId)\` on a COMPONENT or COMPONENT_SET to discover existing \`componentPropertyDefinitions\` (names include a \`#suffix\`). Child nodes show \`componentPropertyReferences\` when wired to a property.
 
 ## Instances
 

@@ -99,18 +99,24 @@ server.tool(
 // Component Properties Tool — batch add/edit/delete property definitions
 server.tool(
   "component_properties",
-  `Batch add, edit, and delete property definitions on a COMPONENT or COMPONENT_SET. Use get(nodeId, detail="layout") to discover existing property definitions first (componentPropertyDefinitions is included in FSGN output).
+  `Batch add, edit, delete, and bind property definitions on a COMPONENT or COMPONENT_SET. Use get(nodeId, detail="layout") to discover existing property definitions first (componentPropertyDefinitions is included in FSGN output). Child nodes that are wired to properties show componentPropertyReferences in FSGN output.
 
 Operations:
-  - add: Create a new property. Requires name, type (BOOLEAN/TEXT/INSTANCE_SWAP/VARIANT), defaultValue. Optional: preferredValues for INSTANCE_SWAP.
+  - add: Create a new property. Requires name, type (BOOLEAN/TEXT/INSTANCE_SWAP/VARIANT), defaultValue. Optional: targetNodeId to auto-bind the property to a child node (auto-detects field from type: BOOLEAN→visible, TEXT→characters, INSTANCE_SWAP→mainComponent). Optional: targetField to override auto-detection. Optional: preferredValues for INSTANCE_SWAP.
   - edit: Modify an existing property. Requires propertyName (full name with #suffix). Optional: newName, defaultValue, preferredValues.
   - delete: Remove a property. Requires propertyName (full name with #suffix).
+  - bind: Wire an existing property to a child node. Requires propertyName (full name with #suffix) and targetNodeId. Optional: targetField (auto-detected from property type if omitted).
 
-Example — add two properties and rename one:
+Example — add properties and bind them to child nodes in one call:
   { nodeId: "123:456", operations: [
-    { action: "add", name: "Show Icon", type: "BOOLEAN", defaultValue: true },
-    { action: "add", name: "Label", type: "TEXT", defaultValue: "Button" },
-    { action: "edit", propertyName: "OldName#12:0", newName: "NewName" }
+    { action: "add", name: "Show Icon", type: "BOOLEAN", defaultValue: true, targetNodeId: "123:460" },
+    { action: "add", name: "Label", type: "TEXT", defaultValue: "Button", targetNodeId: "123:461" },
+    { action: "add", name: "Icon", type: "INSTANCE_SWAP", defaultValue: "200:1", targetNodeId: "123:462" }
+  ]}
+
+Example — bind existing properties to child nodes:
+  { nodeId: "123:456", operations: [
+    { action: "bind", propertyName: "Label#12:0", targetNodeId: "123:461" }
   ]}
 
 Returns updated componentPropertyDefinitions after all operations.`,
@@ -119,7 +125,7 @@ Returns updated componentPropertyDefinitions after all operations.`,
     operations: z
       .array(
         z.object({
-          action: z.enum(["add", "edit", "delete"]).describe("Operation type"),
+          action: z.enum(["add", "edit", "delete", "bind"]).describe("Operation type"),
           // For add:
           name: z.string().optional().describe("Property name (for add)"),
           type: z
@@ -136,6 +142,16 @@ Returns updated componentPropertyDefinitions after all operations.`,
             .optional()
             .describe("Full property name including #suffix (for edit/delete)"),
           newName: z.string().optional().describe("New name for the property (for edit)"),
+          targetNodeId: z
+            .string()
+            .optional()
+            .describe(
+              "Child node ID to bind this property to (for add/bind). Auto-detects binding field from property type: BOOLEAN→visible, TEXT→characters, INSTANCE_SWAP→mainComponent.",
+            ),
+          targetField: z
+            .enum(["visible", "characters", "mainComponent"])
+            .optional()
+            .describe("Override auto-detected binding field (for add/bind). Usually not needed."),
           preferredValues: z
             .array(
               z.object({

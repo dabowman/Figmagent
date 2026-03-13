@@ -362,6 +362,15 @@ async function buildNodeOutput(n, detail, inclVars, inclStyles, inclComp, collVa
     out.variantProperties = n.variantProperties;
   }
 
+  // component property references (child nodes wired to component properties)
+  if (n.componentPropertyReferences) {
+    const refs = n.componentPropertyReferences;
+    const refKeys = Object.keys(refs);
+    if (refKeys.length > 0) {
+      out.componentPropertyReferences = refs;
+    }
+  }
+
   // full level: fills, strokes, variable bindings, text style
   if (detail === "full") {
     if (n.fills && typeof n.fills !== "symbol" && n.fills.length > 0) {
