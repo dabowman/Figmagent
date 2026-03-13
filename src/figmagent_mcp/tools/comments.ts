@@ -158,15 +158,25 @@ server.tool(
 // Get Annotations Tool
 server.tool(
   "get_annotations",
-  "Get all annotations in the current document or specific node",
+  `Get annotations from Figma nodes. Supports three modes:
+- Single node: pass \`nodeId\` to get annotations from one node and its subtree
+- Batch: pass \`nodeIds\` array to check multiple nodes in one call (much more efficient than repeated single calls)
+- Page scan: omit both to scan the entire current page
+
+Categories are only included in the response when annotations are found. Use \`find\` with \`hasAnnotation: true\` or \`annotation: "regex"\` for searching — this tool is for reading known nodes.`,
   {
-    nodeId: z.string().describe("node ID to get annotations for specific node"),
-    includeCategories: z.boolean().optional().default(true).describe("Whether to include category information"),
+    nodeId: z.string().optional().describe("Single node ID to get annotations for (includes subtree)"),
+    nodeIds: z
+      .array(z.string())
+      .optional()
+      .describe("Array of node IDs to batch-check for annotations (more efficient than repeated single calls)"),
+    includeCategories: z.boolean().optional().default(true).describe("Whether to include category information when annotations are found"),
   },
-  async ({ nodeId, includeCategories }: any) => {
+  async ({ nodeId, nodeIds, includeCategories }: any) => {
     try {
       const result = await sendCommandToFigma("get_annotations", {
         nodeId,
+        nodeIds,
         includeCategories,
       });
       return {

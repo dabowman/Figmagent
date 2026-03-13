@@ -16,6 +16,8 @@ Search criteria (at least one required):
 - text: find TEXT nodes whose content matches this regex
 - name: find nodes whose name matches this regex
 - type: find nodes of these types (FRAME, TEXT, INSTANCE, COMPONENT, etc.)
+- annotation: find nodes whose annotation label matches this regex
+- hasAnnotation: find all nodes that have any annotation (boolean)
 
 Use \`find\` to locate nodes, then \`get\` for details on specific matches.`,
   {
@@ -47,6 +49,14 @@ Use \`find\` to locate nodes, then \`get\` for details on specific matches.`,
       .array(z.string())
       .optional()
       .describe("Find nodes of these types (e.g. FRAME, TEXT, INSTANCE, COMPONENT, COMPONENT_SET)"),
+    annotation: z
+      .string()
+      .optional()
+      .describe("Find nodes whose annotation label matches this regex pattern"),
+    hasAnnotation: z
+      .boolean()
+      .optional()
+      .describe("Find all nodes that have any annotation (set to true)"),
     excludeDefinitions: z
       .boolean()
       .optional()
@@ -66,6 +76,8 @@ Use \`find\` to locate nodes, then \`get\` for details on specific matches.`,
     text,
     name,
     type,
+    annotation,
+    hasAnnotation,
     excludeDefinitions,
     maxResults,
   }: {
@@ -76,6 +88,8 @@ Use \`find\` to locate nodes, then \`get\` for details on specific matches.`,
     text?: string;
     name?: string;
     type?: string[];
+    annotation?: string;
+    hasAnnotation?: boolean;
     excludeDefinitions?: boolean;
     maxResults?: number;
   }) => {
@@ -86,6 +100,8 @@ Use \`find\` to locate nodes, then \`get\` for details on specific matches.`,
       (styleId && styleId.length > 0) ||
       text ||
       name ||
+      annotation ||
+      hasAnnotation === true ||
       (type && type.length > 0);
 
     if (!hasCriteria) {
@@ -93,7 +109,7 @@ Use \`find\` to locate nodes, then \`get\` for details on specific matches.`,
         content: [
           {
             type: "text" as const,
-            text: "Error: at least one search criterion is required (componentId, variableId, styleId, text, name, or type)",
+            text: "Error: at least one search criterion is required (componentId, variableId, styleId, text, name, type, annotation, or hasAnnotation)",
           },
         ],
       };
@@ -110,6 +126,8 @@ Use \`find\` to locate nodes, then \`get\` for details on specific matches.`,
           text,
           name,
           type,
+          annotation,
+          hasAnnotation,
           excludeDefinitions,
           maxResults,
         },
@@ -145,6 +163,8 @@ Use \`find\` to locate nodes, then \`get\` for details on specific matches.`,
       if (text) criteria.text = text;
       if (name) criteria.name = name;
       if (type) criteria.type = type;
+      if (annotation) criteria.annotation = annotation;
+      if (hasAnnotation) criteria.hasAnnotation = hasAnnotation;
 
       // Build YAML output
       const output = {

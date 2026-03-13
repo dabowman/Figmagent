@@ -395,22 +395,75 @@ async function findNodesByTypes(node, types, matchingNodes) {
 
 export async function getAnnotations(params) {
   try {
-    const { nodeId, includeCategories = true } = params;
+    const { nodeId, nodeIds, includeCategories = true } = params;
 
+    // Only fetch categories when explicitly requested AND there are annotations to show
     let categoriesMap = {};
-    if (includeCategories) {
-      const categories = await figma.annotations.getAnnotationCategoriesAsync();
-      categoriesMap = categories.reduce((map, category) => {
-        map[category.id] = {
-          id: category.id,
-          label: category.label,
-          color: category.color,
-          isPreset: category.isPreset,
-        };
-        return map;
-      }, {});
+    let categoriesFetched = false;
+    async function ensureCategories() {
+      if (!categoriesFetched && includeCategories) {
+        categoriesFetched = true;
+        const categories = await figma.annotations.getAnnotationCategoriesAsync();
+        categoriesMap = categories.reduce((map, category) => {
+          map[category.id] = {
+            id: category.id,
+            label: category.label,
+            color: category.color,
+            isPreset: category.isPreset,
+          };
+          return map;
+        }, {});
+      }
     }
 
+    // Helper: collect annotations from a node and its subtree
+    async function collectAnnotations(node) {
+      const mergedAnnotations = [];
+      const collect = async (n) => {
+        if ("annotations" in n && n.annotations && n.annotations.length > 0) {
+          for (const a of n.annotations) {
+            mergedAnnotations.push({ nodeId: n.id, nodeName: n.name, annotation: a });
+          }
+        }
+        if ("children" in n) {
+          for (const child of n.children) {
+            await collect(child);
+          }
+        }
+      };
+      await collect(node);
+      return mergedAnnotations;
+    }
+
+    // Batch mode: multiple nodeIds
+    if (nodeIds && nodeIds.length > 0) {
+      const results = [];
+      for (let i = 0; i < nodeIds.length; i++) {
+        const nid = nodeIds[i];
+        const node = await figma.getNodeByIdAsync(nid);
+        if (!node) {
+          results.push({ nodeId: nid, error: "Node not found" });
+          continue;
+        }
+        if (!("annotations" in node)) {
+          results.push({ nodeId: nid, name: node.name, annotations: [] });
+          continue;
+        }
+        const annotations = await collectAnnotations(node);
+        results.push({ nodeId: node.id, name: node.name, annotations: annotations });
+      }
+
+      // Only include categories if any annotations were found
+      const hasAnyAnnotations = results.some((r) => r.annotations && r.annotations.length > 0);
+      const result = { nodes: results };
+      if (hasAnyAnnotations) {
+        await ensureCategories();
+        result.categories = Object.values(categoriesMap);
+      }
+      return result;
+    }
+
+    // Single node mode
     if (nodeId) {
       const node = await figma.getNodeByIdAsync(nodeId);
       if (!node) {
@@ -421,20 +474,7 @@ export async function getAnnotations(params) {
         throw new Error(`Node type ${node.type} does not support annotations`);
       }
 
-      const mergedAnnotations = [];
-      const collect = async (n) => {
-        if ("annotations" in n && n.annotations && n.annotations.length > 0) {
-          for (const a of n.annotations) {
-            mergedAnnotations.push({ nodeId: n.id, annotation: a });
-          }
-        }
-        if ("children" in n) {
-          for (const child of n.children) {
-            await collect(child);
-          }
-        }
-      };
-      await collect(node);
+      const mergedAnnotations = await collectAnnotations(node);
 
       const result = {
         nodeId: node.id,
@@ -442,40 +482,45 @@ export async function getAnnotations(params) {
         annotations: mergedAnnotations,
       };
 
-      if (includeCategories) {
-        result.categories = Object.values(categoriesMap);
-      }
-
-      return result;
-    } else {
-      const annotations = [];
-      const processNode = async (node) => {
-        if ("annotations" in node && node.annotations && node.annotations.length > 0) {
-          annotations.push({
-            nodeId: node.id,
-            name: node.name,
-            annotations: node.annotations,
-          });
-        }
-        if ("children" in node) {
-          for (const child of node.children) {
-            await processNode(child);
-          }
-        }
-      };
-
-      await processNode(figma.currentPage);
-
-      const result = {
-        annotatedNodes: annotations,
-      };
-
-      if (includeCategories) {
+      // Only include categories when there are actual annotations
+      if (mergedAnnotations.length > 0) {
+        await ensureCategories();
         result.categories = Object.values(categoriesMap);
       }
 
       return result;
     }
+
+    // No nodeId — scan entire current page
+    const annotations = [];
+    const processNode = async (node) => {
+      if ("annotations" in node && node.annotations && node.annotations.length > 0) {
+        annotations.push({
+          nodeId: node.id,
+          name: node.name,
+          annotations: node.annotations,
+        });
+      }
+      if ("children" in node) {
+        for (const child of node.children) {
+          await processNode(child);
+        }
+      }
+    };
+
+    await processNode(figma.currentPage);
+
+    const result = {
+      annotatedNodes: annotations,
+    };
+
+    // Only include categories when there are actual annotations
+    if (annotations.length > 0) {
+      await ensureCategories();
+      result.categories = Object.values(categoriesMap);
+    }
+
+    return result;
   } catch (error) {
     console.error("Error in getAnnotations:", error);
     throw error;

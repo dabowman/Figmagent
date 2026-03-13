@@ -321,9 +321,15 @@ async function buildNodeOutput(n, detail, inclVars, inclStyles, inclComp, collVa
     }
   }
 
-  // component property definitions (COMPONENT and COMPONENT_SET nodes)
-  if ((n.type === "COMPONENT" || n.type === "COMPONENT_SET") && n.componentPropertyDefinitions) {
+  // component property definitions (COMPONENT_SET nodes and non-variant COMPONENT nodes)
+  // Variant components (children of COMPONENT_SET) don't own property definitions — accessing throws.
+  if (n.type === "COMPONENT_SET" && n.componentPropertyDefinitions) {
     out.componentPropertyDefinitions = n.componentPropertyDefinitions;
+  } else if (n.type === "COMPONENT" && n.componentPropertyDefinitions) {
+    const isVariant = n.parent && n.parent.type === "COMPONENT_SET";
+    if (!isVariant) {
+      out.componentPropertyDefinitions = n.componentPropertyDefinitions;
+    }
   }
 
   // variant properties (COMPONENT nodes)

@@ -129,6 +129,8 @@ export async function find(params) {
   const textPattern = params.text;
   const namePattern = params.name;
   const typeFilter = params.type;
+  const annotationPattern = params.annotation;
+  const hasAnnotationFilter = params.hasAnnotation;
   const excludeDefs = params.excludeDefinitions !== false; // default true
   const maxResults = params.maxResults || 200;
   const commandId = params.commandId || generateCommandId();
@@ -153,10 +155,12 @@ export async function find(params) {
     (styleIds && styleIds.length > 0) ||
     textPattern ||
     namePattern ||
+    annotationPattern ||
+    hasAnnotationFilter === true ||
     (typeFilter && typeFilter.length > 0);
 
   if (!hasCriteria) {
-    throw new Error("At least one search criterion is required (componentId, variableId, styleId, text, name, or type)");
+    throw new Error("At least one search criterion is required (componentId, variableId, styleId, text, name, type, annotation, or hasAnnotation)");
   }
 
   // Build lookup structures
@@ -165,6 +169,7 @@ export async function find(params) {
   const styleIdSet = styleIds ? buildIdSet(styleIds) : null;
   const nameRegex = namePattern ? buildRegex(namePattern) : null;
   const textRegex = textPattern ? buildRegex(textPattern) : null;
+  const annotationRegex = annotationPattern ? buildRegex(annotationPattern) : null;
   let typeSet = null;
   if (typeFilter && typeFilter.length > 0) {
     typeSet = {};
@@ -301,6 +306,36 @@ export async function find(params) {
         }
       }
 
+      // annotation filter (hasAnnotation or annotation regex)
+      if (allPass && (annotationRegex || hasAnnotationFilter === true)) {
+        if (!("annotations" in node) || !node.annotations || node.annotations.length === 0) {
+          allPass = false;
+        } else if (annotationRegex) {
+          // Check if any annotation label matches the regex
+          let anyMatch = false;
+          const matchedLabels = [];
+          for (let ai = 0; ai < node.annotations.length; ai++) {
+            const label = node.annotations[ai].labelMarkdown || node.annotations[ai].label || "";
+            if (annotationRegex.test(label)) {
+              anyMatch = true;
+              matchedLabels.push(label);
+            }
+          }
+          if (!anyMatch) {
+            allPass = false;
+          } else {
+            matchDetails.annotation = matchedLabels;
+          }
+        } else {
+          // hasAnnotation: true — just include all labels
+          const labels = [];
+          for (let ai = 0; ai < node.annotations.length; ai++) {
+            labels.push(node.annotations[ai].labelMarkdown || node.annotations[ai].label || "");
+          }
+          matchDetails.annotation = labels;
+        }
+      }
+
       // All predicates passed — record match
       if (allPass) {
         if (matches.length >= maxResults) {
@@ -313,6 +348,7 @@ export async function find(params) {
         if (matchDetails.componentId) match.componentId = matchDetails.componentId;
         if (matchDetails.variableId) match.variableId = matchDetails.variableId;
         if (matchDetails.styleId) match.styleId = matchDetails.styleId;
+        if (matchDetails.annotation) match.annotation = matchDetails.annotation;
 
         const item = {
           id: node.id,
