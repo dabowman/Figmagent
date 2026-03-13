@@ -102,10 +102,13 @@ const GROUP_TYPES = {
   COMPONENT_SET: true,
   FRAME: true,
   SECTION: true,
+  PAGE: true,
 };
 
 function isGroupNode(node, scopeId) {
   if (!GROUP_TYPES[node.type]) return false;
+  // Pages always count as groups (for document-wide searches).
+  if (node.type === "PAGE") return true;
   // Only top-level frames (direct children of page/scope) count as groups,
   // not every nested frame. Components/component_sets always count.
   if (node.type === "FRAME" || node.type === "SECTION") {
@@ -132,7 +135,9 @@ export async function find(params) {
 
   // Resolve scope node
   let scopeNode;
-  if (scope) {
+  if (scope === "DOCUMENT") {
+    scopeNode = figma.root;
+  } else if (scope) {
     scopeNode = await figma.getNodeByIdAsync(scope);
     if (!scopeNode) {
       throw new Error("Scope node not found: " + scope);
@@ -335,6 +340,10 @@ export async function find(params) {
 
     // Recurse into children
     if ("children" in node && !truncated) {
+      // Load non-current pages for document-wide search (dynamic-page access)
+      if (node.type === "PAGE" && node !== figma.currentPage) {
+        await node.loadAsync();
+      }
       for (let ci = 0; ci < node.children.length; ci++) {
         await traverse(node.children[ci], nodePath, group, inExcluded);
         if (truncated) return;

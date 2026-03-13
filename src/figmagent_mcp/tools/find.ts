@@ -22,7 +22,7 @@ Use \`find\` to locate nodes, then \`get\` for details on specific matches.`,
     scope: z
       .string()
       .optional()
-      .describe("Node ID to search within (default: current page)"),
+      .describe('Node ID to search within, or "DOCUMENT" to search all pages (default: current page)'),
     componentId: z
       .array(z.string())
       .optional()
