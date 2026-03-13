@@ -17,6 +17,8 @@ export const pendingRequests = new Map<
 
 // Track which channel each client is in
 let currentChannel: string | null = null;
+// Port of the active relay connection (needed for channel discovery inside sendCommandToFigma)
+let activePort: number = 3055;
 
 // Add command line argument parsing
 const args = process.argv.slice(2);
@@ -31,6 +33,7 @@ export function connectToFigma(port: number = 3055) {
     return;
   }
 
+  activePort = port;
   const wsUrl = serverUrl === "localhost" ? `${WS_URL}:${port}` : WS_URL;
   logger.info(`Connecting to Figma socket server at ${wsUrl}...`);
   ws = new WebSocket(wsUrl);
@@ -175,7 +178,7 @@ export function sendCommandToFigma(
   params: unknown = {},
   timeoutMs: number = 30000,
 ): Promise<unknown> {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     // If not connected, try to connect first
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       connectToFigma();
@@ -186,8 +189,33 @@ export function sendCommandToFigma(
     // Check if we need a channel for this command
     const requiresChannel = command !== "join";
     if (requiresChannel && !currentChannel) {
-      reject(new Error("Must join a channel before sending commands"));
-      return;
+      // Try to auto-discover and join before giving up
+      try {
+        const channels = await discoverChannels(activePort);
+        const names = Object.keys(channels);
+        if (names.length === 1) {
+          await joinChannel(names[0]);
+          logger.info(`Auto-joined channel: ${names[0]}`);
+        } else if (names.length > 1) {
+          const listing = names.map((n) => `  • ${n}`).join("\n");
+          reject(
+            new Error(
+              `Multiple Figma files are open. Call join_channel with the file you want:\n${listing}`,
+            ),
+          );
+          return;
+        } else {
+          reject(
+            new Error(
+              "No active Figma channels found. Make sure the Figma plugin is open and connected.",
+            ),
+          );
+          return;
+        }
+      } catch (discoveryError) {
+        reject(new Error("Must join a channel before sending commands"));
+        return;
+      }
     }
 
     const id = uuidv4();

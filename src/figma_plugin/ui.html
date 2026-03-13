@@ -170,18 +170,9 @@
           state.socket = new WebSocket(wsUrl);
 
           state.socket.onopen = () => {
-            // Generate random channel name
-            const channelName = generateChannelName();
-            console.log("Joining channel:", channelName);
-            state.channel = channelName;
-
-            // Join the channel using the same format as App.tsx
-            state.socket.send(
-              JSON.stringify({
-                type: "join",
-                channel: channelName.trim(),
-              })
-            );
+            // Request the Figma document name from the main thread.
+            // The reply triggers the actual channel join (see "file-name" in window.onmessage).
+            parent.postMessage({ pluginMessage: { type: "get-file-name" } }, "*");
           };
 
           state.socket.onmessage = (event) => {
@@ -378,16 +369,34 @@
         );
       }
 
-      // Add this function after the generateId() function
-      function generateChannelName() {
-        const characters = "abcdefghijklmnopqrstuvwxyz0123456789";
-        let result = "";
-        for (let i = 0; i < 8; i++) {
-          result += characters.charAt(
-            Math.floor(Math.random() * characters.length)
-          );
+      // Convert a Figma document name into a relay-safe channel slug.
+      function slugifyFileName(name) {
+        return (
+          name
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-+|-+$/g, "")
+            .slice(0, 32) || "figma"
+        );
+      }
+
+      // Return a channel name that is not already active on the relay.
+      // Appends -2, -3, … when the base slug is taken.
+      async function getUniqueChannelName(baseSlug, port) {
+        try {
+          const resp = await fetch(`http://localhost:${port}/channels`);
+          if (resp.ok) {
+            const active = await resp.json();
+            const names = Object.keys(active);
+            if (!names.includes(baseSlug)) return baseSlug;
+            let n = 2;
+            while (names.includes(`${baseSlug}-${n}`)) n++;
+            return `${baseSlug}-${n}`;
+          }
+        } catch (_) {
+          // Relay unreachable — use the base slug and hope for no collision.
         }
-        return result;
+        return baseSlug;
       }
 
       // Replace the separate connect/disconnect button listeners with a single toggle
@@ -488,6 +497,26 @@
           case "auto-disconnect":
             connectButton.click();
             break;
+          case "file-name": {
+            // Main thread replied with the document name — derive channel and join.
+            if (
+              state.socket &&
+              state.socket.readyState === WebSocket.OPEN &&
+              !state.connected
+            ) {
+              const baseSlug = slugifyFileName(message.name || "figma");
+              getUniqueChannelName(baseSlug, state.serverPort).then(
+                (channelName) => {
+                  console.log("Joining channel:", channelName);
+                  state.channel = channelName;
+                  state.socket.send(
+                    JSON.stringify({ type: "join", channel: channelName })
+                  );
+                }
+              );
+            }
+            break;
+          }
           case "command-result":
             // Forward the result from plugin code back to WebSocket
             sendSuccessResponse(message.id, message.result);

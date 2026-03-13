@@ -112,7 +112,7 @@ describe("sendCommandToFigma", () => {
     await new Promise((resolve) => setTimeout(resolve, 300));
 
     const result = sendCommandToFigma("get_document_info", {});
-    await expect(result).rejects.toThrow("Must join a channel before sending commands");
+    await expect(result).rejects.toThrow(/No active Figma channels|Must join a channel/);
     expect(pendingRequests.size).toBe(0);
   });
 

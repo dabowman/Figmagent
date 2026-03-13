@@ -416,6 +416,9 @@ figma.ui.onmessage = async (msg) => {
     case "execute-command":
       routeCommand(msg.id, msg.command, msg.params);
       break;
+    case "get-file-name":
+      figma.ui.postMessage({ type: "file-name", name: figma.root.name });
+      break;
   }
 };
 
