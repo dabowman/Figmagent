@@ -65,6 +65,9 @@ import {
   setMultipleAnnotations,
 } from "./commands/scan.js";
 
+// Command imports — find (unified search)
+import { find } from "./commands/find.js";
+
 // Command imports — styles & variables
 import {
   getStyles,
@@ -114,6 +117,7 @@ var READ_OPS = {
   set_focus: true,
   get_design_system: true,
   lint_design: true,
+  find: true,
 };
 
 var GLOBAL_OPS = {
@@ -314,6 +318,8 @@ async function handleCommand(command, params) {
       return await setAnnotation(params);
     case "scan_nodes_by_types":
       return await scanNodesByTypes(params);
+    case "find":
+      return await find(params);
     case "set_multiple_annotations":
       return await setMultipleAnnotations(params);
     case "get_instance_overrides":

@@ -27,7 +27,7 @@ bun run check            # Lint + format check combined
 ## Architecture
 
 ### MCP Server (`src/figmagent_mcp/`)
-Modular server implementing MCP via `@modelcontextprotocol/sdk`. Entry point is `server.ts` which imports domain-grouped tool modules from `tools/` (document, create, apply, modify, text, components, export, scan, libraries, lint) and prompt definitions from `prompts/`. Exposes 50+ tools and 6 AI prompts. Types in `types.ts`, utilities in `utils.ts`, WebSocket connection management in `connection.ts`. Communicates with the AI agent over stdio and with the WebSocket relay via `ws`. Each request gets a UUID, is tracked in a `pendingRequests` Map with timeout/promise callbacks, and resolves when the plugin responds.
+Modular server implementing MCP via `@modelcontextprotocol/sdk`. Entry point is `server.ts` which imports domain-grouped tool modules from `tools/` (document, create, apply, modify, text, components, export, scan, find, libraries, lint) and prompt definitions from `prompts/`. Exposes 50+ tools and 6 AI prompts. Types in `types.ts`, utilities in `utils.ts`, WebSocket connection management in `connection.ts`. Communicates with the AI agent over stdio and with the WebSocket relay via `ws`. Each request gets a UUID, is tracked in a `pendingRequests` Map with timeout/promise callbacks, and resolves when the plugin responds.
 
 ### WebSocket Relay (`src/socket.ts`)
 Lightweight Bun WebSocket server on port 3055 (configurable via `PORT` env). Routes messages between MCP server and Figma plugin using channel-based isolation. Clients call `join` to enter a channel; messages broadcast only within the same channel. Exposes `GET /channels` HTTP endpoint for auto-discovery of active channels.
@@ -45,7 +45,8 @@ Runs inside Figma. Source lives in `src/figma_plugin/src/` as ES modules, bundle
 - `src/commands/modify.js` — moveNode, resizeNode, renameNode, deleteNode, cloneNode, cloneAndModify, reorderChildren
 - `src/commands/text.js` — setTextContent, setMultipleTextContents
 - `src/commands/components.js` — createComponent, combineAsVariants, instance overrides, component properties, exposed instances, etc.
-- `src/commands/scan.js` — scanTextNodes, scanNodesByTypes, annotations
+- `src/commands/find.js` — unified search: componentId, variableId, styleId, text, name, type criteria with auto-grouping
+- `src/commands/scan.js` — scanTextNodes, scanNodesByTypes, annotations (prefer `find` for new searches)
 - `src/commands/styles.js` — getStyles, getLocalVariables, getLocalComponents, getDesignSystem, createVariables, updateVariables, createStyles, updateStyles, FIELD_MAP (shared with apply.js)
 - `src/commands/lint.js` — lintDesign: subtree scan for unbound properties, variable matching (CIE76 deltaE for colors), auto-fix
 - `src/commands/connections.js` — setDefaultConnector, createConnections, setFocus, setSelections
@@ -61,6 +62,7 @@ Runs inside Figma. Source lives in `src/figma_plugin/src/` as ES modules, bundle
 - **Reconnection**: WebSocket auto-reconnects after 2 seconds on disconnect.
 - **Zod validation**: All tool parameters are validated with Zod schemas.
 - **Batch operations**: Prefer `set_multiple_text_contents`, `delete_multiple_nodes`, `set_multiple_annotations` over repeated single-node calls. Use `create` for all node creation — it handles single nodes, nested trees, components, and instances. Use `apply` for all property changes — it handles fill, stroke, corner radius, opacity, font family/weight/size/color, layout, variables, text styles, variant swapping, and exposed instances on one or many nodes.
+- **Searching nodes**: Use `find` to search a subtree for nodes matching criteria. Returns matches grouped by nearest component/frame ancestor with ancestry paths. Search criteria (combinable with AND): `componentId` (instances of these components/component_sets), `variableId` (nodes bound to these variables), `styleId` (nodes using these styles), `text` (regex on text content), `name` (regex on node name), `type` (node types). Use `excludeDefinitions: true` (default) with `componentId` to skip matches inside the component definitions themselves. Use `find` to locate targets, then `get` for details, then `apply`/annotate to act. Replaces `scan_nodes_by_types` and `scan_text_nodes` for most use cases.
 - **Reading nodes**: Use `get` to read any node and its subtree. Accepts `nodeId` (single) or `nodeIds` (multiple, fetched in parallel). Use `detail="structure"` for orientation (~5 tokens/node), `detail="layout"` for building/cloning (~15 tokens/node), `detail="full"` for variable/style audits (~30 tokens/node). Start with `depth=3` for component internals. Instances are leaf nodes by default — call `get` on an instance ID to expand its internals. If `tokenEstimate > 8000`, narrow with `depth` or `filter`. COMPONENT and COMPONENT_SET nodes include `componentPropertyDefinitions` in the output. Instance nodes include `componentRef` (resolved in `defs.components` with id, name, key, description). Use `get` instead of separate `get_component_properties` or `get_main_component` calls.
 - **Layout inspection**: `get` returns auto-layout properties (layoutMode, sizing modes, alignment, spacing, padding, layoutWrap) on frames with active auto-layout. Default values (MIN alignment, zero spacing/padding, NO_WRAP) are omitted to keep output concise.
 - **FSGN format**: `get` returns YAML in Figma Scene Graph Notation. The `meta` section has `nodeCount` and `tokenEstimate`. The `defs` section deduplicates variables (`v1`, `v2`…), styles (`s1`, `s2`…), and components (`c1`, `c2`…) referenced throughout `nodes`. Use the short IDs from `defs` when calling `apply` with `variables` or `textStyleId`. When multiple nodeIds are passed, returns one FSGN block per node separated by `---`.
@@ -135,6 +137,7 @@ Uncomment the `hostname: "0.0.0.0"` line in `src/socket.ts` to allow connections
 
 - Always call `join_channel` before issuing any Figma commands (no arguments needed — auto-discovers the active plugin channel via the relay's `GET /channels` endpoint)
 - Call `get_document_info` first to understand the design structure
+- Use `find` to search for nodes by criteria (component usage, variable bindings, style usage, text content, name, type) — returns grouped matches with ancestry paths
 - Use `get(nodeId, detail="structure", depth=2)` on a target node to orient before making modifications
 - Use `get_design_system` to discover styles and variables before applying styles/tokens
 - The plugin and relay must both be running before any tool calls succeed

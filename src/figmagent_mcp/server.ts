@@ -18,6 +18,7 @@ import "./tools/components.js";
 import "./tools/tokens.js";
 import "./tools/export.js";
 import "./tools/scan.js";
+import "./tools/find.js";
 import "./tools/libraries.js";
 import "./tools/comments.js";
 import "./tools/lint.js";
