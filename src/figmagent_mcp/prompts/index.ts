@@ -1,253 +1,129 @@
 import { server } from "../instance.js";
 
-// Design Strategy Prompt
-server.prompt("design_strategy", "Best practices for working with Figma designs", (extra) => {
+// ─── Design Workflow ────────────────────────────────────────────────────────
+// Replaces: design_strategy + read_design_strategy
+server.prompt("design_workflow", "End-to-end workflow for reading, creating, and modifying Figma designs", (extra) => {
   return {
     messages: [
       {
         role: "assistant",
         content: {
           type: "text",
-          text: `When working with Figma designs, follow these best practices:
+          text: `# Figma Design Workflow
 
-1. Start with Document Structure:
-   - First use get_document_info() to understand the current document
-   - Plan your layout hierarchy before creating elements
-   - Create a main container frame for each screen/section
+## Phase 1: Orient
 
-2. Naming Conventions:
-   - Use descriptive, semantic names for all elements
-   - Follow a consistent naming pattern (e.g., "Login Screen", "Logo Container", "Email Input")
-   - Group related elements with meaningful names
+1. \`get_document_info()\` — understand pages and top-level frames.
+2. \`get_selection()\` — find what the user is looking at. If empty, ask them to select something.
+3. \`get(nodeId, detail="structure", depth=2)\` — lightweight overview (~5 tokens/node). Increase depth or switch to \`detail="layout"\` when you need auto-layout properties.
 
-3. Layout Hierarchy:
-   - Create parent frames first, then add child elements
-   - For forms/login screens:
-     * Start with the main screen container frame
-     * Create a logo container at the top
-     * Group input fields in their own containers
-     * Place action buttons (login, submit) after inputs
-     * Add secondary elements (forgot password, signup links) last
+**Detail levels** (pick the cheapest one that works):
+- \`structure\` — names, types, hierarchy. Good for orientation.
+- \`layout\` — adds auto-layout, sizing, spacing, dimensions. Good for building or cloning.
+- \`full\` — adds variables, styles, bound tokens. Good for auditing design system usage.
 
-4. Input Fields Structure:
-   - Create a container frame for each input field
-   - Include a label text above or inside the input
-   - Group related inputs (e.g., username/password) together
+If \`tokenEstimate > 8000\` in the response, narrow with \`depth\` or \`filter\` before reading more.
 
-5. Element Creation:
-   - Use create() for all node creation — frames, text, rectangles, and nested structures
-   - Pass type: "FRAME" for containers, type: "TEXT" for labels/buttons/links
-   - Nest children directly in the node spec for complex layouts
-   - Set appropriate colors and styles:
-     * Use fillColor for backgrounds
-     * Use strokeColor for borders
-     * Set proper fontWeight for different text elements
+## Phase 2: Plan
 
-6. Mofifying existing elements:
-  - use set_text_content() to modify text content.
+Before creating anything, decide the **layout hierarchy**. Figma's auto-layout is the primary layout mechanism — avoid manual x/y positioning.
 
-7. Visual Hierarchy:
-   - Position elements in logical reading order (top to bottom)
-   - Maintain consistent spacing between elements
-   - Use appropriate font sizes for different text types:
-     * Larger for headings/welcome text
-     * Medium for input labels
-     * Standard for button text
-     * Smaller for helper text/links
+**Auto-layout essentials:**
+- \`layoutMode: "VERTICAL" | "HORIZONTAL"\` — direction children flow
+- \`itemSpacing\` — gap between children
+- \`paddingTop/Right/Bottom/Left\` — inner padding
+- \`primaryAxisAlignItems: "MIN" | "CENTER" | "MAX" | "SPACE_BETWEEN"\` — main axis alignment
+- \`counterAxisAlignItems: "MIN" | "CENTER" | "MAX" | "BASELINE"\` — cross axis alignment
+- \`layoutSizingHorizontal/Vertical: "FIXED" | "HUG" | "FILL"\` — how the frame sizes itself
+- \`layoutWrap: "WRAP"\` — enables wrapping (grid-like layouts)
 
-8. Design System Integration:
-   - Use get_design_system() to discover all styles and variables in one call
-   - Use apply() with textStyleId to apply text styles
-   - Use apply() with variables field to bind tokens to node properties (fill, stroke, cornerRadius, padding, spacing, dimensions)
-   - Use create_variables() to create new design tokens (collections, modes, and variables with values)
-   - Use update_variables() to modify, rename, or delete existing variables
-   - Prefer binding variables over hardcoded values — this keeps designs connected to the design system
+**Sizing rules:**
+- \`HUG\` = shrink to fit content (good for buttons, tags)
+- \`FILL\` = stretch to fill parent (requires parent to have auto-layout). Cannot be set at creation time — the \`create\` tool handles this automatically in a second pass.
+- \`FIXED\` = explicit width/height
+- Use FRAME with a fill color instead of RECTANGLE when the node needs \`FILL\` sizing.
 
-9. Best Practices:
-   - Verify each creation with get(nodeId, detail="structure")
-   - Use parentId to maintain proper hierarchy
-   - Group related elements together in frames
-   - Keep consistent spacing and alignment
+## Phase 3: Build
 
-Example Login Screen Structure:
-- Login Screen (main frame)
-  - Logo Container (frame)
-    - Logo (image/text)
-  - Welcome Text (text)
-  - Input Container (frame)
-    - Email Input (frame)
-      - Email Label (text)
-      - Email Field (frame)
-    - Password Input (frame)
-      - Password Label (text)
-      - Password Field (frame)
-  - Login Button (frame)
-    - Button Text (text)
-  - Helper Links (frame)
-    - Forgot Password (text)
-    - Don't have account (text)`,
-        },
-      },
-    ],
-    description: "Best practices for working with Figma designs",
-  };
-});
-
-// Read Design Strategy Prompt
-server.prompt("read_design_strategy", "Best practices for reading Figma designs", (extra) => {
-  return {
-    messages: [
-      {
-        role: "assistant",
-        content: {
-          type: "text",
-          text: `When reading Figma designs, follow these best practices:
-
-1. Start with selection:
-   - First use get_selection() to find selected node IDs, then get(nodeId) to understand the design
-   - If no selection ask user to select single or multiple nodes
-`,
-        },
-      },
-    ],
-    description: "Best practices for reading Figma designs",
-  };
-});
-
-// Text Replacement Strategy Prompt
-server.prompt("text_replacement_strategy", "Systematic approach for replacing text in Figma designs", (extra) => {
-  return {
-    messages: [
-      {
-        role: "assistant",
-        content: {
-          type: "text",
-          text: `# Intelligent Text Replacement Strategy
-
-## 1. Analyze Design & Identify Structure
-- Scan text nodes to understand the overall structure of the design
-- Use AI pattern recognition to identify logical groupings:
-  * Tables (rows, columns, headers, cells)
-  * Lists (items, headers, nested lists)
-  * Card groups (similar cards with recurring text fields)
-  * Forms (labels, input fields, validation text)
-  * Navigation (menu items, breadcrumbs)
-\`\`\`
-scan_text_nodes(nodeId: "node-id")
-get(nodeId: "node-id", detail: "structure")  // optional
-\`\`\`
-
-## 2. Strategic Chunking for Complex Designs
-- Divide replacement tasks into logical content chunks based on design structure
-- Use one of these chunking strategies that best fits the design:
-  * **Structural Chunking**: Table rows/columns, list sections, card groups
-  * **Spatial Chunking**: Top-to-bottom, left-to-right in screen areas
-  * **Semantic Chunking**: Content related to the same topic or functionality
-  * **Component-Based Chunking**: Process similar component instances together
-
-## 3. Progressive Replacement with Verification
-- Create a safe copy of the node for text replacement
-- Replace text chunk by chunk with continuous progress updates
-- After each chunk is processed:
-  * Export that section as a small, manageable image
-  * Verify text fits properly and maintain design integrity
-  * Fix issues before proceeding to the next chunk
+Use \`create()\` for all node creation. It handles single nodes, nested trees, COMPONENTs, and INSTANCEs.
 
 \`\`\`
-// Clone the node to create a safe copy
-clone_node(nodeId: "selected-node-id", x: [new-x], y: [new-y])
+create({
+  parentId: "target-frame",
+  node: {
+    type: "FRAME",
+    name: "Card",
+    layoutMode: "VERTICAL",
+    itemSpacing: 12,
+    paddingTop: 16, paddingRight: 16, paddingBottom: 16, paddingLeft: 16,
+    layoutSizingHorizontal: "FILL",
+    layoutSizingVertical: "HUG",
+    fillColor: { r: 1, g: 1, b: 1 },
+    cornerRadius: 8,
+    children: [
+      { type: "TEXT", name: "Title", text: "Card Title", fontSize: 18, fontWeight: 600 },
+      { type: "TEXT", name: "Body", text: "Description text here.", fontSize: 14, fontWeight: 400 }
+    ]
+  }
+})
+\`\`\`
 
-// Replace text chunk by chunk
-set_multiple_text_contents(
-  nodeId: "parent-node-id",
-  text: [
-    { nodeId: "node-id-1", text: "New text 1" },
-    // More nodes in this chunk...
+**Node types:** FRAME (default), TEXT, RECTANGLE, COMPONENT, INSTANCE.
+- COMPONENT works exactly like FRAME but creates a reusable component.
+- INSTANCE requires \`componentId\` (local) or \`componentKey\` (library).
+
+## Phase 4: Modify
+
+Use \`apply()\` for all property changes on existing nodes — fills, strokes, fonts, layout, variables, styles.
+
+\`\`\`
+apply({
+  nodes: [
+    { nodeId: "abc", fillColor: { r: 0.2, g: 0.4, b: 1 }, cornerRadius: 12 },
+    { nodeId: "def", fontWeight: 700, fontSize: 24 }
   ]
-)
-
-// Verify chunk with small, targeted image exports
-export_node_as_image(nodeId: "chunk-node-id", format: "PNG", scale: 0.5)
+})
 \`\`\`
 
-## 4. Intelligent Handling for Table Data
-- For tabular content:
-  * Process one row or column at a time
-  * Maintain alignment and spacing between cells
-  * Consider conditional formatting based on cell content
-  * Preserve header/data relationships
+**Key capabilities of \`apply\`:**
+- Visual: fillColor, strokeColor, strokeWeight, cornerRadius, opacity, width, height
+- Font (TEXT only): fontFamily, fontWeight, fontSize, fontColor
+- Layout: layoutMode, padding, alignment, sizing, spacing
+- Design tokens: \`variables\` field maps property names → variable IDs
+- Styles: \`textStyleId\`, \`effectStyleId\` (from \`get_design_system\`)
+- Components: \`swapVariantId\` (swap instance variant), \`isExposedInstance\`
 
-## 5. Smart Text Adaptation
-- Adaptively handle text based on container constraints:
-  * Auto-detect space constraints and adjust text length
-  * Apply line breaks at appropriate linguistic points
-  * Maintain text hierarchy and emphasis
-  * Consider font scaling for critical content that must fit
+**Do not** delete and recreate text nodes to change fonts — use \`apply\` with font properties.
 
-## 6. Progressive Feedback Loop
-- Establish a continuous feedback loop during replacement:
-  * Real-time progress updates (0-100%)
-  * Small image exports after each chunk for verification
-  * Issues identified early and resolved incrementally
-  * Quick adjustments applied to subsequent chunks
+## Phase 5: Design System
 
-## 7. Final Verification & Context-Aware QA
-- After all chunks are processed:
-  * Export the entire design at reduced scale for final verification
-  * Check for cross-chunk consistency issues
-  * Verify proper text flow between different sections
-  * Ensure design harmony across the full composition
+1. \`get_design_system()\` — discover all styles and variables in one call.
+2. \`apply({ nodes: [{ nodeId, variables: { fill: "VariableID:xxx" } }] })\` — bind tokens.
+3. \`apply({ nodes: [{ nodeId, textStyleId: "S:xxx" }] })\` — apply text styles.
+4. \`lint_design({ nodeId })\` — scan for unbound properties; use \`autoFix: true\` to bind exact matches.
 
-## 8. Chunk-Specific Export Scale Guidelines
-- Scale exports appropriately based on chunk size:
-  * Small chunks (1-5 elements): scale 1.0
-  * Medium chunks (6-20 elements): scale 0.7
-  * Large chunks (21-50 elements): scale 0.5
-  * Very large chunks (50+ elements): scale 0.3
-  * Full design verification: scale 0.2
+Prefer variable bindings over hardcoded values — this keeps designs connected to the token system.
 
-## Sample Chunking Strategy for Common Design Types
+**Variable CRUD:** \`create_variables\` / \`update_variables\` for collections, modes, and values.
+**Style CRUD:** \`create_styles\` / \`update_styles\` for paint, text, effect, and grid styles.
 
-### Tables
-- Process by logical rows (5-10 rows per chunk)
-- Alternative: Process by column for columnar analysis
-- Tip: Always include header row in first chunk for reference
+## Phase 6: Verify
 
-### Card Lists
-- Group 3-5 similar cards per chunk
-- Process entire cards to maintain internal consistency
-- Verify text-to-image ratio within cards after each chunk
-
-### Forms
-- Group related fields (e.g., "Personal Information", "Payment Details")
-- Process labels and input fields together
-- Ensure validation messages and hints are updated with their fields
-
-### Navigation & Menus
-- Process hierarchical levels together (main menu, submenu)
-- Respect information architecture relationships
-- Verify menu fit and alignment after replacement
-
-## Best Practices
-- **Preserve Design Intent**: Always prioritize design integrity
-- **Structural Consistency**: Maintain alignment, spacing, and hierarchy
-- **Visual Feedback**: Verify each chunk visually before proceeding
-- **Incremental Improvement**: Learn from each chunk to improve subsequent ones
-- **Balance Automation & Control**: Let AI handle repetitive replacements but maintain oversight
-- **Respect Content Relationships**: Keep related content consistent across chunks
-
-Remember that text is never just text—it's a core design element that must work harmoniously with the overall composition. This chunk-based strategy allows you to methodically transform text while maintaining design integrity.`,
+- \`get(nodeId, detail="structure")\` — confirm hierarchy looks right.
+- \`export_node_as_image(nodeId, format="PNG", scale=1)\` — visual spot-check.
+- \`lint_design(nodeId)\` — check token coverage.`,
         },
       },
     ],
-    description: "Systematic approach for replacing text in Figma designs",
+    description: "End-to-end workflow for reading, creating, and modifying Figma designs",
   };
 });
 
-// Annotation Conversion Strategy Prompt
+// ─── Text Replacement ───────────────────────────────────────────────────────
+// Replaces: text_replacement_strategy
 server.prompt(
-  "annotation_conversion_strategy",
-  "Strategy for converting manual annotations to Figma's native annotations",
+  "text_replacement",
+  "Strategy for finding and replacing text content in Figma designs",
   (extra) => {
     return {
       messages: [
@@ -255,208 +131,46 @@ server.prompt(
           role: "assistant",
           content: {
             type: "text",
-            text: `# Automatic Annotation Conversion
+            text: `# Text Replacement Strategy
 
-## Process Overview
+## 1. Discover
+\`scan_text_nodes(nodeId)\` — returns all text nodes under a parent with their current content, node IDs, and layer paths.
 
-The process of converting manual annotations (numbered/alphabetical indicators with connected descriptions) to Figma's native annotations:
+Use the layer paths and content to understand the structure: tables, card groups, forms, lists, navigation.
 
-1. Get selected frame/component information
-2. Scan and collect all annotation text nodes
-3. Scan target UI elements (components, instances, frames)
-4. Match annotations to appropriate UI elements
-5. Apply native Figma annotations
+## 2. Replace
+\`set_multiple_text_contents({ nodeId: "parent", textNodes: [...] })\` — batch-replace up to ~50 text nodes in one call.
 
-## Step 1: Get Selection and Initial Setup
+Each entry: \`{ nodeId: "text-node-id", text: "New content" }\`.
 
-First, get the selected frame or component that contains annotations:
+For very large designs (100+ text nodes), chunk into batches of 50 to avoid timeouts.
 
-\`\`\`typescript
-// Get the selected frame/component
-const selection = await get_selection();
-const selectedNodeId = selection[0].id
+## 3. Instance Text Overrides
+For text inside component instances, the nodeId format is:
+- \`I<instanceId>;<componentTextNodeId>\` for direct children
+- \`I<outerInstance>;<innerInstance>;<textNodeId>\` for nested instances
 
-// Get available annotation categories for later use
-const annotationData = await get_annotations({
-  nodeId: selectedNodeId,
-  includeCategories: true
-});
-const categories = annotationData.categories;
-\`\`\`
+Use \`scan_text_nodes\` on the component first to discover the text node IDs, then construct the override path.
 
-## Step 2: Scan Annotation Text Nodes
+## 4. Font Changes
+To change font properties (family, weight, size, color), use \`apply\` — not text replacement:
+\`apply({ nodes: [{ nodeId: "text-id", fontFamily: "Space Grotesk", fontWeight: 600, fontSize: 16 }] })\`
 
-Scan all text nodes to identify annotations and their descriptions:
-
-\`\`\`typescript
-// Get all text nodes in the selection
-const textNodes = await scan_text_nodes({
-  nodeId: selectedNodeId
-});
-
-// Filter and group annotation markers and descriptions
-
-// Markers typically have these characteristics:
-// - Short text content (usually single digit/letter)
-// - Specific font styles (often bold)
-// - Located in a container with "Marker" or "Dot" in the name
-// - Have a clear naming pattern (e.g., "1", "2", "3" or "A", "B", "C")
-
-
-// Identify description nodes
-// Usually longer text nodes near markers or with matching numbers in path
-
-\`\`\`
-
-## Step 3: Scan Target UI Elements
-
-Get all potential target elements that annotations might refer to:
-
-\`\`\`typescript
-// Scan for all UI elements that could be annotation targets
-const targetNodes = await scan_nodes_by_types({
-  nodeId: selectedNodeId,
-  types: [
-    "COMPONENT",
-    "INSTANCE",
-    "FRAME"
-  ]
-});
-\`\`\`
-
-## Step 4: Match Annotations to Targets
-
-Match each annotation to its target UI element using these strategies in order of priority:
-
-1. **Path-Based Matching**:
-   - Look at the marker's parent container name in the Figma layer hierarchy
-   - Remove any "Marker:" or "Annotation:" prefixes from the parent name
-   - Find UI elements that share the same parent name or have it in their path
-   - This works well when markers are grouped with their target elements
-
-2. **Name-Based Matching**:
-   - Extract key terms from the annotation description
-   - Look for UI elements whose names contain these key terms
-   - Consider both exact matches and semantic similarities
-   - Particularly effective for form fields, buttons, and labeled components
-
-3. **Proximity-Based Matching** (fallback):
-   - Calculate the center point of the marker
-   - Find the closest UI element by measuring distances to element centers
-   - Consider the marker's position relative to nearby elements
-   - Use this method when other matching strategies fail
-
-Additional Matching Considerations:
-- Give higher priority to matches found through path-based matching
-- Consider the type of UI element when evaluating matches
-- Take into account the annotation's context and content
-- Use a combination of strategies for more accurate matching
-
-## Step 5: Apply Native Annotations
-
-Convert matched annotations to Figma's native annotations using batch processing:
-
-\`\`\`typescript
-// Prepare annotations array for batch processing
-const annotationsToApply = Object.values(annotations).map(({ marker, description }) => {
-  // Find target using multiple strategies
-  const target =
-    findTargetByPath(marker, targetNodes) ||
-    findTargetByName(description, targetNodes) ||
-    findTargetByProximity(marker, targetNodes);
-
-  if (target) {
-    // Determine appropriate category based on content
-    const category = determineCategory(description.characters, categories);
-
-    // Determine appropriate additional annotationProperty based on content
-    const annotationProperty = determineProperties(description.characters, target.type);
-
-    return {
-      nodeId: target.id,
-      labelMarkdown: description.characters,
-      categoryId: category.id,
-      properties: annotationProperty
-    };
-  }
-  return null;
-}).filter(Boolean); // Remove null entries
-
-// Apply annotations in batches using set_multiple_annotations
-if (annotationsToApply.length > 0) {
-  await set_multiple_annotations({
-    nodeId: selectedNodeId,
-    annotations: annotationsToApply
-  });
-}
-\`\`\`
-
-
-This strategy focuses on practical implementation based on real-world usage patterns, emphasizing the importance of handling various UI elements as annotation targets, not just text nodes.`,
+## 5. Verify
+\`get(nodeId, detail="structure")\` to confirm text content updated correctly. For visual verification, \`export_node_as_image(nodeId)\`.`,
           },
         },
       ],
-      description: "Strategy for converting manual annotations to Figma's native annotations",
+      description: "Strategy for finding and replacing text content in Figma designs",
     };
   },
 );
 
-// Instance Slot Filling Strategy Prompt
-server.prompt("swap_overrides_instances", "Guide to swap instance overrides between instances", (extra) => {
-  return {
-    messages: [
-      {
-        role: "assistant",
-        content: {
-          type: "text",
-          text: `# Swap Component Instance and Override Strategy
-
-## Overview
-This strategy enables transferring content and property overrides from a source instance to one or more target instances in Figma, maintaining design consistency while reducing manual work.
-
-## Step-by-Step Process
-
-### 1. Selection Analysis
-- Use \`get_selection()\` to identify the parent component or selected instances
-- For parent components, scan for instances with \`scan_nodes_by_types({ nodeId: "parent-id", types: ["INSTANCE"] })\`
-- Identify source instances by name patterns or by examining text content
-- Determine which is the source instance (with content to copy) and which are targets (where to apply content)
-
-### 2. Extract Source Overrides
-- Use \`get_instance_overrides()\` to extract customizations from the source instance
-- This captures text content, property values, and style overrides
-- Command syntax: \`get_instance_overrides({ nodeId: "source-instance-id" })\`
-- Look for successful response like "Got component information from [instance name]"
-
-### 3. Apply Overrides to Targets
-- Apply captured overrides using \`set_instance_overrides()\`
-- Command syntax:
-  \`\`\`
-  set_instance_overrides({
-    sourceInstanceId: "source-instance-id",
-    targetNodeIds: ["target-id-1", "target-id-2", ...]
-  })
-  \`\`\`
-
-### 4. Verification
-- Verify results with \`get(nodeId, detail="structure")\`
-- Confirm text content and style overrides have transferred successfully
-
-## Key Tips
-- Always join a channel first with \`join_channel()\` (call with no arguments to auto-discover the active Figma plugin channel)
-- When working with multiple targets, check the full selection with \`get_selection()\`
-- Preserve component relationships by using instance overrides rather than direct text manipulation`,
-        },
-      },
-    ],
-    description: "Strategy for transferring overrides between component instances in Figma",
-  };
-});
-
-// Reaction to Connector Strategy Prompt
+// ─── Annotation Conversion ──────────────────────────────────────────────────
+// Replaces: annotation_conversion_strategy
 server.prompt(
-  "reaction_to_connector_strategy",
-  "Strategy for converting Figma prototype reactions to connector lines using the output of 'get_reactions'",
+  "annotation_conversion",
+  "Convert manual design annotations to Figma's native annotation system",
   (extra) => {
     return {
       messages: [
@@ -464,76 +178,237 @@ server.prompt(
           role: "assistant",
           content: {
             type: "text",
-            text: `# Strategy: Convert Figma Prototype Reactions to Connector Lines
+            text: `# Annotation Conversion Strategy
 
-## Goal
-Process the JSON output from the \`get_reactions\` tool to generate an array of connection objects suitable for the \`create_connections\` tool. This visually represents prototype flows as connector lines on the Figma canvas.
+Convert manual annotations (numbered markers with descriptions) to Figma's native annotations.
 
-## Input Data
-You will receive JSON data from the \`get_reactions\` tool. This data contains an array of nodes, each with potential reactions. A typical reaction object looks like this:
-\`\`\`json
-{
-  "trigger": { "type": "ON_CLICK" },
-  "action": {
-    "type": "NAVIGATE",
-    "destinationId": "destination-node-id",
-    "navigationTransition": { ... },
-    "preserveScrollPosition": false
-  }
-}
+## Step 1: Gather Data
+
+Call these in parallel:
+- \`scan_text_nodes(nodeId)\` — find all text (markers like "1", "2", "A", "B" and their descriptions)
+- \`scan_nodes_by_types({ nodeId, types: ["COMPONENT", "INSTANCE", "FRAME"] })\` — find annotation targets
+- \`get_annotations({ nodeId, includeCategories: true })\` — get available annotation categories
+
+## Step 2: Identify Markers and Descriptions
+
+Markers are typically short text (single character/number) inside containers named "Marker", "Dot", or similar. Descriptions are longer text nodes nearby or sharing a parent with the marker.
+
+Group each marker with its description text.
+
+## Step 3: Match Annotations to Target Nodes
+
+For each annotation, find the target UI element using these strategies (in priority order):
+
+1. **Path-based** — marker's parent container name matches a UI element name in the layer hierarchy. Most reliable.
+2. **Name-based** — key terms from the description appear in UI element names.
+3. **Proximity-based** (fallback) — closest UI element by center-to-center distance.
+
+## Step 4: Apply Native Annotations
+
+Use \`set_multiple_annotations\` for batch processing:
+
+\`\`\`
+set_multiple_annotations({
+  nodeId: "parent-frame",
+  annotations: [
+    { nodeId: "target-1", labelMarkdown: "Primary action button", categoryId: "cat-id" },
+    { nodeId: "target-2", labelMarkdown: "User avatar display", categoryId: "cat-id" }
+  ]
+})
 \`\`\`
 
-## Step-by-Step Process
-
-### 1. Preparation & Context Gathering
-   - **Action:** Call \`get\` on the relevant node(s) to get context about the nodes involved (names, types, etc.). This helps in generating meaningful connector labels later.
-   - **Action:** Call \`set_default_connector\` **without** the \`connectorId\` parameter.
-   - **Check Result:** Analyze the response from \`set_default_connector\`.
-     - If it confirms a default connector is already set (e.g., "Default connector is already set"), proceed to Step 2.
-     - If it indicates no default connector is set (e.g., "No default connector set..."), you **cannot** proceed with \`create_connections\` yet. Inform the user they need to manually copy a connector from FigJam, paste it onto the current page, select it, and then you can run \`set_default_connector({ connectorId: "SELECTED_NODE_ID" })\` before attempting \`create_connections\`. **Do not proceed to Step 2 until a default connector is confirmed.**
-
-### 2. Filter and Transform Reactions from \`get_reactions\` Output
-   - **Iterate:** Go through the JSON array provided by \`get_reactions\`. For each node in the array:
-     - Iterate through its \`reactions\` array.
-   - **Filter:** Keep only reactions where the \`action\` meets these criteria:
-     - Has a \`type\` that implies a connection (e.g., \`NAVIGATE\`, \`OPEN_OVERLAY\`, \`SWAP_OVERLAY\`). **Ignore** types like \`CHANGE_TO\`, \`CLOSE_OVERLAY\`, etc.
-     - Has a valid \`destinationId\` property.
-   - **Extract:** For each valid reaction, extract the following information:
-     - \`sourceNodeId\`: The ID of the node the reaction belongs to (from the outer loop).
-     - \`destinationNodeId\`: The value of \`action.destinationId\`.
-     - \`actionType\`: The value of \`action.type\`.
-     - \`triggerType\`: The value of \`trigger.type\`.
-
-### 3. Generate Connector Text Labels
-   - **For each extracted connection:** Create a concise, descriptive text label string.
-   - **Combine Information:** Use the \`actionType\`, \`triggerType\`, and potentially the names of the source/destination nodes (obtained from Step 1's \`get\` call) to generate the label.
-   - **Example Labels:**
-     - If \`triggerType\` is "ON_CLICK" and \`actionType\` is "NAVIGATE": "On click, navigate to [Destination Node Name]"
-     - If \`triggerType\` is "ON_DRAG" and \`actionType\` is "OPEN_OVERLAY": "On drag, open [Destination Node Name] overlay"
-   - **Keep it brief and informative.** Let this generated string be \`generatedText\`.
-
-### 4. Prepare the \`connections\` Array for \`create_connections\`
-   - **Structure:** Create a JSON array where each element is an object representing a connection.
-   - **Format:** Each object in the array must have the following structure:
-     \`\`\`json
-     {
-       "startNodeId": "sourceNodeId_from_step_2",
-       "endNodeId": "destinationNodeId_from_step_2",
-       "text": "generatedText_from_step_3"
-     }
-     \`\`\`
-   - **Result:** This final array is the value you will pass to the \`connections\` parameter when calling the \`create_connections\` tool.
-
-### 5. Execute Connection Creation
-   - **Action:** Call the \`create_connections\` tool, passing the array generated in Step 4 as the \`connections\` argument.
-   - **Verify:** Check the response from \`create_connections\` to confirm success or failure.
-
-This detailed process ensures you correctly interpret the reaction data, prepare the necessary information, and use the appropriate tools to create the connector lines.`,
+Choose the category that best fits the annotation content (from the categories returned in Step 1).`,
           },
         },
       ],
-      description:
-        "Strategy for converting Figma prototype reactions to connector lines using the output of 'get_reactions'",
+      description: "Convert manual design annotations to Figma's native annotation system",
+    };
+  },
+);
+
+// ─── Instance Override Transfer ─────────────────────────────────────────────
+// Replaces: swap_overrides_instances
+server.prompt(
+  "instance_override_transfer",
+  "Transfer content and property overrides between component instances",
+  (extra) => {
+    return {
+      messages: [
+        {
+          role: "assistant",
+          content: {
+            type: "text",
+            text: `# Instance Override Transfer
+
+Transfer overrides (text content, property values, styles) from a source instance to one or more target instances.
+
+## Process
+
+1. **Identify instances** — \`get_selection()\` or \`scan_nodes_by_types({ nodeId, types: ["INSTANCE"] })\`. Determine which instance has the content to copy (source) and which are targets.
+
+2. **Extract overrides** — \`get_instance_overrides({ nodeId: "source-instance-id" })\`. Returns text content, property values, and style overrides.
+
+3. **Apply to targets** — \`set_instance_overrides({ sourceInstanceId: "source-id", targetNodeIds: ["target-1", "target-2"] })\`.
+
+4. **Verify** — \`get(nodeId, detail="structure")\` on targets to confirm overrides applied.
+
+## Tips
+- Preserve component relationships — use instance overrides rather than direct text manipulation.
+- This works best when source and target are instances of the same component (or closely related variants).`,
+          },
+        },
+      ],
+      description: "Transfer content and property overrides between component instances",
+    };
+  },
+);
+
+// ─── Reaction to Connector ──────────────────────────────────────────────────
+// Replaces: reaction_to_connector_strategy
+server.prompt(
+  "reaction_to_connector",
+  "Convert prototype reactions to visual connector lines on the canvas",
+  (extra) => {
+    return {
+      messages: [
+        {
+          role: "assistant",
+          content: {
+            type: "text",
+            text: `# Prototype Reactions → Connector Lines
+
+Visualize prototype flows as connector lines on the Figma canvas.
+
+## Step 1: Check Default Connector
+
+Call \`set_default_connector()\` (no arguments) to check if a default connector exists.
+- If confirmed → proceed.
+- If not set → the user must paste a FigJam connector onto the page, select it, then call \`set_default_connector({ connectorId: "selected-node-id" })\`.
+
+## Step 2: Get Reactions
+
+\`get_reactions({ nodeId })\` — returns nodes with their prototype reactions.
+
+## Step 3: Filter and Transform
+
+Keep only reactions with navigation-type actions:
+- **Include:** NAVIGATE, OPEN_OVERLAY, SWAP_OVERLAY
+- **Ignore:** CHANGE_TO, CLOSE_OVERLAY, BACK, URL
+
+Extract from each valid reaction:
+- \`sourceNodeId\` — the node the reaction belongs to
+- \`destinationNodeId\` — \`action.destinationId\`
+- \`triggerType\` + \`actionType\` — for the label
+
+## Step 4: Create Connections
+
+Build descriptive labels (e.g., "On click → Screen Name") using node names from \`get()\`.
+
+\`\`\`
+create_connections({
+  connections: [
+    { startNodeId: "source-1", endNodeId: "dest-1", text: "On click → Dashboard" },
+    { startNodeId: "source-2", endNodeId: "dest-2", text: "On drag → Settings overlay" }
+  ]
+})
+\`\`\``,
+          },
+        },
+      ],
+      description: "Convert prototype reactions to visual connector lines on the canvas",
+    };
+  },
+);
+
+// ─── Component Architecture ─────────────────────────────────────────────────
+// New prompt: covers component creation, variants, properties, and instances
+server.prompt(
+  "component_architecture",
+  "Guide to building components, variants, and instances in Figma",
+  (extra) => {
+    return {
+      messages: [
+        {
+          role: "assistant",
+          content: {
+            type: "text",
+            text: `# Component Architecture
+
+## Creating Components
+
+Use \`create\` with \`type: "COMPONENT"\` — works exactly like FRAME but produces a reusable component:
+
+\`\`\`
+create({
+  parentId: "page-or-frame",
+  node: {
+    type: "COMPONENT",
+    name: "Button",
+    layoutMode: "HORIZONTAL",
+    itemSpacing: 8,
+    paddingTop: 12, paddingRight: 24, paddingBottom: 12, paddingLeft: 24,
+    fillColor: { r: 0.2, g: 0.4, b: 1 },
+    cornerRadius: 8,
+    children: [
+      { type: "TEXT", name: "Label", text: "Click me", fontSize: 14, fontWeight: 600, fontColor: { r: 1, g: 1, b: 1 } }
+    ]
+  }
+})
+\`\`\`
+
+## Variants
+
+Create individual COMPONENT nodes, then combine them into a COMPONENT_SET:
+
+\`\`\`
+combine_as_variants({ nodeIds: ["comp-1", "comp-2", "comp-3"], name: "Button" })
+\`\`\`
+
+Name each component with the variant property format: \`Property1=Value1, Property2=Value2\` (e.g., "Size=Medium, State=Default").
+
+## Component Properties
+
+Use \`component_properties\` to add, edit, or delete property definitions in batch:
+
+\`\`\`
+component_properties({
+  nodeId: "component-or-set-id",
+  operations: [
+    { op: "add", name: "Show Icon", type: "BOOLEAN", defaultValue: true },
+    { op: "add", name: "Label", type: "TEXT", defaultValue: "Button" },
+    { op: "edit", propertyName: "Show Icon#123:0", newName: "Has Icon" },
+    { op: "delete", propertyName: "Deprecated Prop#456:0" }
+  ]
+})
+\`\`\`
+
+Use \`get(nodeId)\` on a COMPONENT or COMPONENT_SET to discover existing \`componentPropertyDefinitions\` (names include a \`#suffix\`).
+
+## Instances
+
+Create instances with \`create\`:
+\`\`\`
+create({ parentId: "frame", node: { type: "INSTANCE", componentId: "local-component-id" } })
+// or from library:
+create({ parentId: "frame", node: { type: "INSTANCE", componentKey: "published-key" } })
+\`\`\`
+
+Swap to a different variant: \`apply({ nodes: [{ nodeId: "instance-id", swapVariantId: "target-variant-component-id" }] })\`
+
+## Exposed Instances
+
+Surface a nested instance's properties at the parent component level:
+\`apply({ nodes: [{ nodeId: "nested-instance-inside-component", isExposedInstance: true }] })\`
+
+## Key Rules
+
+- **Bind variables on COMPONENT nodes**, not instances — bindings propagate automatically.
+- **No reparenting** — to move a node to a new parent, use \`clone_and_modify(nodeId, parentId=newParent)\` + delete the original.
+- Instances are leaf nodes in \`get\` output — call \`get(instanceId)\` to expand internals.`,
+          },
+        },
+      ],
+      description: "Guide to building components, variants, and instances in Figma",
     };
   },
 );
