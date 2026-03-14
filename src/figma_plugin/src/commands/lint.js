@@ -144,18 +144,25 @@ async function buildVariableIndexes() {
 // ─── Node Collection ────────────────────────────────────────────────────────
 
 function collectNodes(node, path, depth, result) {
-  if (!node.visible) return;
+  // PAGE nodes don't have a `visible` property — skip visibility check for them.
+  // For all other nodes, skip hidden ones.
+  if (node.type !== "PAGE" && !node.visible) return;
 
-  const nodePath = path ? path + " > " + node.name : node.name;
-  result.push({ node: node, path: nodePath, depth: depth });
+  // Don't lint the PAGE node itself (it has no lintable properties),
+  // but traverse its children so a single lint_design call on a page covers everything.
+  if (node.type !== "PAGE") {
+    const nodePath = path ? path + " > " + node.name : node.name;
+    result.push({ node: node, path: nodePath, depth: depth });
 
-  // Skip children of INSTANCE nodes — bindings come from main component
-  // But we still lint the instance node itself for overrides
-  if (node.type === "INSTANCE") return;
+    // Skip children of INSTANCE nodes — bindings come from main component
+    // But we still lint the instance node itself for overrides
+    if (node.type === "INSTANCE") return;
+  }
 
   if ("children" in node) {
+    const parentPath = node.type === "PAGE" ? "" : (path ? path + " > " + node.name : node.name);
     for (let i = 0; i < node.children.length; i++) {
-      collectNodes(node.children[i], nodePath, depth + 1, result);
+      collectNodes(node.children[i], parentPath, node.type === "PAGE" ? 0 : depth + 1, result);
     }
   }
 }
