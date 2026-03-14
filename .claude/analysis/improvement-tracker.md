@@ -1,7 +1,7 @@
 # Figmagent Improvement Tracker
 
 Last updated: 2026-03-14
-Sessions analyzed: 2
+Sessions analyzed: 3
 
 ## Active Issues
 
@@ -145,6 +145,25 @@ Sessions analyzed: 2
 - **Description**: `read_my_design` returned 309,417 characters. Forced complex chunked-reading with bash/python scripts.
 - **Current status**: `get` tool with detail levels (structure/layout/full) and depth parameter. Output budget system caps at 30K chars by default.
 
+### [INFRA-002] extract-sessions.ts hardcoded session path
+- **Status**: implemented
+- **Priority**: P2
+- **Category**: infrastructure
+- **First seen**: Session 3 (2026-03-14)
+- **Sessions affected**: 3
+- **Description**: `extract-sessions.ts` had a hardcoded macOS session directory path (`-Users-davidbowman-Github-...`). Also `--latest` flag required a value argument due to `parseArgs` string type. Both issues blocked the analyze-session skill from running.
+- **Current status**: Fixed — auto-detects session directory from CWD, pre-processes `--latest` to accept bare flag.
+
+### [AGENT-004] Subagent context duplication
+- **Status**: identified
+- **Priority**: P2
+- **Category**: agent-behavior
+- **First seen**: Session 3 (2026-03-14)
+- **Sessions affected**: 3
+- **Estimated savings**: ~15-20 redundant reads/session
+- **Description**: Agent subagents re-read files that the parent session already read (session analyses, SKILL.md files, hooks). Same files read 3x across parent + 2 subagents. Long idle gaps (4h, 11h) between phases also force re-reads.
+- **Proposed fix**: Provide key file contents or summaries in subagent prompts to reduce redundant reads. Not fully solvable for long idle gaps (context loss is inherent).
+
 ## Resolved Issues
 
 ### [TOOL-007] Composite create tool
@@ -171,6 +190,7 @@ Sessions analyzed: 2
 |---------|------|------------|--------|---------|------------|------------|----------|
 | 1 | 2026-03-05 | 308 | 16 | 25-33% | 33 (10.7%) | 15 | 0 |
 | 2 | 2026-03-06 | 389 | 14 | ~17.7% | 28 (7.2%) | 4 | 3 |
+| 3 | 2026-03-14 | 160 | 10 | ~18% | 0 (0%) | 2 | 0 |
 
 ## Issue Categories
 
