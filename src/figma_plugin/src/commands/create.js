@@ -155,6 +155,20 @@ export async function create(params) {
       targetParent.appendChild(node);
     } else {
       figma.currentPage.appendChild(node);
+      // Auto-position top-level nodes to avoid piling up at origin
+      if (spec.x === undefined && spec.y === undefined) {
+        const siblings = figma.currentPage.children;
+        let maxRight = 0;
+        for (let si = 0; si < siblings.length; si++) {
+          const s = siblings[si];
+          if (s.id === node.id) continue;
+          const right = s.x + s.width;
+          if (right > maxRight) maxRight = right;
+        }
+        if (maxRight > 0) {
+          node.x = maxRight + 100;
+        }
+      }
     }
 
     createdCount++;

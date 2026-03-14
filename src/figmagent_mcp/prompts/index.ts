@@ -390,7 +390,7 @@ Create individual COMPONENT nodes, then combine them into a COMPONENT_SET:
 combine_as_variants({ nodeIds: ["comp-1", "comp-2", "comp-3"], name: "Button" })
 \`\`\`
 
-Name each component with the variant property format: \`Property1=Value1, Property2=Value2\` (e.g., "Size=Medium, State=Default").
+Name each component with the variant property format: \`Property1=Value1, Property2=Value2\` (e.g., "Size=Medium, State=Default"). The resulting COMPONENT_SET automatically gets horizontal wrap auto-layout so variants are neatly arranged.
 
 ## Component Properties
 

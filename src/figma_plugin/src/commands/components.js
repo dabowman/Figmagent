@@ -53,6 +53,20 @@ export async function combineAsVariants(params) {
 
   const componentSet = figma.combineAsVariants(components, parent);
 
+  // Enable auto-layout on the COMPONENT_SET so variants don't pile up
+  if (componentSet.layoutMode === "NONE") {
+    componentSet.layoutMode = "HORIZONTAL";
+    componentSet.layoutWrap = "WRAP";
+    componentSet.itemSpacing = 20;
+    componentSet.counterAxisSpacing = 20;
+    componentSet.paddingTop = 40;
+    componentSet.paddingRight = 40;
+    componentSet.paddingBottom = 40;
+    componentSet.paddingLeft = 40;
+    componentSet.layoutSizingHorizontal = "HUG";
+    componentSet.layoutSizingVertical = "HUG";
+  }
+
   return {
     id: componentSet.id,
     name: componentSet.name,

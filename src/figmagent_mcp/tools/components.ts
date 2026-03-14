@@ -64,7 +64,7 @@ server.tool(
 // Combine as Variants Tool
 server.tool(
   "combine_as_variants",
-  "Combine multiple COMPONENT nodes into a COMPONENT_SET (variant group). Each component's name should follow the variant format (e.g. 'Layout=Table', 'Layout=List'). Figma will parse the names into variant properties.",
+  "Combine multiple COMPONENT nodes into a COMPONENT_SET (variant group). Each component's name should follow the variant format (e.g. 'Layout=Table', 'Layout=List'). Figma will parse the names into variant properties. The resulting COMPONENT_SET automatically gets horizontal wrap auto-layout (20px spacing, 40px padding, HUG sizing) so variants don't pile up.",
   {
     componentIds: z.array(z.string()).min(1).describe("Array of COMPONENT node IDs to combine"),
     parentId: z.string().optional().describe("Optional parent node ID for the resulting COMPONENT_SET"),
