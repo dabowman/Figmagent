@@ -7,7 +7,7 @@ import { guardOutput, extractJsonSummary } from "../utils.js";
 // Node Type Scanning Tool
 server.tool(
   "scan_nodes_by_types",
-  "Scan for child nodes with specific types. Prefer find() for most searches — it supports more criteria and groups results by ancestor.",
+  "DEPRECATED — use find() instead, which supports type, name, componentId, and other criteria with output budget control. This tool can return very large responses that overflow context. find() groups results by ancestor and enforces a 30K char budget.",
   {
     nodeId: z.string().describe("ID of the node to scan"),
     types: z
