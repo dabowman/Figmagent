@@ -60,7 +60,7 @@ Add to your MCP configuration:
 
 Uncomment the `hostname: "0.0.0.0"` line in `src/socket.ts` to allow connections from the Windows host.
 
-## Tools (47)
+## Tools (48)
 
 ### Document & Navigation
 
@@ -155,11 +155,12 @@ Requires `FIGMA_API_TOKEN` with `file_comments:read` and `file_comments:write` s
 | `post_comment` | Post a comment or reply |
 | `delete_comment` | Delete a comment |
 
-### Export
+### Export & Session
 
 | Tool | Description |
 |------|-------------|
 | `export_node_as_image` | Export a node as PNG, JPG, SVG, or PDF |
+| `export_session` | Export session log (tool call metrics, errors, timing) for analysis |
 
 ### Deprecated (kept for backward compatibility)
 

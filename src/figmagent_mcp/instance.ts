@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { recordToolCall } from "./session-logger.js";
 
 const instructions = `Figmagent bridges AI agents with Figma via a WebSocket relay. The Figma plugin must be running for tools to work.
 
@@ -45,3 +46,34 @@ export const server = new McpServer(
   },
   { instructions },
 );
+
+// ─── Session logging wrapper ─────────────────────────────────────────────────
+// Patches server.tool() to record every tool call (timing, success, errors).
+// Must run before any tool file imports — tool files import `server` from here.
+const originalTool = server.tool.bind(server);
+server.tool = ((...args: any[]) => {
+  // The tool name is always the first arg
+  const toolName = args[0] as string;
+
+  // The callback is always the last arg
+  const lastIdx = args.length - 1;
+  const originalCb = args[lastIdx];
+
+  if (typeof originalCb === "function") {
+    args[lastIdx] = async (params: any, extra: any) => {
+      const start = performance.now();
+      try {
+        const result = await originalCb(params, extra);
+        const responseChars = result?.content?.reduce((sum: number, c: any) => sum + (c.text?.length || 0), 0) ?? 0;
+        recordToolCall(toolName, params, start, true, responseChars);
+        return result;
+      } catch (err: any) {
+        const msg = err?.message || String(err);
+        recordToolCall(toolName, params, start, false, 0, msg);
+        throw err;
+      }
+    };
+  }
+
+  return (originalTool as any)(...args);
+}) as any;

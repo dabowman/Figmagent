@@ -57,6 +57,7 @@ Runs inside Figma. Source lives in `src/figma_plugin/src/` as ES modules, bundle
 
 - **Colors**: Figma uses RGBA 0-1 range. The MCP tools accept 0-1 floats.
 - **Logging**: All logs go to stderr. Stdout is reserved for MCP protocol messages.
+- **Session logging**: Every tool call is logged to `~/.figmagent/sessions/` (JSON files named by date + session ID). Logs capture tool name, params summary, duration, success/error, and response size. Use the `export_session` tool to get a summary or full log. Session files are auto-created on the first tool call.
 - **Timeouts**: 30s default per command. Progress updates from the plugin reset the inactivity timer.
 - **Chunking**: Large operations (scanning 100+ nodes) are chunked with progress updates to prevent Figma UI freezing.
 - **Reconnection**: WebSocket auto-reconnects after 2 seconds on disconnect.

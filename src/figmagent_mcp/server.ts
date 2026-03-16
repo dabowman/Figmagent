@@ -22,6 +22,7 @@ import "./tools/find.js";
 import "./tools/libraries.js";
 import "./tools/comments.js";
 import "./tools/lint.js";
+import "./tools/session.js";
 import "./prompts/index.js";
 
 // Start the server
