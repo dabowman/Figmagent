@@ -1,6 +1,6 @@
-# Talk to Figma MCP
+# Figmagent MCP
 
-MCP server that bridges AI agents (Claude Code, Cursor) with Figma through a WebSocket relay and Figma plugin. Forked from [sonnylazuardi/cursor-talk-to-figma-mcp](https://github.com/sonnylazuardi/cursor-talk-to-figma-mcp) with significant additions: 63 tools, structured tree inspection (FSGN), design token binding, batch operations, component property management, library access, file comments, plugin concurrency control, and sub-agent orchestration.
+MCP server that bridges AI agents (Claude Code, Cursor) with Figma through a WebSocket relay and Figma plugin. Originally forked from [sonnylazuardi/cursor-talk-to-figma-mcp](https://github.com/sonnylazuardi/cursor-talk-to-figma-mcp), now a standalone project with significant additions: 63 tools, structured tree inspection (FSGN), design token binding, batch operations, component property management, library access, file comments, plugin concurrency control, and sub-agent orchestration.
 
 ```
 AI Agent <-(stdio)-> MCP Server <-(WebSocket)-> Relay <-(WebSocket)-> Figma Plugin
@@ -214,7 +214,7 @@ The MCP server is modular (`src/figmagent_mcp/`):
 - `connection.ts` — WebSocket management and channel auto-discovery
 - `types.ts`, `utils.ts` — shared types and utilities
 
-The Figma plugin (`src/figma_plugin/code.js`) is **not bundled** — it runs directly in Figma's sandboxed JS VM. It includes concurrency control (node-level locks, global mutex, max 6 concurrent operations) for safe parallel agent execution.
+The Figma plugin source lives in `src/figma_plugin/src/` as ES modules, bundled into `code.js` via `bun run build:plugin`. It includes concurrency control (node-level locks, global mutex, max 6 concurrent operations) for safe parallel agent execution.
 
 See [CLAUDE.md](CLAUDE.md) for detailed agent guidance, design patterns, and known gotchas.
 
