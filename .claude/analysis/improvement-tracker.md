@@ -1,7 +1,7 @@
 # Figmagent Improvement Tracker
 
 Last updated: 2026-03-14
-Sessions analyzed: 4
+Sessions analyzed: 7
 
 ## Active Issues
 
@@ -10,22 +10,24 @@ Sessions analyzed: 4
 - **Priority**: P0
 - **Category**: missing-batch-tool
 - **First seen**: Session 2 (2026-03-06)
-- **Sessions affected**: 2
+- **Sessions affected**: 2, 5
 - **Estimated savings**: ~120 calls/session
 - **Description**: 132 individual `bind_variable` calls dominated session 2. Longest uninterrupted run was 28 consecutive calls. Agent groups conceptually but has no batch tool to execute.
 - **Current status**: Implemented via `apply` tool with `variables` field — accepts map of field→variableId for design token bindings on one or many nodes.
 - **Verified in**: Session 4 — agent bound 93 nodes across 12 `apply` calls with zero individual bind_variable usage.
+- **Note**: Session 5 still used 3 legacy `bind_variable` calls (predates `apply` consolidation).
 
 ### [TOOL-002] set_text_style needs batch version
 - **Status**: verified
 - **Priority**: P0
 - **Category**: missing-batch-tool
 - **First seen**: Session 2 (2026-03-06)
-- **Sessions affected**: 2
+- **Sessions affected**: 2, 5
 - **Estimated savings**: ~45 calls/session
 - **Description**: 55 individual `set_text_style` calls. Agent applies same style to 9+ nodes at a time.
 - **Current status**: Implemented via `apply` tool with `textStyleId` field — deduplicates font loading across multiple nodes automatically.
 - **Verified in**: Session 4 — text styles applied via `apply` in batch, zero individual set_text_style calls.
+- **Note**: Session 5 still used 3 legacy `set_text_style` calls.
 
 ### [BUG-001] set_text_style sync/async bug
 - **Status**: verified
@@ -65,10 +67,10 @@ Sessions analyzed: 4
 - **Priority**: P1
 - **Category**: infrastructure
 - **First seen**: Session 1 (2026-03-05)
-- **Sessions affected**: 1, 2, 4
-- **Estimated savings**: ~28-33 calls/session (sessions 1-2), ~4-5 calls/session (session 4)
-- **Description**: Agent rediscovers same tools repeatedly. 33 calls in session 1 (10.7%), 28 in session 2 (7.2%), 8 in session 4 (14.3%). Tools fetched incrementally as needed instead of pre-loaded.
-- **Proposed fix**: Pre-load tool schemas at session start; add complete tool reference to skill file; make ToolSearch return explicit "not found in server" vs "0 results".
+- **Sessions affected**: 1, 2, 4, 5, 6, 7
+- **Estimated savings**: ~20-33 calls/session (long sessions), ~2-8 calls/session (short sessions)
+- **Description**: Agent rediscovers same tools repeatedly. 33 calls in session 1 (10.7%), 28 in session 2 (7.2%), 35 in session 5 (13.5%), 8 in session 4 (14.3%), 3 in session 6 (4.4%), 2 in session 7 (8.3%). Worst after reconnections — each reconnection triggers full re-discovery.
+- **Proposed fix**: Pre-load tool schemas at session start; auto-restore after reconnections; add complete tool reference to skill file.
 
 ### [AGENT-001] Fail fast on repeated identical errors
 - **Status**: verified
@@ -102,14 +104,14 @@ Sessions analyzed: 4
 - **Auto-fixable**: yes (add `toNumber()` coercion or Zod `.transform(Number)`)
 
 ### [INFRA-001] Channel reconnection tax
-- **Status**: verified
+- **Status**: mixed
 - **Priority**: P2
 - **Category**: infrastructure
 - **First seen**: Session 1 (2026-03-05)
-- **Sessions affected**: 1, 2
-- **Description**: 8 reconnections in session 1 consuming ~40+ overhead calls. Each MCP restart forces new channel + ToolSearch + context re-establishment.
-- **Current status**: Auto-reconnect improved; plugin now uses channel named after file and auto-rejoins.
-- **Verified in**: Session 4 — zero reconnections, zero `join_channel` calls, auto-join worked perfectly.
+- **Sessions affected**: 1, 2, 5
+- **Description**: 8 reconnections in session 1 consuming ~40+ overhead calls. Session 5 had ~8 reconnections (14 `join_channel` calls) over 139 minutes. Short sessions (4, 6, 7) had zero.
+- **Current status**: Auto-join improved for short sessions. Long sessions (>1hr) still experience WebSocket drops requiring manual `join_channel`. Each reconnection triggers ToolSearch re-discovery overhead.
+- **Verified in**: Sessions 4, 6, 7 — zero reconnections in short sessions.
 
 ### [AGENT-003] Verify instance vs component before modifying
 - **Status**: implemented
@@ -127,8 +129,8 @@ Sessions analyzed: 4
 - **First seen**: Session 1 (2026-03-05)
 - **Sessions affected**: 1
 - **Estimated savings**: ~104 calls (create_frame + set_layout_sizing were #1 and #2 most-called tools)
-- **Current status**: `create` tool handles single nodes, nested trees, components, and instances. FILL sizing applied in second pass. Built 41 nodes in 1 call in session 2.
-- **Verified in**: Session 2, Session 4 (79 nodes in 14 calls, ~5.6 nodes/call avg)
+- **Current status**: `create` tool handles single nodes, nested trees, components, and instances. FILL sizing applied in second pass.
+- **Verified in**: Session 2, Session 4 (79 nodes in 14 calls), Session 5 (39-node tree in 1 call)
 
 ### [TOOL-008] reorder_children tool
 - **Status**: implemented
@@ -155,7 +157,7 @@ Sessions analyzed: 4
 - **Category**: infrastructure
 - **First seen**: Session 3 (2026-03-14)
 - **Sessions affected**: 3
-- **Description**: `extract-sessions.ts` had a hardcoded macOS session directory path (`-Users-davidbowman-Github-...`). Also `--latest` flag required a value argument due to `parseArgs` string type. Both issues blocked the analyze-session skill from running.
+- **Description**: `extract-sessions.ts` had a hardcoded macOS session directory path. Also `--latest` flag required a value argument.
 - **Current status**: Fixed — auto-detects session directory from CWD, pre-processes `--latest` to accept bare flag.
 - **Verified in**: Session 4 — extraction ran successfully to produce JSON transcript.
 
@@ -166,41 +168,79 @@ Sessions analyzed: 4
 - **First seen**: Session 3 (2026-03-14)
 - **Sessions affected**: 3
 - **Estimated savings**: ~15-20 redundant reads/session
-- **Description**: Agent subagents re-read files that the parent session already read (session analyses, SKILL.md files, hooks). Same files read 3x across parent + 2 subagents. Long idle gaps (4h, 11h) between phases also force re-reads.
-- **Proposed fix**: Provide key file contents or summaries in subagent prompts to reduce redundant reads. Not fully solvable for long idle gaps (context loss is inherent).
+- **Description**: Agent subagents re-read files that the parent session already read. Not fully solvable for long idle gaps.
+- **Proposed fix**: Provide key file contents or summaries in subagent prompts to reduce redundant reads.
 
-### [BUG-002] lint_design doesn't traverse PAGE nodes
-- **Status**: identified
+### [BUG-002] lint_design doesn't traverse PAGE nodes — [#3](https://github.com/dabowman/Figmagent/issues/3) closed
+- **Status**: implemented
 - **Priority**: P1
 - **Category**: plugin-bug
 - **First seen**: Session 4 (2026-03-14)
-- **Sessions affected**: 4
-- **Estimated savings**: ~6 calls/session
-- **Description**: `lint_design(nodeId: "0:1")` returned 0 nodes scanned. The plugin doesn't handle PAGE node types — it only traverses the given node's subtree but PAGE nodes aren't SceneNodes. Agent had to lint each component individually (4 calls for audit + 3 for re-verify = 7 calls instead of 1-2).
-- **Proposed fix**: In the plugin's lint handler, detect PAGE type and iterate over `node.children`, aggregating results. One page-level lint should cover all top-level components.
-- **Auto-fixable**: no (plugin-level change)
+- **Sessions affected**: 4, 5
+- **Estimated savings**: ~6-12 calls/session
+- **Description**: `lint_design(nodeId: "0:1")` returned 0 nodes scanned. Agent had to lint each component individually.
+- **Current status**: Fixed in `743d11c` — `collectNodes` now handles PAGE nodes.
+- **Note**: Session 5 also did per-component linting (12 calls, predates fix).
 
-### [TOOL-010] Multi-root create for batch variant building
-- **Status**: identified
+### [TOOL-010] Multi-root create for batch variant building — [#4](https://github.com/dabowman/Figmagent/issues/4) / [PR #7](https://github.com/dabowman/Figmagent/pull/7)
+- **Status**: implemented (PR #7)
 - **Priority**: P2
 - **Category**: missing-tool
 - **First seen**: Session 4 (2026-03-14)
-- **Sessions affected**: 4
+- **Sessions affected**: 4, 5
 - **Estimated savings**: ~8 calls/session when building variant sets
-- **Description**: 4 alert variants created sequentially (4 calls), 6 button variants created sequentially (6 calls). Each had identical structure with different colors/sizes. Could be batched.
-- **Proposed fix**: Accept array of node specs in `create` tool, create all roots in parallel. Returns array of root IDs.
+- **Description**: 4 alert variants created sequentially (4 calls), 6 button variants created sequentially (6 calls). Session 5 had similar pattern.
+- **Current status**: PR #7 adds `nodes` array parameter to `create` tool.
 
-### [BUG-003] apply variable binding enum missing fontSize and text properties
-- **Status**: identified
+### [BUG-003] apply variable binding enum missing fontSize and text properties — [#5](https://github.com/dabowman/Figmagent/issues/5) / [PR #6](https://github.com/dabowman/Figmagent/pull/6)
+- **Status**: implemented (PR #6)
 - **Priority**: P2
 - **Category**: plugin-bug
 - **First seen**: Session 4 (2026-03-14)
 - **Sessions affected**: 4
 - **Estimated savings**: ~1 call + 1 error per session
-- **Description**: `apply` with `variables: { fontSize: "VariableID:..." }` rejected by Zod validation. The binding enum only includes fill, stroke, opacity, cornerRadius, padding, spacing, width/height, visible, characters — missing fontSize, fontFamily, fontStyle, lineHeight, letterSpacing, paragraphSpacing, paragraphIndent which are valid `setBoundVariable` targets.
-- **Proposed fix**: Add text property fields to the variable binding Zod enum in the MCP tool definition.
-- **Fix pattern**: type-coercion (enum expansion)
-- **Auto-fixable**: yes
+- **Description**: `apply` with `variables: { fontSize: "VariableID:..." }` rejected by Zod validation. Missing 7 text property fields.
+- **Current status**: PR #6 adds fontSize, fontFamily, fontStyle, lineHeight, letterSpacing, paragraphSpacing, paragraphIndent to both Zod enum and FIELD_MAP.
+
+### [TOOL-011] Legacy tools not deprecated in descriptions — [#8](https://github.com/dabowman/Figmagent/issues/8)
+- **Status**: identified
+- **Priority**: P1
+- **Category**: agent-behavior
+- **First seen**: Session 5 (2026-03-12)
+- **Sessions affected**: 5
+- **Estimated savings**: ~16 calls/session
+- **Description**: Session 5 used 9 `set_layout_sizing`, 3 `bind_variable`, 3 `set_text_style`, 1 `set_fill_color` — all superseded by `apply`. The legacy tools still exist for backward compat but have no deprecation notices in their descriptions.
+- **Proposed fix**: Add "DEPRECATED: Use `apply` instead" to each legacy tool's description. Eventually remove them.
+
+### [AGENT-005] Delete-recreate TEXT nodes instead of apply for font changes — [#9](https://github.com/dabowman/Figmagent/issues/9)
+- **Status**: identified
+- **Priority**: P1
+- **Category**: agent-behavior
+- **First seen**: Session 5 (2026-03-12)
+- **Sessions affected**: 5
+- **Estimated savings**: ~10 calls/session
+- **Description**: Agent deleted and recreated TEXT nodes to change font properties instead of using `apply` with `fontFamily`/`fontWeight`. CLAUDE.md says "Never delete and recreate text nodes just to change their font" but the agent didn't follow.
+- **Proposed fix**: Reinforce in tool descriptions and prompts. Add warning in `delete_node` tool description when target is a TEXT node.
+
+### [AGENT-006] Use `find` instead of individual `get_annotations` for bulk discovery — [#10](https://github.com/dabowman/Figmagent/issues/10)
+- **Status**: identified
+- **Priority**: P0
+- **Category**: agent-behavior
+- **First seen**: Session 6 (2026-03-13)
+- **Sessions affected**: 6
+- **Estimated savings**: ~49 calls/session
+- **Description**: 51 individual `get_annotations` calls (75% of all calls in session 6) to find annotated nodes. `find(hasAnnotation: true)` would have done this in 1 call.
+- **Proposed fix**: Add cross-reference to `find(hasAnnotation: true)` in the `get_annotations` tool description. Emphasize `nodeIds` batch support in description.
+
+### [AGENT-007] Use `find` instead of `scan_nodes_by_types` for node discovery — [#11](https://github.com/dabowman/Figmagent/issues/11)
+- **Status**: identified
+- **Priority**: P1
+- **Category**: agent-behavior
+- **First seen**: Session 7 (2026-03-13)
+- **Sessions affected**: 7
+- **Estimated savings**: ~5 calls/session
+- **Description**: `scan_nodes_by_types(INSTANCE)` returned 276K chars, overflowing to disk, then agent spent 4 calls processing the overflow. `find` with criteria would have returned targeted results within budget.
+- **Proposed fix**: Add deprecation notice to `scan_nodes_by_types` description pointing to `find`. Already documented in CLAUDE.md but agent didn't follow.
 
 ## Resolved Issues
 
@@ -219,7 +259,7 @@ Sessions analyzed: 4
 ### [TOOL-007] Composite create tool
 - **Resolved in**: Session 2
 - **Original savings estimate**: ~104 calls
-- **Actual improvement**: 79 nodes in 14 calls in session 4 (~5.6 nodes/call)
+- **Actual improvement**: 79 nodes in 14 calls in session 4, 39-node tree in 1 call in session 5
 
 ### [TOOL-008] reorder_children tool
 - **Resolved in**: Session 2
@@ -236,13 +276,12 @@ Sessions analyzed: 4
 ### [AGENT-003] Verify instance vs component before modifying
 - **Resolved in**: Post-session 2 (CLAUDE.md update)
 
-### [INFRA-001] Channel reconnection tax
-- **Resolved in**: Post-session 2 (auto-join)
-- **Verified in**: Session 4 — zero reconnections
-
 ### [INFRA-002] extract-sessions.ts hardcoded session path
 - **Resolved in**: Session 3
 - **Verified in**: Session 4
+
+### [BUG-002] lint_design doesn't traverse PAGE nodes
+- **Resolved in**: Session 4 analysis (commit 743d11c)
 
 ## Metrics Over Time
 
@@ -252,6 +291,9 @@ Sessions analyzed: 4
 | 2 | 2026-03-06 | 389 | 14 | ~17.7% | 28 (7.2%) | 41 | 4 | 3 |
 | 3 | 2026-03-14 | 160 | 10 | ~18% | 0 (0%) | 0 (dev) | 2 | 0 |
 | 4 | 2026-03-14 | 56 | 2 | ~12% | 8 (14.3%) | 79 | 3 | 7 |
+| 5 | 2026-03-12 | 259 | 3 | ~23.6% | 35 (13.5%) | ~120+ | 2 | 0 |
+| 6 | 2026-03-13 | 68 | 0 | ~72% | 3 (4.4%) | 0 | 1 | 0 |
+| 7 | 2026-03-13 | 24 | 2 | ~25% | 2 (8.3%) | 0 | 1 | 0 |
 
 ## Issue Categories
 

@@ -163,7 +163,7 @@ server.tool(
 - Batch: pass \`nodeIds\` array to check multiple nodes in one call (much more efficient than repeated single calls)
 - Page scan: omit both to scan the entire current page
 
-Categories are only included in the response when annotations are found. Use \`find\` with \`hasAnnotation: true\` or \`annotation: "regex"\` for searching — this tool is for reading known nodes.`,
+Categories are only included in the response when annotations are found. To discover all annotated nodes in a subtree, use \`find(hasAnnotation: true)\` instead — it searches an entire page in one call. Use \`get_annotations\` only when you already know which node IDs to read annotations from. Supports batch reads via the \`nodeIds\` array parameter.`,
   {
     nodeId: z.string().optional().describe("Single node ID to get annotations for (includes subtree)"),
     nodeIds: z
