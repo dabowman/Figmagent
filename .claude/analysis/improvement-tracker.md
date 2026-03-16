@@ -1,7 +1,7 @@
 # Figmagent Improvement Tracker
 
 Last updated: 2026-03-16
-Sessions analyzed: 9
+Sessions analyzed: 16
 
 ## Active Issues
 
@@ -67,7 +67,7 @@ Sessions analyzed: 9
 - **Priority**: P1
 - **Category**: infrastructure
 - **First seen**: Session 1 (2026-03-05)
-- **Sessions affected**: 1, 2, 4, 5, 6, 7, 9
+- **Sessions affected**: 1, 2, 4, 5, 6, 7, 9, 10, 11, 13, 15, 16
 - **Estimated savings**: ~20-33 calls/session (long sessions), ~2-8 calls/session (short sessions)
 - **Description**: Agent rediscovers same tools repeatedly. 33 calls in session 1 (10.7%), 28 in session 2 (7.2%), 35 in session 5 (13.5%), 8 in session 4 (14.3%), 3 in session 6 (4.4%), 2 in session 7 (8.3%), 7 in session 9 (43.8% — worst ratio, dominated a short exploration session). Worst after reconnections or in short sessions where overhead ratio is high.
 - **Proposed fix**: Pre-load tool schemas at session start; auto-restore after reconnections; add complete tool reference to skill file.
@@ -108,8 +108,8 @@ Sessions analyzed: 9
 - **Priority**: P2
 - **Category**: infrastructure
 - **First seen**: Session 1 (2026-03-05)
-- **Sessions affected**: 1, 2, 5
-- **Description**: 8 reconnections in session 1 consuming ~40+ overhead calls. Session 5 had ~8 reconnections (14 `join_channel` calls) over 139 minutes. Short sessions (4, 6, 7) had zero.
+- **Sessions affected**: 1, 2, 5, 13
+- **Description**: 8 reconnections in session 1 consuming ~40+ overhead calls. Session 5 had ~8 reconnections (14 `join_channel` calls) over 139 minutes. Session 13 had 3 reconnections (model switch + wrong channel guess + multi-channel). Short sessions (4, 6, 7) had zero.
 - **Current status**: Auto-join improved for short sessions. Long sessions (>1hr) still experience WebSocket drops requiring manual `join_channel`. Each reconnection triggers ToolSearch re-discovery overhead.
 - **Verified in**: Sessions 4, 6, 7 — zero reconnections in short sessions.
 
@@ -187,9 +187,9 @@ Sessions analyzed: 9
 - **Priority**: P2
 - **Category**: missing-tool
 - **First seen**: Session 4 (2026-03-14)
-- **Sessions affected**: 4, 5
+- **Sessions affected**: 4, 5, 10
 - **Estimated savings**: ~8 calls/session when building variant sets
-- **Description**: 4 alert variants created sequentially (4 calls), 6 button variants created sequentially (6 calls). Session 5 had similar pattern.
+- **Description**: 4 alert variants created sequentially (4 calls), 6 button variants created sequentially (6 calls). Session 5 had similar pattern. Session 10: 4 alert variants sequentially.
 - **Current status**: PR #7 adds `nodes` array parameter to `create` tool.
 
 ### [BUG-003] apply variable binding enum missing fontSize and text properties — [#5](https://github.com/dabowman/Figmagent/issues/5) / [PR #6](https://github.com/dabowman/Figmagent/pull/6)
@@ -229,7 +229,7 @@ Sessions analyzed: 9
 - **First seen**: Session 6 (2026-03-13)
 - **Sessions affected**: 6
 - **Estimated savings**: ~49 calls/session
-- **Description**: 51 individual `get_annotations` calls (75% of all calls in session 6) to find annotated nodes. `find(hasAnnotation: true)` would have done this in 1 call.
+- **Description**: 51 individual `get_annotations` calls (68.9% of 74 calls in session 6) to find annotated nodes. Only 8% hit rate (3/50 had annotations). Agent tried `find` first with name regex but missed `hasAnnotation: true` criteria.
 - **Proposed fix**: Add cross-reference to `find(hasAnnotation: true)` in the `get_annotations` tool description. Emphasize `nodeIds` batch support in description.
 
 ### [AGENT-007] Use `find` instead of `scan_nodes_by_types` for node discovery — [#11](https://github.com/dabowman/Figmagent/issues/11)
@@ -241,6 +241,95 @@ Sessions analyzed: 9
 - **Estimated savings**: ~5 calls/session
 - **Description**: `scan_nodes_by_types(INSTANCE)` returned 276K chars, overflowing to disk, then agent spent 4 calls processing the overflow. `find` with criteria would have returned targeted results within budget.
 - **Proposed fix**: Add deprecation notice to `scan_nodes_by_types` description pointing to `find`. Already documented in CLAUDE.md but agent didn't follow.
+
+### [AGENT-008] Generalize 403 fail-fast across REST API endpoints
+- **Status**: identified
+- **Priority**: P2
+- **Category**: agent-behavior
+- **First seen**: Session 9 (2026-03-16)
+- **Sessions affected**: 9, 16
+- **Estimated savings**: ~2 calls per occurrence
+- **Description**: Agent got 403 on `search_library_components`, tried `get_library_components` (same 403), then `get_component_variants` (same 403). All REST API calls to the same file key fail with the same auth error. Session 16 also hit 403 on Enterprise-only endpoint.
+- **Proposed fix**: Add to CLAUDE.md: "If a REST API call returns 403 on a file key, all REST API calls to that file will fail. Stop after the first 403 and ask about token scopes."
+
+### [AGENT-009] Parallel cancellation cascade — don't mix Agent + speculative Reads
+- **Status**: identified
+- **Priority**: P2
+- **Category**: agent-behavior
+- **First seen**: Session 14 (2026-03-16)
+- **Sessions affected**: 14
+- **Estimated savings**: ~2 calls + ~3 minutes per occurrence
+- **Description**: A Read error on a non-existent file cancelled a parallel figma-discovery Agent call that was already running. The Agent had to be relaunched from scratch.
+- **Proposed fix**: Never mix long-running Agent calls with speculative Reads in the same parallel batch. Verify file existence (Glob) before parallel launch if uncertain.
+
+### [AGENT-010] Confused exposed instances with INSTANCE_SWAP properties
+- **Status**: identified
+- **Priority**: P1
+- **Category**: agent-behavior
+- **First seen**: Session 12 (2026-03-16)
+- **Sessions affected**: 12
+- **Estimated savings**: ~85 calls (42 wrong + 43 undo)
+- **Description**: Agent used `set_exposed_instance` 85 times (42 applying + 43 undoing) when the user wanted INSTANCE_SWAP component properties. `isExposedInstance` surfaces nested instance properties at the parent level — it does NOT create a slot/dropdown. The user had to correct via screenshot.
+- **Proposed fix**: Clarify the distinction between exposed instances and INSTANCE_SWAP properties in CLAUDE.md, tool descriptions, and design_workflow prompt.
+
+### [AGENT-011] Validate approach on 1 node before mass rollout
+- **Status**: identified
+- **Priority**: P1
+- **Category**: agent-behavior
+- **First seen**: Session 12 (2026-03-16)
+- **Sessions affected**: 12
+- **Estimated savings**: ~40 calls per wrong-approach session
+- **Description**: Agent applied `set_exposed_instance` to 42 nodes before user corrected the approach. Should have applied to 1 node, confirmed with user, then batch.
+- **Proposed fix**: Add to agent workflow: "For operations on 5+ nodes, apply to 1 first, show user, confirm, then batch."
+
+### [TOOL-012] Batch `import_library_component`
+- **Status**: identified
+- **Priority**: P1
+- **Category**: missing-batch-tool
+- **First seen**: Session 15 (2026-03-16)
+- **Sessions affected**: 15
+- **Estimated savings**: ~32 calls/session
+- **Description**: 33 sequential `import_library_component` calls to import library components. No batch variant exists.
+- **Proposed fix**: Add `import_library_components` (plural) accepting array of component keys.
+
+### [BUG-004] Font loading bug in `import_library_component` with `parentNodeId`
+- **Status**: identified
+- **Priority**: P1
+- **Category**: plugin-bug
+- **First seen**: Session 15 (2026-03-16)
+- **Sessions affected**: 15
+- **Estimated savings**: ~36 calls (clone-reparent workaround)
+- **Description**: `import_library_component` with `parentNodeId` fails on components containing TEXT nodes — fonts are not loaded before the import. Agent had to work around with clone + reparent, costing 36 extra calls.
+- **Fix pattern**: sync-to-async (load fonts before inserting)
+
+### [TOOL-013] Batch `get_component_variants`
+- **Status**: identified
+- **Priority**: P2
+- **Category**: missing-batch-tool
+- **First seen**: Session 15 (2026-03-16)
+- **Sessions affected**: 15
+- **Estimated savings**: ~20 calls/session
+- **Description**: 24 sequential `get_component_variants` calls. 9 were for components that were never imported (wasted discovery).
+
+### [BUG-005] `get_node_info` type coercion — depth as string
+- **Status**: identified
+- **Priority**: P2
+- **Category**: type-coercion
+- **First seen**: Session 13 (2026-03-16)
+- **Sessions affected**: 13
+- **Estimated savings**: ~3 calls per occurrence
+- **Description**: Agent passed `depth: "3"` (string) to `get_node_info` three consecutive times, never reading the error message. Related to [TOOL-006] but specific to depth parameter.
+- **Fix pattern**: type-coercion
+- **Auto-fixable**: yes
+
+### [BUG-006] `getMainComponent` sync in FSGN traversal
+- **Status**: identified
+- **Priority**: P2
+- **Category**: plugin-bug
+- **First seen**: Session 13 (2026-03-16)
+- **Sessions affected**: 13
+- **Description**: `getMainComponent` called synchronously instead of `getMainComponentAsync` in FSGN traversal, causing 2 failures on instance nodes.
+- **Fix pattern**: sync-to-async
 
 ## Resolved Issues
 
@@ -298,10 +387,17 @@ Sessions analyzed: 9
 | 3 | 2026-03-14 | 160 | 10 | ~18% | 0 (0%) | 0 (dev) | 2 | 0 |
 | 4 | 2026-03-14 | 56 | 2 | ~12% | 8 (14.3%) | 79 | 3 | 7 |
 | 5 | 2026-03-12 | 259 | 3 | ~23.6% | 35 (13.5%) | ~120+ | 2 | 0 |
-| 6 | 2026-03-13 | 68 | 0 | ~72% | 3 (4.4%) | 0 | 1 | 0 |
-| 7 | 2026-03-13 | 24 | 2 | ~25% | 2 (8.3%) | 0 | 1 | 0 |
+| 6 | 2026-03-13 | 74 | 5 | ~68% | 3 (4.1%) | 0 | 1 | 0 |
+| 7 | 2026-03-13 | 30 | 4 | ~40% | 3 (10%) | 0 | 1 | 0 |
 | 8 | 2026-03-16 | 153 | 9 | ~10% | 0 (0%) | 0 (dev) | 0 | 2 |
-| 9 | 2026-03-16 | 16 | 0 | ~44% | 7 (43.8%) | 0 | 0 | 0 |
+| 9 | 2026-03-16 | 17 | 4 | ~53% | 7 (41.2%) | 0 | 1 | 0 |
+| 10 | 2026-03-13 | 23 | 2 | ~30% | 5 (21.7%) | ~30 | 0 | 0 |
+| 11 | 2026-03-16 | 52 | 4 | ~48% | 9 (17.3%) | ~10 | 1 | 0 |
+| 12 | 2026-03-16 | 105 | 1 | ~81% | 2 (1.9%) | 0 | 3 | 0 |
+| 13 | 2026-03-16 | 37 | 9 | ~38% | 5 (13.5%) | 0 | 2 | 0 |
+| 14 | 2026-03-16 | 17 | 2 | ~18% | 0 (0%) | 0 | 1 | 0 |
+| 15 | 2026-03-16 | 137 | 1 | ~25% | 5 (3.6%) | ~38 | 3 | 0 |
+| 16 | 2026-03-16 | 77 | 5 | ~23% | 9 (11.7%) | ~15 | 0 | 0 |
 
 ## Issue Categories
 

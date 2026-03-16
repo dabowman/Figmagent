@@ -181,7 +181,9 @@
       "figmaToolCalls": 2,
       "durationMinutes": 14,
       "sourceModified": 1773680132.75,
-      "sessionType": "figma"
+      "sessionType": "figma",
+      "analysis": "figma-mcp-session14-analysis.md",
+      "analyzedAt": 1773684600.43
     },
     "389d434e-4861-4f94-b1ff-e6c5d7ec2a88": {
       "toolCalls": 32,
@@ -244,7 +246,9 @@
       "figmaToolCalls": 10,
       "durationMinutes": 8,
       "sourceModified": 1773680132.73,
-      "sessionType": "figma"
+      "sessionType": "figma",
+      "analysis": "figma-mcp-session11-analysis.md",
+      "analyzedAt": 1773684600.43
     },
     "51ad1cb8-8924-4cf1-9f24-4874c967c461": {
       "toolCalls": 23,
@@ -341,7 +345,7 @@
       "sourceModified": 1773680132.66,
       "sessionType": "figma",
       "analysis": "figma-mcp-session9-analysis.md",
-      "analyzedAt": 1773678275.09
+      "analyzedAt": 1773682786.38
     },
     "64856c44-702c-4f9c-8555-66ccfbe7247f": {
       "toolCalls": 5,
@@ -415,7 +419,7 @@
       "sourceModified": 1773680132.7,
       "sessionType": "figma",
       "analysis": "figma-mcp-session7-analysis.md",
-      "analyzedAt": 1773511911.07
+      "analyzedAt": 1773684094.19
     },
     "7c898c18-5632-49fd-bb87-12a5169a70cc": {
       "toolCalls": 18,
@@ -512,7 +516,7 @@
       "sourceModified": 1773680132.67,
       "sessionType": "figma",
       "analysis": "figma-mcp-session6-analysis.md",
-      "analyzedAt": 1773511993.71
+      "analyzedAt": 1773683365.02
     },
     "9f26d047-d827-4ed5-9e43-13578e1ec82b": {
       "toolCalls": 10,
@@ -555,10 +559,10 @@
       "skip": true
     },
     "a5844e2b-4853-4864-b50f-fe05e4e29312": {
-      "toolCalls": 187,
+      "toolCalls": 207,
       "figmaToolCalls": 0,
-      "durationMinutes": 2928,
-      "sourceModified": 1773680159.02,
+      "durationMinutes": 2940,
+      "sourceModified": 1773682637.82,
       "sessionType": "dev",
       "skip": true
     },
@@ -624,7 +628,9 @@
       "figmaToolCalls": 5,
       "durationMinutes": 8,
       "sourceModified": 1773680132.74,
-      "sessionType": "figma"
+      "sessionType": "figma",
+      "analysis": "figma-mcp-session12-analysis.md",
+      "analyzedAt": 1773684600.43
     },
     "b3921565-da61-448b-96fa-351990a74419": {
       "toolCalls": 99,
@@ -655,7 +661,9 @@
       "figmaToolCalls": 5,
       "durationMinutes": 20,
       "sourceModified": 1773680132.74,
-      "sessionType": "figma"
+      "sessionType": "figma",
+      "analysis": "figma-mcp-session13-analysis.md",
+      "analyzedAt": 1773684600.43
     },
     "c2138cb0-4e80-402b-9d37-668f26b2dcb6": {
       "toolCalls": 78,
@@ -749,8 +757,10 @@
       "toolCalls": 77,
       "figmaToolCalls": 17,
       "durationMinutes": 24,
-      "sourceModified": 1773680159.02,
-      "sessionType": "figma"
+      "sourceModified": 1773682637.82,
+      "sessionType": "figma",
+      "analysis": "figma-mcp-session16-analysis.md",
+      "analyzedAt": 1773684600.43
     },
     "e36e5b90-e246-42e7-9d5d-c425614b9121": {
       "toolCalls": 0,
@@ -781,7 +791,9 @@
       "figmaToolCalls": 9,
       "durationMinutes": 5,
       "sourceModified": 1773680132.67,
-      "sessionType": "figma"
+      "sessionType": "figma",
+      "analysis": "figma-mcp-session10-analysis.md",
+      "analyzedAt": 1773683676.19
     },
     "e7883cd3-b09b-4634-95ce-1011f41a5769": {
       "toolCalls": 0,
@@ -806,6 +818,31 @@
       "sourceModified": 1773680132.74,
       "sessionType": "dev",
       "skip": true
+    },
+    "1c66f35c-232c-466a-919b-49d39f7dbe19": {
+      "toolCalls": 1,
+      "figmaToolCalls": 0,
+      "durationMinutes": 0,
+      "sourceModified": 1773682637.8,
+      "sessionType": "dev",
+      "skip": true
+    },
+    "a6ec9710-b1b7-440a-b6c4-6aca98813af6": {
+      "toolCalls": 4,
+      "figmaToolCalls": 0,
+      "durationMinutes": 0,
+      "sourceModified": 1773682637.81,
+      "sessionType": "dev",
+      "skip": true
+    },
+    "a9dc0f98-5cd9-47f9-a7c7-b68ecdfe347f": {
+      "toolCalls": 137,
+      "figmaToolCalls": 13,
+      "durationMinutes": 27,
+      "sourceModified": 1773682637.81,
+      "sessionType": "figma",
+      "analysis": "figma-mcp-session15-analysis.md",
+      "analyzedAt": 1773684600.43
     }
   }
 }
