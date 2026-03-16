@@ -231,6 +231,262 @@ Multiple operations in one call:
   },
 );
 
+// Prepare Figma Variables Tool — DTCG JSON to create_variables payloads (MCP-server-side, no Figma connection needed)
+
+function hexToRgba(hex: string): { r: number; g: number; b: number; a: number } {
+  let h = hex.replace(/^#/, "");
+  if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  if (h.length === 4) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2] + h[3] + h[3];
+  const r = Number.parseInt(h.slice(0, 2), 16) / 255;
+  const g = Number.parseInt(h.slice(2, 4), 16) / 255;
+  const b = Number.parseInt(h.slice(4, 6), 16) / 255;
+  const a = h.length === 8 ? Number.parseInt(h.slice(6, 8), 16) / 255 : 1;
+  return { r: Math.round(r * 1000) / 1000, g: Math.round(g * 1000) / 1000, b: Math.round(b * 1000) / 1000, a: Math.round(a * 1000) / 1000 };
+}
+
+type FigmaVariableType = "COLOR" | "FLOAT" | "STRING" | "BOOLEAN";
+
+interface ParsedVariable {
+  name: string;
+  type: FigmaVariableType;
+  value: unknown;
+  scopes: string[];
+}
+
+function dtcgTypeToFigma(dtcgType: string): FigmaVariableType {
+  switch (dtcgType) {
+    case "color":
+      return "COLOR";
+    case "number":
+    case "dimension":
+    case "duration":
+    case "fontWeight":
+      return "FLOAT";
+    case "fontFamily":
+    case "string":
+    case "fontStyle":
+      return "STRING";
+    case "boolean":
+      return "BOOLEAN";
+    default:
+      return "STRING";
+  }
+}
+
+function convertValue(dtcgType: string, value: unknown): unknown {
+  if (value === null || value === undefined) return value;
+
+  switch (dtcgType) {
+    case "color": {
+      if (typeof value === "string" && value.startsWith("#")) {
+        return hexToRgba(value);
+      }
+      if (typeof value === "object") return value;
+      return value;
+    }
+    case "number":
+    case "dimension":
+    case "duration":
+    case "fontWeight": {
+      if (typeof value === "number") return value;
+      if (typeof value === "string") {
+        const num = Number.parseFloat(value);
+        return Number.isNaN(num) ? 0 : num;
+      }
+      return 0;
+    }
+    case "boolean": {
+      if (typeof value === "boolean") return value;
+      return value === "true";
+    }
+    default:
+      return typeof value === "string" ? value : String(value);
+  }
+}
+
+function inferScopes(path: string, figmaType: FigmaVariableType): string[] {
+  const lower = path.toLowerCase();
+
+  if (figmaType === "COLOR") {
+    if (lower.includes("stroke")) return ["STROKE_COLOR"];
+    if (lower.includes("text") || lower.includes("font-color") || lower.includes("foreground")) return ["TEXT_FILL"];
+    if (lower.includes("fill") || lower.includes("background") || lower.includes("bg") || lower.includes("surface")) return ["ALL_FILLS"];
+    if (lower.includes("effect") || lower.includes("shadow")) return ["EFFECT_COLOR"];
+    if (lower.includes("border")) return ["STROKE_COLOR"];
+    return ["ALL_FILLS"];
+  }
+
+  if (figmaType === "FLOAT") {
+    if (lower.includes("radius") || lower.includes("corner")) return ["CORNER_RADIUS"];
+    if (lower.includes("spacing") || lower.includes("gap")) return ["GAP"];
+    if (lower.includes("padding")) return ["GAP"];
+    if (lower.includes("opacity") || lower.includes("alpha")) return ["OPACITY"];
+    if (lower.includes("font-size") || lower.includes("fontsize") || lower.includes("text-size")) return ["FONT_SIZE"];
+    if (lower.includes("font-weight") || lower.includes("fontweight")) return ["FONT_WEIGHT"];
+    if (lower.includes("line-height") || lower.includes("lineheight")) return ["LINE_HEIGHT"];
+    if (lower.includes("letter-spacing") || lower.includes("letterspacing")) return ["LETTER_SPACING"];
+    if (lower.includes("stroke") || lower.includes("border-width")) return ["STROKE_FLOAT"];
+    if (lower.includes("size") || lower.includes("width") || lower.includes("height")) return ["WIDTH_HEIGHT"];
+    return ["ALL_SCOPES"];
+  }
+
+  if (figmaType === "STRING") {
+    if (lower.includes("font-family") || lower.includes("fontfamily")) return ["FONT_FAMILY"];
+    if (lower.includes("font-style") || lower.includes("fontstyle")) return ["FONT_STYLE"];
+    return ["ALL_SCOPES"];
+  }
+
+  return ["ALL_SCOPES"];
+}
+
+function walkDtcgTree(
+  obj: Record<string, unknown>,
+  path: string[],
+  prefix: string,
+  inheritedType: string | undefined,
+  results: ParsedVariable[],
+): void {
+  // Check if this is a leaf token (has $value)
+  if (obj["$value"] !== undefined) {
+    const dtcgType = (typeof obj["$type"] === "string" ? obj["$type"] : inheritedType) || "string";
+    const figmaType = dtcgTypeToFigma(dtcgType);
+    let name = path.join("/");
+    if (prefix && name.startsWith(prefix)) {
+      name = name.slice(prefix.length);
+    }
+    // Remove leading slashes after prefix strip
+    name = name.replace(/^\/+/, "");
+    if (!name) return;
+
+    const converted = convertValue(dtcgType, obj["$value"]);
+    const scopes = inferScopes(name, figmaType);
+
+    results.push({ name, type: figmaType, value: converted, scopes });
+    return;
+  }
+
+  // Recurse into child objects
+  const groupType = typeof obj["$type"] === "string" ? (obj["$type"] as string) : inheritedType;
+  for (const key of Object.keys(obj)) {
+    if (key.startsWith("$")) continue; // skip DTCG metadata keys
+    const child = obj[key];
+    if (child !== null && typeof child === "object" && !Array.isArray(child)) {
+      walkDtcgTree(child as Record<string, unknown>, [...path, key], prefix, groupType, results);
+    }
+  }
+}
+
+server.tool(
+  "prepare_figma_variables",
+  `Convert DTCG-format design tokens to create_variables-ready payloads. Handles hex→RGBA conversion, $value/$type parsing, alias resolution, scope inference, and batch chunking.
+
+Runs entirely on the MCP server — no Figma connection needed. Feed the output batches directly to create_variables.
+
+Input a DTCG token tree:
+  { tokens: { "color": { "$type": "color", "primary": { "500": { "$value": "#3366FF" } } }, "spacing": { "$type": "dimension", "sm": { "$value": "8px" } } } }
+
+Returns an array of create_variables-ready payloads, each with at most batchSize variables:
+  [{ collection: "Tokens", modes: ["Default"], variables: [{ name: "color/primary/500", type: "COLOR", scopes: ["ALL_FILLS"], values: { "Default": { r: 0.2, g: 0.4, b: 1, a: 1 } } }, ...] }]
+
+Supported DTCG $type values: color, number, dimension, duration, fontWeight, fontFamily, fontStyle, string, boolean.
+Hex formats: #RGB, #RGBA, #RRGGBB, #RRGGBBAA. Dimension values like "8px" or "1.5rem" have units stripped.
+Scopes are inferred from path segments (e.g. "fill"→ALL_FILLS, "radius"→CORNER_RADIUS, "spacing"→GAP, "font-size"→FONT_SIZE).`,
+  {
+    tokens: z
+      .record(z.string(), z.any())
+      .describe("DTCG JSON object with $value/$type entries (can be deeply nested). Top-level keys become path prefixes."),
+    collectionName: z
+      .string()
+      .optional()
+      .describe("Name for the Figma variable collection. Default: 'Tokens'"),
+    modes: z
+      .array(z.string())
+      .optional()
+      .describe("Mode names for the collection. Default: ['Default']"),
+    batchSize: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(100)
+      .optional()
+      .describe("Variables per batch payload. Default: 25"),
+    prefix: z
+      .string()
+      .optional()
+      .describe("Prefix to strip from variable paths (e.g. 'figma/'). Removed from the start of each variable name."),
+  },
+  async (params: {
+    tokens: Record<string, unknown>;
+    collectionName?: string;
+    modes?: string[];
+    batchSize?: number;
+    prefix?: string;
+  }) => {
+    try {
+      const collection = params.collectionName || "Tokens";
+      const modes = params.modes || ["Default"];
+      const batchSize = params.batchSize || 25;
+      const prefix = params.prefix || "";
+
+      // Walk the DTCG tree
+      const parsed: ParsedVariable[] = [];
+      walkDtcgTree(params.tokens, [], prefix, undefined, parsed);
+
+      if (parsed.length === 0) {
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({ error: "No DTCG tokens found. Ensure the input has leaf nodes with $value fields." }),
+          }],
+        };
+      }
+
+      // Build create_variables payloads in batches
+      const batches: Array<{
+        collection: string;
+        modes: string[];
+        variables: Array<{
+          name: string;
+          type: FigmaVariableType;
+          scopes: string[];
+          values: Record<string, unknown>;
+        }>;
+      }> = [];
+
+      for (let i = 0; i < parsed.length; i += batchSize) {
+        const chunk = parsed.slice(i, i + batchSize);
+        const variables = chunk.map((v) => {
+          const values: Record<string, unknown> = {};
+          for (const mode of modes) {
+            values[mode] = v.value;
+          }
+          return { name: v.name, type: v.type, scopes: v.scopes, values };
+        });
+        batches.push({ collection, modes, variables });
+      }
+
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            totalVariables: parsed.length,
+            totalBatches: batches.length,
+            batchSize,
+            batches,
+          }),
+        }],
+      };
+    } catch (error) {
+      return {
+        content: [{
+          type: "text",
+          text: `Error preparing variables: ${error instanceof Error ? error.message : String(error)}`,
+        }],
+      };
+    }
+  },
+);
+
 // Create Styles Tool — create paint, text, effect, and grid styles in batch
 server.tool(
   "create_styles",
