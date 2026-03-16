@@ -72,7 +72,7 @@ create({
 })
 \`\`\`
 
-**Node types:** FRAME (default), TEXT, RECTANGLE, COMPONENT, INSTANCE.
+**Node types:** FRAME (default), TEXT, RECTANGLE, COMPONENT, INSTANCE, SVG (pass an svg string).
 - COMPONENT works exactly like FRAME but creates a reusable component.
 - INSTANCE requires \`componentId\` (local) or \`componentKey\` (library).
 
