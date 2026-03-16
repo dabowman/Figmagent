@@ -1,6 +1,6 @@
 # Figmagent MCP
 
-MCP server that bridges AI agents (Claude Code, Cursor) with Figma through a WebSocket relay and Figma plugin. Originally forked from [sonnylazuardi/cursor-talk-to-figma-mcp](https://github.com/sonnylazuardi/cursor-talk-to-figma-mcp), now a standalone project with significant additions: 63 tools, structured tree inspection (FSGN), design token binding, batch operations, component property management, library access, file comments, plugin concurrency control, and sub-agent orchestration.
+MCP server that bridges AI agents (Claude Code, Cursor) with Figma through a WebSocket relay and Figma plugin. Originally forked from [sonnylazuardi/cursor-talk-to-figma-mcp](https://github.com/sonnylazuardi/cursor-talk-to-figma-mcp), now a standalone project with significant additions: structured tree inspection (FSGN), design token binding, batch operations, component property management, design linting, library access, file comments, plugin concurrency control, and sub-agent orchestration.
 
 ```
 AI Agent <-(stdio)-> MCP Server <-(WebSocket)-> Relay <-(WebSocket)-> Figma Plugin
@@ -31,7 +31,7 @@ bun socket
 
 3. In Figma: Plugins > Development > Link existing plugin > select `src/figma_plugin/manifest.json`
 
-4. Run the plugin in Figma, click Connect, then call `join_channel` from your AI agent (no arguments needed — auto-discovers the active channel).
+4. Run the plugin in Figma and click Connect. The MCP server auto-joins on the first tool call.
 
 ### Claude Code Setup
 
@@ -60,83 +60,63 @@ Add to your MCP configuration:
 
 Uncomment the `hostname: "0.0.0.0"` line in `src/socket.ts` to allow connections from the Windows host.
 
-## Tools (63)
+## Tools (47)
 
 ### Document & Navigation
 
 | Tool | Description |
 |------|-------------|
 | `join_channel` | Join a Figma plugin channel (auto-discovers if no args) |
-| `get_document_info` | Get current document structure |
-| `get_selection` | Get current selection |
-| `get` | Read one or more nodes and their subtrees. Structured YAML (FSGN format) with detail levels: `structure` / `layout` / `full`. Accepts `nodeId` (single) or `nodeIds` (multiple). Deduplicated variable, style, and component defs. |
+| `get_document_info` | Get current document structure (pages, top-level frames) |
+| `get_selection` | Get the user's current selection |
+| `get` | Read nodes and subtrees in FSGN (YAML). Detail levels: `structure` / `layout` / `full`. Accepts `nodeId` or `nodeIds` (parallel). |
+| `find` | Search a subtree by criteria: `componentId`, `variableId`, `styleId`, `text`, `name`, `type`, `annotation`, `hasAnnotation`. Results grouped by ancestor. |
 | `set_focus` | Select and scroll to a node |
 | `set_selections` | Select multiple nodes |
 
-### Creating Elements
+### Creating & Modifying
 
 | Tool | Description |
 |------|-------------|
-| `create` | Create one or more nodes (FRAME, TEXT, RECTANGLE) from a single or nested spec |
-
-### Modifying Elements
-
-| Tool | Description |
-|------|-------------|
+| `create` | Create nodes from a spec — single or nested tree. Types: FRAME, TEXT, RECTANGLE, COMPONENT, INSTANCE. Auto-positions top-level nodes. |
+| `apply` | Set properties on existing nodes: fill, stroke, corner radius, opacity, font, layout, variables, text/effect styles, variant swap, exposed instances. |
 | `rename_node` | Rename a node |
-| `set_fill_color` | Set fill color (RGBA 0-1) |
-| `set_stroke_color` | Set stroke color and weight |
-| `set_corner_radius` | Set corner radius (uniform or per-corner) |
-| `move_node` | Move a node to x/y position |
+| `move_node` | Move a node to x/y (position only, not reparent) |
 | `resize_node` | Resize a node |
 | `clone_node` | Clone a node with optional offset |
 | `clone_and_modify` | Clone + reparent + modify in one call |
 | `delete_node` | Delete a node |
-| `delete_multiple_nodes` | Batch delete nodes |
-| `reorder_children` | Reorder children of a frame |
-| `set_multiple_properties` | Batch set fill, stroke, radius, sizing, padding, spacing |
+| `delete_multiple_nodes` | Batch delete |
+| `reorder_children` | Reorder children within a parent |
 
 ### Text
 
 | Tool | Description |
 |------|-------------|
-| `set_text_content` | Set text content of a node |
+| `set_text_content` | Set text on a single text node |
 | `set_multiple_text_contents` | Batch update multiple text nodes |
-| `scan_text_nodes` | Scan text nodes with chunking for large designs |
-
-### Auto Layout
-
-| Tool | Description |
-|------|-------------|
-| `set_layout_mode` | Set layout direction and wrap |
-| `set_padding` | Set padding (top, right, bottom, left) |
-| `set_axis_align` | Set primary/counter axis alignment |
-| `set_layout_sizing` | Set sizing modes (FIXED, HUG, FILL) |
-| `set_item_spacing` | Set spacing between children |
 
 ### Components & Instances
 
 | Tool | Description |
 |------|-------------|
-| `get_styles` | Get local text/paint/effect styles |
-| `get_local_variables` | Get all variable collections, modes, and values |
-| `get_local_components` | Get component sets and standalone components by name, with variant axes and conditional variant lists |
-| `create_component` | Create a new component |
-| `combine_as_variants` | Combine components into a variant set |
-| `create_component_instance` | Create an instance (supports `componentId` + `parentId`) |
+| `get_local_components` | List component sets and standalone components, with variant axes |
+| `combine_as_variants` | Combine components into a COMPONENT_SET (auto-layout enabled) |
+| `component_properties` | Batch add/edit/delete/bind property definitions. `add` supports `targetNodeId` to wire properties to child nodes. |
 | `get_instance_overrides` | Extract overrides from an instance |
 | `set_instance_overrides` | Apply overrides to target instances |
-| `swap_component_variant` | Swap an instance to a different variant |
-| `get_main_component` | Resolve instance to its main component |
+| `get_component_variants` | Get variants for a component set |
 
 ### Design Tokens & Styles
 
 | Tool | Description |
 |------|-------------|
-| `bind_variable` | Bind a variable to a node property |
-| `batch_bind_variables` | Batch bind variables (chunked, with progress) |
-| `set_text_style` | Apply a text style to a node |
-| `batch_set_text_styles` | Batch apply text styles (deduplicates font loading) |
+| `get_design_system` | Get all styles and variables in one call |
+| `create_variables` | Create variable collections, modes, and variables (COLOR, FLOAT, STRING, BOOLEAN) |
+| `update_variables` | Update values, rename, or delete variables |
+| `create_styles` | Create paint, text, effect, and grid styles in batch |
+| `update_styles` | Update, rename, or delete styles |
+| `lint_design` | Scan a subtree for unbound properties, match against variables (CIE76 deltaE for colors), auto-fix exact matches |
 
 ### Library (REST API)
 
@@ -145,19 +125,17 @@ Requires `FIGMA_API_TOKEN` environment variable.
 | Tool | Description |
 |------|-------------|
 | `get_library_components` | Browse library component catalog |
-| `search_library_components` | Search library components |
+| `search_library_components` | Search library components by name |
 | `import_library_component` | Import and instantiate a library component |
-| `get_component_variants` | Get variants for a component set |
 | `get_library_variables` | Get design token variables from a library |
 
-### Annotations & Scanning
+### Annotations
 
 | Tool | Description |
 |------|-------------|
-| `get_annotations` | Get annotations on a node |
-| `set_annotation` | Create/update an annotation |
+| `get_annotations` | Get annotations from nodes (single, batch `nodeIds`, or page scan) |
+| `set_annotation` | Create or update an annotation |
 | `set_multiple_annotations` | Batch create/update annotations |
-| `scan_nodes_by_types` | Scan for nodes of specific types |
 
 ### Prototyping & Connections
 
@@ -183,22 +161,30 @@ Requires `FIGMA_API_TOKEN` with `file_comments:read` and `file_comments:write` s
 |------|-------------|
 | `export_node_as_image` | Export a node as PNG, JPG, SVG, or PDF |
 
-## MCP Prompts
+### Deprecated (kept for backward compatibility)
+
+| Tool | Replacement |
+|------|-------------|
+| `scan_text_nodes` | `find(text: "regex")` |
+| `scan_nodes_by_types` | `find(type: [...])` |
+
+## MCP Prompts (6)
 
 | Prompt | Description |
 |--------|-------------|
-| `design_strategy` | Best practices for creating Figma designs |
-| `read_design_strategy` | Best practices for reading designs |
-| `text_replacement_strategy` | Systematic text replacement with chunking |
-| `annotation_conversion_strategy` | Converting manual annotations to native Figma annotations |
-| `swap_overrides_instances` | Transferring overrides between instances |
-| `reaction_to_connector_strategy` | Converting prototype reactions to connector lines |
+| `design_workflow` | End-to-end workflow for reading, creating, and modifying Figma designs |
+| `text_replacement` | Strategy for finding and replacing text content |
+| `component_architecture` | Guide to building components, variants, and instances |
+| `annotation_conversion` | Converting manual annotations to native Figma annotations |
+| `instance_override_transfer` | Transferring overrides between instances |
+| `reaction_to_connector` | Converting prototype reactions to connector lines |
 
 ## Development
 
 ```bash
 bun install              # Install dependencies
 bun socket               # Start WebSocket relay (port 3055)
+bun run build:plugin     # Bundle Figma plugin (src/ → code.js)
 bun run test             # Run tests
 bun run lint             # Lint with Biome
 bun run lint:fix         # Auto-fix lint + format
@@ -209,7 +195,7 @@ bun run check            # Lint + format check
 
 The MCP server is modular (`src/figmagent_mcp/`):
 - `server.ts` — entry point
-- `tools/` — domain-grouped tool registrations (document, create, modify, text, layout, components, export, scan, libraries, comments)
+- `tools/` — domain-grouped tool registrations (document, create, apply, modify, text, components, find, scan, tokens, lint, libraries, comments, export)
 - `prompts/` — AI prompt definitions
 - `connection.ts` — WebSocket management and channel auto-discovery
 - `types.ts`, `utils.ts` — shared types and utilities
@@ -220,4 +206,4 @@ See [CLAUDE.md](CLAUDE.md) for detailed agent guidance, design patterns, and kno
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE)
