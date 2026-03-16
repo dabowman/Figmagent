@@ -62,10 +62,26 @@ const nodeSpecSchema: z.ZodType<any> = z.lazy(() =>
   }),
 );
 
+// Helper: send one create command and format the result
+async function createOne(parentId: string | undefined, nodeSpec: any) {
+  const result = (await sendCommandToFigma("create", { parentId, tree: nodeSpec }, 60000)) as {
+    success: boolean;
+    totalNodesCreated: number;
+    tree: { id: string; name: string; type: string; children?: any[] };
+  };
+  return {
+    rootId: result.tree.id,
+    rootName: result.tree.name,
+    rootType: result.tree.type,
+    totalNodesCreated: result.totalNodesCreated,
+    nodes: result.tree,
+  };
+}
+
 // Create Tool — the single entry point for creating any nodes in Figma
 server.tool(
   "create",
-  `Create one or more nodes in Figma. Accepts a single node spec or a nested tree of nodes.
+  `Create one or more nodes in Figma. Accepts a single node spec, a nested tree, or multiple root nodes.
 
 Node types: FRAME (default), TEXT, RECTANGLE, COMPONENT, INSTANCE.
 
@@ -78,11 +94,13 @@ For nested structures, add children:
     { type: "TEXT", text: "Body text" }
   ]}}
 
-For components (works like FRAME but creates a COMPONENT node):
-  { node: { type: "COMPONENT", name: "Button", layoutMode: "HORIZONTAL", children: [...] } }
-
-For instances (componentId for local, componentKey for library):
-  { node: { type: "INSTANCE", componentId: "123:456" } }
+For multiple root nodes (e.g. variant components), use the nodes array:
+  { nodes: [
+    { type: "COMPONENT", name: "Variant=SM", ... },
+    { type: "COMPONENT", name: "Variant=MD", ... },
+    { type: "COMPONENT", name: "Variant=LG", ... }
+  ]}
+Each node spec in the array is created in parallel. Use this when building multiple sibling components (e.g. variants before combine_as_variants).
 
 FRAME and COMPONENT nodes support auto-layout (layoutMode, padding, alignment, spacing, sizing), fill/stroke colors, and cornerRadius.
 TEXT nodes support text, fontSize, fontWeight, fontFamily, fontStyle, and fontColor.
@@ -95,26 +113,45 @@ Use parentId to append the created node(s) inside an existing frame.
 Colors use RGBA 0-1 range (e.g. { r: 0.2, g: 0.4, b: 1.0 }), not 0-255.`,
   {
     parentId: z.string().optional().describe("Parent node ID to append the created node(s) to"),
-    node: nodeSpecSchema.describe("Node spec — a single node or a nested tree with children"),
+    node: nodeSpecSchema.optional().describe("Single node spec — a node or nested tree with children. Mutually exclusive with 'nodes'."),
+    nodes: z
+      .array(nodeSpecSchema)
+      .optional()
+      .describe("Array of node specs to create in parallel. Each spec is a root node (with optional children). Mutually exclusive with 'node'."),
   },
-  async ({ parentId, node }: any) => {
+  async ({ parentId, node, nodes }: any) => {
     try {
-      const result = await sendCommandToFigma("create", { parentId, tree: node }, 60000);
-      const typedResult = result as {
-        success: boolean;
-        totalNodesCreated: number;
-        tree: { id: string; name: string; type: string; children?: any[] };
-      };
+      // Validate mutual exclusivity
+      if (node && nodes) {
+        return {
+          content: [{ type: "text" as const, text: "Error: provide either 'node' or 'nodes', not both." }],
+        };
+      }
+      if (!node && !nodes) {
+        return {
+          content: [{ type: "text" as const, text: "Error: provide either 'node' (single) or 'nodes' (array)." }],
+        };
+      }
+
+      // Single node
+      if (node) {
+        const result = await createOne(parentId, node);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(result) }],
+        };
+      }
+
+      // Multiple nodes — create in parallel
+      const results = await Promise.all(nodes.map((spec: any) => createOne(parentId, spec)));
+      const totalNodes = results.reduce((sum: number, r: any) => sum + r.totalNodesCreated, 0);
       return {
         content: [
           {
-            type: "text",
+            type: "text" as const,
             text: JSON.stringify({
-              rootId: typedResult.tree.id,
-              rootName: typedResult.tree.name,
-              rootType: typedResult.tree.type,
-              totalNodesCreated: typedResult.totalNodesCreated,
-              nodes: typedResult.tree,
+              totalRoots: results.length,
+              totalNodesCreated: totalNodes,
+              roots: results,
             }),
           },
         ],
@@ -123,7 +160,7 @@ Colors use RGBA 0-1 range (e.g. { r: 0.2, g: 0.4, b: 1.0 }), not 0-255.`,
       return {
         content: [
           {
-            type: "text",
+            type: "text" as const,
             text: `Error creating node(s): ${error instanceof Error ? error.message : String(error)}`,
           },
         ],
