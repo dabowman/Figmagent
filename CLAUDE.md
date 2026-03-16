@@ -146,3 +146,4 @@ Uncomment the `hostname: "0.0.0.0"` line in `src/socket.ts` to allow connections
 - The plugin and relay must both be running before any tool calls succeed
 - After 2 consecutive identical errors on the same tool, stop retrying and diagnose the root cause (wrong node ID, lost connection, or type mismatch)
 - After 2 timeouts in a row, assume the WebSocket connection is lost — call `join_channel` to re-establish before retrying
+- Tool schemas are stable within a session. Cache tool schemas after the first ToolSearch call — do not re-fetch the same tool's schema on every use. After reconnection, a single ToolSearch for the tools you plan to use is sufficient. Batch ToolSearch calls when possible rather than fetching one tool at a time.
