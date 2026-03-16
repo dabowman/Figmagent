@@ -421,8 +421,9 @@ export async function getAnnotations(params) {
       const mergedAnnotations = [];
       const collect = async (n) => {
         if ("annotations" in n && n.annotations && n.annotations.length > 0) {
-          for (const a of n.annotations) {
-            mergedAnnotations.push({ nodeId: n.id, nodeName: n.name, annotation: a });
+          for (let idx = 0; idx < n.annotations.length; idx++) {
+            const a = n.annotations[idx];
+            mergedAnnotations.push({ nodeId: n.id, nodeName: n.name, annotationIndex: idx, annotation: a });
           }
         }
         if ("children" in n) {
@@ -495,10 +496,11 @@ export async function getAnnotations(params) {
     const annotations = [];
     const processNode = async (node) => {
       if ("annotations" in node && node.annotations && node.annotations.length > 0) {
+        const indexedAnnotations = node.annotations.map((a, idx) => ({ annotationIndex: idx, ...a }));
         annotations.push({
           nodeId: node.id,
           name: node.name,
-          annotations: node.annotations,
+          annotations: indexedAnnotations,
         });
       }
       if ("children" in node) {
@@ -532,7 +534,7 @@ export async function setAnnotation(params) {
     console.log("=== setAnnotation Debug Start ===");
     console.log("Input params:", JSON.stringify(params, null, 2));
 
-    const { nodeId, labelMarkdown, categoryId, properties } = params;
+    const { nodeId, annotationId, labelMarkdown, categoryId, properties } = params;
 
     if (!nodeId) {
       console.error("Validation failed: Missing nodeId");
@@ -586,16 +588,45 @@ export async function setAnnotation(params) {
 
     console.log("Current node annotations:", node.annotations);
     console.log("Setting new annotation:", JSON.stringify(newAnnotation, null, 2));
-    node.annotations = (node.annotations ? node.annotations.slice() : []).concat([newAnnotation]);
+
+    const existingAnnotations = node.annotations ? node.annotations.slice() : [];
+
+    // If annotationId (index) is provided, replace that specific annotation
+    if (annotationId !== undefined && annotationId !== null) {
+      const idx = typeof annotationId === "string" ? parseInt(annotationId, 10) : annotationId;
+      if (idx >= 0 && idx < existingAnnotations.length) {
+        existingAnnotations[idx] = newAnnotation;
+        node.annotations = existingAnnotations;
+        console.log(`Replaced annotation at index ${idx}`);
+      } else {
+        // Index out of range — append instead
+        node.annotations = existingAnnotations.concat([newAnnotation]);
+        console.log(`annotationId ${idx} out of range (${existingAnnotations.length} existing), appended`);
+      }
+    } else if (existingAnnotations.length > 0) {
+      // No annotationId provided but node already has annotations — replace the first one
+      // This prevents the "node already has annotation" validation error
+      existingAnnotations[0] = newAnnotation;
+      node.annotations = existingAnnotations;
+      console.log("Replaced existing first annotation (no annotationId specified)");
+    } else {
+      // No existing annotations — add new
+      node.annotations = [newAnnotation];
+      console.log("Added new annotation");
+    }
 
     console.log("Updated node annotations:", node.annotations);
     console.log("=== setAnnotation Debug End ===");
+
+    const indexedAnnotations = node.annotations
+      ? node.annotations.map((a, idx) => ({ annotationIndex: idx, ...a }))
+      : [];
 
     return {
       success: true,
       nodeId: node.id,
       name: node.name,
-      annotations: node.annotations,
+      annotations: indexedAnnotations,
     };
   } catch (error) {
     console.error("=== setAnnotation Error ===");
@@ -632,6 +663,7 @@ export async function setMultipleAnnotations(params) {
     try {
       console.log("Calling setAnnotation with params:", {
         nodeId: annotation.nodeId,
+        annotationId: annotation.annotationId,
         labelMarkdown: annotation.labelMarkdown,
         categoryId: annotation.categoryId,
         properties: annotation.properties,
@@ -639,6 +671,7 @@ export async function setMultipleAnnotations(params) {
 
       const result = await setAnnotation({
         nodeId: annotation.nodeId,
+        annotationId: annotation.annotationId,
         labelMarkdown: annotation.labelMarkdown,
         categoryId: annotation.categoryId,
         properties: annotation.properties,
