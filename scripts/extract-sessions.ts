@@ -2,19 +2,23 @@
 /**
  * Extract Claude Code sessions to agent-friendly JSON.
  *
+ * By default, extracts all sessions, skipping any whose output JSON is
+ * already up-to-date (source JSONL mtime ≤ output JSON mtime).
+ * Resumed/continued sessions are automatically re-extracted.
+ *
  * Usage:
  *   bun scripts/extract-sessions.ts [options]
  *
  * Options:
  *   --session <id>       Extract a single session by ID
- *   --latest [n]         Extract the n most recent sessions (default: 1)
- *   --all                Extract all sessions
+ *   --latest [n]         Extract only the n most recent sessions
  *   --out <dir>          Output directory (default: .claude/sessions-json)
  *   --include-agents     Include sub-agent sessions
  *   --list               List available sessions (no extraction)
  *   --compact            Omit tool results over 2000 chars (replace with summary)
  *   --no-thinking        Strip thinking blocks entirely
  *   --raw                Output raw JSONL messages (no transformation)
+ *   --force              Re-extract even if output JSON is up-to-date
  */
 
 import { readdir, readFile, mkdir, writeFile, stat } from "node:fs/promises";
@@ -56,13 +60,14 @@ const { values: args } = parseArgs({
 	options: {
 		session: { type: "string" },
 		latest: { type: "string" },
-		all: { type: "boolean", default: false },
+		all: { type: "boolean", default: false }, // kept for backward compat, same as default
 		out: { type: "string" },
 		"include-agents": { type: "boolean", default: false },
 		list: { type: "boolean", default: false },
 		compact: { type: "boolean", default: false },
 		"no-thinking": { type: "boolean", default: false },
 		raw: { type: "boolean", default: false },
+		force: { type: "boolean", default: false },
 	},
 	strict: true,
 });
@@ -492,38 +497,60 @@ async function main() {
 			process.exit(1);
 		}
 		toExtract = [match];
-	} else if (args.all) {
-		toExtract = sessions;
-	} else {
-		const n = Number.parseInt(args.latest || "1", 10);
+	} else if (args.latest) {
+		const n = Number.parseInt(args.latest, 10);
 		toExtract = sessions.slice(0, n);
+	} else {
+		// Default: extract all sessions
+		toExtract = sessions;
 	}
 
 	const outDir = args.out || DEFAULT_OUT;
 	await mkdir(outDir, { recursive: true });
 
 	const includeAgents = args["include-agents"] || false;
+	const force = args.force || false;
+
+	let extracted = 0;
+	let skipped = 0;
 
 	for (const s of toExtract) {
-		const extracted = await extractSession(
+		const outFile = join(outDir, `${s.id}.json`);
+
+		// Skip if output is up-to-date (source mtime ≤ output mtime)
+		if (!force) {
+			try {
+				const outStat = await stat(outFile);
+				if (s.modified.getTime() <= outStat.mtime.getTime()) {
+					skipped++;
+					continue;
+				}
+			} catch {
+				// Output file doesn't exist — extract it
+			}
+		}
+
+		const session = await extractSession(
 			s.file,
 			s.id,
 			options,
 			includeAgents,
 		);
-		const outFile = join(outDir, `${s.id}.json`);
-		await writeFile(outFile, JSON.stringify(extracted, null, 2));
-		const toolCount = extracted.metadata.toolCallCount;
-		const msgCount = extracted.metadata.messageCount;
-		const agents = extracted.subAgents
-			? ` + ${Object.keys(extracted.subAgents).length} sub-agents`
+		await writeFile(outFile, JSON.stringify(session, null, 2));
+		const toolCount = session.metadata.toolCallCount;
+		const msgCount = session.metadata.messageCount;
+		const agents = session.subAgents
+			? ` + ${Object.keys(session.subAgents).length} sub-agents`
 			: "";
 		console.log(
 			`  ${s.id} → ${msgCount} messages, ${toolCount} tool calls${agents}`,
 		);
+		extracted++;
 	}
 
-	console.log(`\nOutput: ${outDir}`);
+	const summary = [`${extracted} extracted`];
+	if (skipped > 0) summary.push(`${skipped} up-to-date`);
+	console.log(`\n${summary.join(", ")}. Output: ${outDir}`);
 }
 
 main().catch((err) => {

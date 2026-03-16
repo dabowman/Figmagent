@@ -1,7 +1,7 @@
 # Figmagent Improvement Tracker
 
-Last updated: 2026-03-14
-Sessions analyzed: 7
+Last updated: 2026-03-16
+Sessions analyzed: 9
 
 ## Active Issues
 
@@ -67,9 +67,9 @@ Sessions analyzed: 7
 - **Priority**: P1
 - **Category**: infrastructure
 - **First seen**: Session 1 (2026-03-05)
-- **Sessions affected**: 1, 2, 4, 5, 6, 7
+- **Sessions affected**: 1, 2, 4, 5, 6, 7, 9
 - **Estimated savings**: ~20-33 calls/session (long sessions), ~2-8 calls/session (short sessions)
-- **Description**: Agent rediscovers same tools repeatedly. 33 calls in session 1 (10.7%), 28 in session 2 (7.2%), 35 in session 5 (13.5%), 8 in session 4 (14.3%), 3 in session 6 (4.4%), 2 in session 7 (8.3%). Worst after reconnections — each reconnection triggers full re-discovery.
+- **Description**: Agent rediscovers same tools repeatedly. 33 calls in session 1 (10.7%), 28 in session 2 (7.2%), 35 in session 5 (13.5%), 8 in session 4 (14.3%), 3 in session 6 (4.4%), 2 in session 7 (8.3%), 7 in session 9 (43.8% — worst ratio, dominated a short exploration session). Worst after reconnections or in short sessions where overhead ratio is high.
 - **Proposed fix**: Pre-load tool schemas at session start; auto-restore after reconnections; add complete tool reference to skill file.
 
 ### [AGENT-001] Fail fast on repeated identical errors
@@ -202,8 +202,8 @@ Sessions analyzed: 7
 - **Description**: `apply` with `variables: { fontSize: "VariableID:..." }` rejected by Zod validation. Missing 7 text property fields.
 - **Current status**: PR #6 adds fontSize, fontFamily, fontStyle, lineHeight, letterSpacing, paragraphSpacing, paragraphIndent to both Zod enum and FIELD_MAP.
 
-### [TOOL-011] Legacy tools not deprecated in descriptions — [#8](https://github.com/dabowman/Figmagent/issues/8)
-- **Status**: identified
+### [TOOL-011] Legacy tools not deprecated in descriptions — [#8](https://github.com/dabowman/Figmagent/issues/8) closed
+- **Status**: resolved (already done)
 - **Priority**: P1
 - **Category**: agent-behavior
 - **First seen**: Session 5 (2026-03-12)
@@ -222,8 +222,8 @@ Sessions analyzed: 7
 - **Description**: Agent deleted and recreated TEXT nodes to change font properties instead of using `apply` with `fontFamily`/`fontWeight`. CLAUDE.md says "Never delete and recreate text nodes just to change their font" but the agent didn't follow.
 - **Proposed fix**: Reinforce in tool descriptions and prompts. Add warning in `delete_node` tool description when target is a TEXT node.
 
-### [AGENT-006] Use `find` instead of individual `get_annotations` for bulk discovery — [#10](https://github.com/dabowman/Figmagent/issues/10)
-- **Status**: identified
+### [AGENT-006] Use `find` instead of individual `get_annotations` for bulk discovery — [#10](https://github.com/dabowman/Figmagent/issues/10) closed
+- **Status**: resolved (cross-reference already in description)
 - **Priority**: P0
 - **Category**: agent-behavior
 - **First seen**: Session 6 (2026-03-13)
@@ -283,6 +283,12 @@ Sessions analyzed: 7
 ### [BUG-002] lint_design doesn't traverse PAGE nodes
 - **Resolved in**: Session 4 analysis (commit 743d11c)
 
+### [TOOL-011] Legacy tools not deprecated in descriptions
+- **Resolved in**: Session 8 — legacy tools had already been removed from MCP server during earlier consolidation
+
+### [AGENT-006] Use `find` instead of individual `get_annotations` for bulk discovery
+- **Resolved in**: Session 8 — cross-reference to `find(hasAnnotation: true)` already existed in `get_annotations` description
+
 ## Metrics Over Time
 
 | Session | Date | Tool Calls | Errors | Waste % | ToolSearch | Nodes Created | New Issues | Resolved |
@@ -294,6 +300,8 @@ Sessions analyzed: 7
 | 5 | 2026-03-12 | 259 | 3 | ~23.6% | 35 (13.5%) | ~120+ | 2 | 0 |
 | 6 | 2026-03-13 | 68 | 0 | ~72% | 3 (4.4%) | 0 | 1 | 0 |
 | 7 | 2026-03-13 | 24 | 2 | ~25% | 2 (8.3%) | 0 | 1 | 0 |
+| 8 | 2026-03-16 | 153 | 9 | ~10% | 0 (0%) | 0 (dev) | 0 | 2 |
+| 9 | 2026-03-16 | 16 | 0 | ~44% | 7 (43.8%) | 0 | 0 | 0 |
 
 ## Issue Categories
 
