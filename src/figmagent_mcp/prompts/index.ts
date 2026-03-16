@@ -426,6 +426,8 @@ Swap to a different variant: \`apply({ nodes: [{ nodeId: "instance-id", swapVari
 Surface a nested instance's properties at the parent component level:
 \`apply({ nodes: [{ nodeId: "nested-instance-inside-component", isExposedInstance: true }] })\`
 
+**Important:** \`isExposedInstance\` does NOT create a picker/dropdown for swapping — it surfaces the nested instance's own properties (like text overrides) on the parent. To create a dropdown that lets users pick between components, use \`component_properties\` with type \`INSTANCE_SWAP\` instead.
+
 ## Key Rules
 
 - **Bind variables on COMPONENT nodes**, not instances — bindings propagate automatically.
