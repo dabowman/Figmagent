@@ -252,7 +252,7 @@ Sessions analyzed: 16
 - **Description**: Agent got 403 on `search_library_components`, tried `get_library_components` (same 403), then `get_component_variants` (same 403). All REST API calls to the same file key fail with the same auth error. Session 16 also hit 403 on Enterprise-only endpoint.
 - **Proposed fix**: Add to CLAUDE.md: "If a REST API call returns 403 on a file key, all REST API calls to that file will fail. Stop after the first 403 and ask about token scopes."
 
-### [AGENT-009] Parallel cancellation cascade — don't mix Agent + speculative Reads
+### [AGENT-009] Parallel cancellation cascade — don't mix Agent + speculative Reads — [#16](https://github.com/dabowman/Figmagent/issues/16)
 - **Status**: identified
 - **Priority**: P2
 - **Category**: agent-behavior
@@ -262,7 +262,7 @@ Sessions analyzed: 16
 - **Description**: A Read error on a non-existent file cancelled a parallel figma-discovery Agent call that was already running. The Agent had to be relaunched from scratch.
 - **Proposed fix**: Never mix long-running Agent calls with speculative Reads in the same parallel batch. Verify file existence (Glob) before parallel launch if uncertain.
 
-### [AGENT-010] Confused exposed instances with INSTANCE_SWAP properties
+### [AGENT-010] Confused exposed instances with INSTANCE_SWAP properties — [#17](https://github.com/dabowman/Figmagent/issues/17)
 - **Status**: identified
 - **Priority**: P1
 - **Category**: agent-behavior
@@ -272,7 +272,7 @@ Sessions analyzed: 16
 - **Description**: Agent used `set_exposed_instance` 85 times (42 applying + 43 undoing) when the user wanted INSTANCE_SWAP component properties. `isExposedInstance` surfaces nested instance properties at the parent level — it does NOT create a slot/dropdown. The user had to correct via screenshot.
 - **Proposed fix**: Clarify the distinction between exposed instances and INSTANCE_SWAP properties in CLAUDE.md, tool descriptions, and design_workflow prompt.
 
-### [AGENT-011] Validate approach on 1 node before mass rollout
+### [AGENT-011] Validate approach on 1 node before mass rollout — [#18](https://github.com/dabowman/Figmagent/issues/18)
 - **Status**: identified
 - **Priority**: P1
 - **Category**: agent-behavior
@@ -282,7 +282,7 @@ Sessions analyzed: 16
 - **Description**: Agent applied `set_exposed_instance` to 42 nodes before user corrected the approach. Should have applied to 1 node, confirmed with user, then batch.
 - **Proposed fix**: Add to agent workflow: "For operations on 5+ nodes, apply to 1 first, show user, confirm, then batch."
 
-### [TOOL-012] Batch `import_library_component`
+### [TOOL-012] Batch `import_library_component` — [#19](https://github.com/dabowman/Figmagent/issues/19)
 - **Status**: identified
 - **Priority**: P1
 - **Category**: missing-batch-tool
@@ -292,7 +292,7 @@ Sessions analyzed: 16
 - **Description**: 33 sequential `import_library_component` calls to import library components. No batch variant exists.
 - **Proposed fix**: Add `import_library_components` (plural) accepting array of component keys.
 
-### [BUG-004] Font loading bug in `import_library_component` with `parentNodeId`
+### [BUG-004] Font loading bug in `import_library_component` with `parentNodeId` — [#20](https://github.com/dabowman/Figmagent/issues/20)
 - **Status**: identified
 - **Priority**: P1
 - **Category**: plugin-bug
@@ -302,7 +302,7 @@ Sessions analyzed: 16
 - **Description**: `import_library_component` with `parentNodeId` fails on components containing TEXT nodes — fonts are not loaded before the import. Agent had to work around with clone + reparent, costing 36 extra calls.
 - **Fix pattern**: sync-to-async (load fonts before inserting)
 
-### [TOOL-013] Batch `get_component_variants`
+### [TOOL-013] Batch `get_component_variants` — [#21](https://github.com/dabowman/Figmagent/issues/21)
 - **Status**: identified
 - **Priority**: P2
 - **Category**: missing-batch-tool
@@ -311,7 +311,7 @@ Sessions analyzed: 16
 - **Estimated savings**: ~20 calls/session
 - **Description**: 24 sequential `get_component_variants` calls. 9 were for components that were never imported (wasted discovery).
 
-### [BUG-005] `get_node_info` type coercion — depth as string
+### [BUG-005] `get_node_info` type coercion — depth as string — [#22](https://github.com/dabowman/Figmagent/issues/22)
 - **Status**: identified
 - **Priority**: P2
 - **Category**: type-coercion
@@ -322,7 +322,7 @@ Sessions analyzed: 16
 - **Fix pattern**: type-coercion
 - **Auto-fixable**: yes
 
-### [BUG-006] `getMainComponent` sync in FSGN traversal
+### [BUG-006] `getMainComponent` sync in FSGN traversal — [#23](https://github.com/dabowman/Figmagent/issues/23)
 - **Status**: identified
 - **Priority**: P2
 - **Category**: plugin-bug
