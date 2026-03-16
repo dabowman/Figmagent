@@ -274,7 +274,7 @@ Bind variables to style properties:
 
 Notes:
 - PAINT styles accept either a 'color' object (solid color shorthand) or a 'paints' array (full Figma paint objects for gradients/images/stacks).
-- TEXT styles require valid fontFamily+fontStyle — fonts are loaded automatically. lineHeight accepts a number (pixels), "AUTO", or { value, unit: "PIXELS"|"PERCENT" }.
+- TEXT styles require valid fontFamily+fontStyle — fonts are loaded automatically. lineHeight accepts "AUTO", { value, unit }, or a number — unitless values < 10 are treated as multipliers and converted to PERCENT (1.5 → 150%), values >= 10 are PIXELS. letterSpacing: values where abs < 1 are treated as em ratios and converted to PERCENT (-0.025 → -2.5%), otherwise PIXELS. Pass { value, unit } to be explicit.
 - Colors use RGBA 0-1 range.
 - Duplicate style names within the same type are skipped with an error suggesting update_styles.
 - Use 'variables' to bind design token variables to style properties. TEXT: fontSize, fontFamily, fontStyle, lineHeight, letterSpacing, paragraphSpacing, paragraphIndent. PAINT: color (binds to first paint).`,
@@ -306,11 +306,11 @@ Notes:
           lineHeight: z
             .any()
             .optional()
-            .describe("Line height: number (pixels), 'AUTO', or { value, unit: 'PIXELS'|'PERCENT' }"),
+            .describe("Line height: 'AUTO', { value, unit }, or number. Unitless < 10 auto-converts to PERCENT (1.5 → 150%). >= 10 treated as PIXELS."),
           letterSpacing: z
             .any()
             .optional()
-            .describe("Letter spacing: number (pixels) or { value, unit: 'PIXELS'|'PERCENT' }"),
+            .describe("Letter spacing: { value, unit } or number. |value| < 1 auto-converts to PERCENT (-0.025 → -2.5%). |value| >= 1 treated as PIXELS."),
           paragraphSpacing: z.number().optional().describe("Paragraph spacing in pixels"),
           paragraphIndent: z.number().optional().describe("Paragraph indent in pixels"),
           textDecoration: z.enum(["NONE", "UNDERLINE", "STRIKETHROUGH"]).optional().describe("Text decoration"),
@@ -421,8 +421,8 @@ Multiple operations in one call:
           fontFamily: z.string().optional().describe("New font family for TEXT styles"),
           fontStyle: z.string().optional().describe("New font style for TEXT styles"),
           fontSize: z.number().optional().describe("New font size for TEXT styles"),
-          lineHeight: z.any().optional().describe("New line height: number (pixels), 'AUTO', or { value, unit }"),
-          letterSpacing: z.any().optional().describe("New letter spacing: number (pixels) or { value, unit }"),
+          lineHeight: z.any().optional().describe("New line height: 'AUTO', { value, unit }, or number. Unitless < 10 → PERCENT, >= 10 → PIXELS."),
+          letterSpacing: z.any().optional().describe("New letter spacing: { value, unit } or number. |value| < 1 → PERCENT, >= 1 → PIXELS."),
           paragraphSpacing: z.number().optional().describe("New paragraph spacing"),
           paragraphIndent: z.number().optional().describe("New paragraph indent"),
           textDecoration: z.enum(["NONE", "UNDERLINE", "STRIKETHROUGH"]).optional().describe("New text decoration"),

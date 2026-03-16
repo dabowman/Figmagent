@@ -3,6 +3,39 @@
 
 import { sendProgressUpdate } from "../helpers.js";
 
+// Coerce a lineHeight value into Figma's { value, unit } format.
+// - "AUTO" → { unit: "AUTO" }
+// - { value, unit } → pass through (already Figma format)
+// - number < 10 → treat as unitless multiplier, convert to PERCENT (1.5 → 150%)
+// - number >= 10 → treat as pixels
+function coerceLineHeight(val) {
+  if (val === "AUTO") return { unit: "AUTO" };
+  if (typeof val === "object" && val !== null) return val;
+  if (typeof val === "number") {
+    if (val < 10) {
+      return { value: val * 100, unit: "PERCENT" };
+    }
+    return { value: val, unit: "PIXELS" };
+  }
+  return { unit: "AUTO" };
+}
+
+// Coerce a letterSpacing value into Figma's { value, unit } format.
+// - { value, unit } → pass through
+// - number where abs(value) < 1 → treat as em/ratio, convert to PERCENT
+//   (e.g. -0.025 → -2.5%, 0.03 → 3%)
+// - number where abs(value) >= 1 → treat as pixels
+function coerceLetterSpacing(val) {
+  if (typeof val === "object" && val !== null) return val;
+  if (typeof val === "number") {
+    if (Math.abs(val) < 1) {
+      return { value: val * 100, unit: "PERCENT" };
+    }
+    return { value: val, unit: "PIXELS" };
+  }
+  return { value: 0, unit: "PIXELS" };
+}
+
 // Extract bound variable IDs from a style's boundVariables property.
 // Returns a flat map { field: "VariableID:xxx" } or undefined if none bound.
 function extractBoundVariables(style) {
@@ -637,21 +670,10 @@ export async function createStyles(params) {
           style.fontSize = spec.fontSize;
         }
         if (spec.lineHeight !== undefined) {
-          // Accept number (PIXELS), object { value, unit }, or "AUTO"
-          if (spec.lineHeight === "AUTO") {
-            style.lineHeight = { unit: "AUTO" };
-          } else if (typeof spec.lineHeight === "number") {
-            style.lineHeight = { value: spec.lineHeight, unit: "PIXELS" };
-          } else {
-            style.lineHeight = spec.lineHeight;
-          }
+          style.lineHeight = coerceLineHeight(spec.lineHeight);
         }
         if (spec.letterSpacing !== undefined) {
-          if (typeof spec.letterSpacing === "number") {
-            style.letterSpacing = { value: spec.letterSpacing, unit: "PIXELS" };
-          } else {
-            style.letterSpacing = spec.letterSpacing;
-          }
+          style.letterSpacing = coerceLetterSpacing(spec.letterSpacing);
         }
         if (spec.paragraphSpacing !== undefined) {
           style.paragraphSpacing = spec.paragraphSpacing;
@@ -796,20 +818,10 @@ export async function updateStyles(params) {
           style.fontSize = update.fontSize;
         }
         if (update.lineHeight !== undefined) {
-          if (update.lineHeight === "AUTO") {
-            style.lineHeight = { unit: "AUTO" };
-          } else if (typeof update.lineHeight === "number") {
-            style.lineHeight = { value: update.lineHeight, unit: "PIXELS" };
-          } else {
-            style.lineHeight = update.lineHeight;
-          }
+          style.lineHeight = coerceLineHeight(update.lineHeight);
         }
         if (update.letterSpacing !== undefined) {
-          if (typeof update.letterSpacing === "number") {
-            style.letterSpacing = { value: update.letterSpacing, unit: "PIXELS" };
-          } else {
-            style.letterSpacing = update.letterSpacing;
-          }
+          style.letterSpacing = coerceLetterSpacing(update.letterSpacing);
         }
         if (update.paragraphSpacing !== undefined) {
           style.paragraphSpacing = update.paragraphSpacing;
