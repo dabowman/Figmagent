@@ -423,7 +423,7 @@ export async function getAnnotations(params) {
         if ("annotations" in n && n.annotations && n.annotations.length > 0) {
           for (let idx = 0; idx < n.annotations.length; idx++) {
             const a = n.annotations[idx];
-            mergedAnnotations.push({ nodeId: n.id, nodeName: n.name, annotationIndex: idx, annotation: a });
+            mergedAnnotations.push({ nodeId: n.id, nodeName: n.name, annotation: { annotationIndex: idx, ...a } });
           }
         }
         if ("children" in n) {
@@ -534,7 +534,7 @@ export async function setAnnotation(params) {
     console.log("=== setAnnotation Debug Start ===");
     console.log("Input params:", JSON.stringify(params, null, 2));
 
-    const { nodeId, annotationId, labelMarkdown, categoryId, properties } = params;
+    const { nodeId, annotationIndex, labelMarkdown, categoryId, properties } = params;
 
     if (!nodeId) {
       console.error("Validation failed: Missing nodeId");
@@ -591,24 +591,24 @@ export async function setAnnotation(params) {
 
     const existingAnnotations = node.annotations ? node.annotations.slice() : [];
 
-    // If annotationId (index) is provided, replace that specific annotation
-    if (annotationId !== undefined && annotationId !== null) {
-      const idx = typeof annotationId === "string" ? parseInt(annotationId, 10) : annotationId;
-      if (idx >= 0 && idx < existingAnnotations.length) {
-        existingAnnotations[idx] = newAnnotation;
+    // If annotationIndex is provided, replace that specific annotation
+    if (annotationIndex !== undefined && annotationIndex !== null) {
+      if (annotationIndex >= 0 && annotationIndex < existingAnnotations.length) {
+        existingAnnotations[annotationIndex] = newAnnotation;
         node.annotations = existingAnnotations;
-        console.log(`Replaced annotation at index ${idx}`);
+        console.log(`Replaced annotation at index ${annotationIndex}`);
       } else {
-        // Index out of range — append instead
-        node.annotations = existingAnnotations.concat([newAnnotation]);
-        console.log(`annotationId ${idx} out of range (${existingAnnotations.length} existing), appended`);
+        return {
+          success: false,
+          error: `annotationIndex ${annotationIndex} out of range (${existingAnnotations.length} existing annotations)`,
+        };
       }
     } else if (existingAnnotations.length > 0) {
-      // No annotationId provided but node already has annotations — replace the first one
+      // No annotationIndex provided but node already has annotations — replace the first one
       // This prevents the "node already has annotation" validation error
       existingAnnotations[0] = newAnnotation;
       node.annotations = existingAnnotations;
-      console.log("Replaced existing first annotation (no annotationId specified)");
+      console.log("Replaced existing first annotation (no annotationIndex specified)");
     } else {
       // No existing annotations — add new
       node.annotations = [newAnnotation];
@@ -663,7 +663,7 @@ export async function setMultipleAnnotations(params) {
     try {
       console.log("Calling setAnnotation with params:", {
         nodeId: annotation.nodeId,
-        annotationId: annotation.annotationId,
+        annotationIndex: annotation.annotationIndex,
         labelMarkdown: annotation.labelMarkdown,
         categoryId: annotation.categoryId,
         properties: annotation.properties,
@@ -671,7 +671,7 @@ export async function setMultipleAnnotations(params) {
 
       const result = await setAnnotation({
         nodeId: annotation.nodeId,
-        annotationId: annotation.annotationId,
+        annotationIndex: annotation.annotationIndex,
         labelMarkdown: annotation.labelMarkdown,
         categoryId: annotation.categoryId,
         properties: annotation.properties,
