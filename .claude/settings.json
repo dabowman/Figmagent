@@ -1,2 +1,22 @@
 {
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/task-completion-checks.sh"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Checks passed. Update any docs (CLAUDE.md, SKILL.md, prompts, README.md) affected by your changes. Skip what's already accurate."
+          }
+        ]
+      }
+    ]
+  }
 }

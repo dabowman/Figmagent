@@ -56,7 +56,10 @@ const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
     strokeWeight: z.number().positive().optional().describe("Stroke weight"),
     cornerRadius: z.number().min(0).optional().describe("Corner radius"),
     opacity: z.number().min(0).max(1).optional().describe("Node opacity (0-1)"),
-    clipsContent: z.boolean().optional().describe("Clip content (frames only). true = overflow hidden, false = overflow visible."),
+    clipsContent: z
+      .boolean()
+      .optional()
+      .describe("Clip content (frames only). true = overflow hidden, false = overflow visible."),
     width: z.number().positive().optional().describe("Width (resizes the node)"),
     height: z.number().positive().optional().describe("Height (resizes the node)"),
 
@@ -154,6 +157,10 @@ Swap an instance to a different variant (keeps position and compatible overrides
 Expose a nested instance's properties at the parent component level:
   { nodes: [{ nodeId: "nestedInstance", isExposedInstance: true }] }
 
+**Validation Mode**: When applying changes to many nodes (5+), use validateFirst: true to apply to only the first node. Review the result with the user, then proceed with validateFirst: false (or omit) to apply to all nodes:
+  { nodes: [...], validateFirst: true }  // Apply to first node only
+  { nodes: [...] }                       // Apply to all nodes after validation
+
 Execution order per node: component ops → layout mode → direct values → font properties → variable bindings → text style → effect style.
 Variable bindings override direct values (set both to get a fallback + token).
 Width and height resize the node. Use variables.width/height to bind dimension tokens.
@@ -167,10 +174,19 @@ IMPORTANT: Bind variables and text styles on COMPONENT nodes, not instances — 
       .array(nodeOpSchema)
       .min(1)
       .describe("Array of node operations — flat list or nested tree of property applications"),
+    validateFirst: z
+      .boolean()
+      .optional()
+      .describe(
+        "If true, apply only to the first node for validation. Use when applying to many nodes (5+) to validate the approach before mass rollout. Omit or set false to apply to all nodes.",
+      ),
   },
-  async ({ nodes }: any) => {
+  async ({ nodes, validateFirst }: any) => {
     try {
-      const result = await sendCommandToFigma("apply", { nodes }, 60000);
+      // If validateFirst is true and we have multiple nodes, apply only to the first node
+      const nodesToProcess = validateFirst && nodes.length > 1 ? [nodes[0]] : nodes;
+
+      const result = await sendCommandToFigma("apply", { nodes: nodesToProcess }, 60000);
       const typedResult = result as {
         success: boolean;
         totalNodes: number;
@@ -185,6 +201,14 @@ IMPORTANT: Bind variables and text styles on COMPONENT nodes, not instances — 
         nodesApplied: typedResult.successCount,
         totalNodes: typedResult.totalNodes,
       };
+
+      // Add validation context if this was a validation run
+      if (validateFirst && nodes.length > 1) {
+        summary.validationMode = true;
+        summary.remainingNodes = nodes.length - 1;
+        summary.message = `Validation complete: Applied to 1 of ${nodes.length} nodes. Review the result and call again with validateFirst: false to apply to all ${nodes.length} nodes.`;
+      }
+
       if (failed.length > 0) {
         summary.failures = failed.map((f) => ({ nodeId: f.nodeId, error: f.error }));
       }

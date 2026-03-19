@@ -51,7 +51,12 @@ const nodeSpecSchema: z.ZodType<any> = z.lazy(() =>
     fontStyle: z.string().optional().describe("Font style (default: Regular)"),
     fontColor: colorSchema,
     // SVG-specific (type: SVG)
-    svg: z.string().optional().describe("SVG string for SVG type. Figma parses it into vector nodes. Example: '<svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\"><path d=\"M12 2L2 22h20L12 2z\"/></svg>'"),
+    svg: z
+      .string()
+      .optional()
+      .describe(
+        'SVG string for SVG type. Figma parses it into vector nodes. Example: \'<svg width="24" height="24" viewBox="0 0 24 24"><path d="M12 2L2 22h20L12 2z"/></svg>\'',
+      ),
     // Instance-specific (type: INSTANCE)
     componentId: z.string().optional().describe("Node ID of a local COMPONENT to instantiate (for INSTANCE type)"),
     componentKey: z

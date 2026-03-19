@@ -107,6 +107,10 @@ Operations:
   - delete: Remove a property. Requires propertyName (full name with #suffix).
   - bind: Wire an existing property to a child node. Requires propertyName (full name with #suffix) and targetNodeId. Optional: targetField (auto-detected from property type if omitted).
 
+**Validation Mode**: When performing many operations (5+), use validateFirst: true to execute only the first operation. Review the result with the user, then proceed with validateFirst: false (or omit) to execute all operations:
+  { nodeId: "...", operations: [...], validateFirst: true }  // Execute first operation only
+  { nodeId: "...", operations: [...] }                      // Execute all operations after validation
+
 Example — add properties and bind them to child nodes in one call:
   { nodeId: "123:456", operations: [
     { action: "add", name: "Show Icon", type: "BOOLEAN", defaultValue: true, targetNodeId: "123:460" },
@@ -161,10 +165,28 @@ Returns updated componentPropertyDefinitions after all operations.`,
       )
       .min(1)
       .describe("Array of property operations to execute in order"),
+    validateFirst: z
+      .boolean()
+      .optional()
+      .describe(
+        "If true, execute only the first operation for validation. Use when performing many operations (5+) to validate the approach before mass execution. Omit or set false to execute all operations.",
+      ),
   },
-  async ({ nodeId, operations }: any) => {
+  async ({ nodeId, operations, validateFirst }: any) => {
     try {
-      const result = await sendCommandToFigma("component_properties", { nodeId, operations });
+      // If validateFirst is true and we have multiple operations, execute only the first operation
+      const operationsToProcess = validateFirst && operations.length > 1 ? [operations[0]] : operations;
+
+      const result = await sendCommandToFigma("component_properties", { nodeId, operations: operationsToProcess });
+
+      // Add validation context if this was a validation run
+      if (validateFirst && operations.length > 1) {
+        const typedResult = result as any;
+        typedResult.validationMode = true;
+        typedResult.remainingOperations = operations.length - 1;
+        typedResult.message = `Validation complete: Executed 1 of ${operations.length} operations. Review the result and call again with validateFirst: false to execute all ${operations.length} operations.`;
+      }
+
       return {
         content: [
           {
@@ -179,6 +201,53 @@ Returns updated componentPropertyDefinitions after all operations.`,
           {
             type: "text",
             text: `Error modifying component properties: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  },
+);
+
+// Set Exposed Instance Tool — deprecated in favor of apply tool
+server.tool(
+  "set_exposed_instance",
+  `DEPRECATED: Use the "apply" tool instead for better performance and batch operations.
+
+Set isExposedInstance on a nested INSTANCE inside a COMPONENT. When true, surfaces the instance's properties at the parent component level. This is NOT the same as INSTANCE_SWAP component properties.
+
+**For single nodes**, use apply tool:
+  apply({ nodes: [{ nodeId: "nestedInstance", isExposedInstance: true }] })
+
+**For multiple nodes**, use apply tool with validateFirst for safety:
+  apply({ nodes: [{ nodeId: "instance1", isExposedInstance: true }, { nodeId: "instance2", isExposedInstance: true }], validateFirst: true })
+
+This standalone tool only handles one node at a time. Using apply is more efficient.`,
+  {
+    nodeId: z.string().describe("The ID of the INSTANCE node to modify"),
+    exposed: z.boolean().describe("Whether to expose (true) or unexpose (false) this instance"),
+  },
+  async ({ nodeId, exposed }: any) => {
+    try {
+      const result = await sendCommandToFigma("set_exposed_instance", { nodeId, exposed });
+      const resultWithWarning = {
+        ...result,
+        deprecationWarning:
+          "set_exposed_instance is deprecated. Use apply({ nodes: [{ nodeId, isExposedInstance }] }) for better performance and batch operations.",
+      };
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(resultWithWarning),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error setting exposed instance: ${error instanceof Error ? error.message : String(error)}. Use apply tool instead: apply({ nodes: [{ nodeId: "${nodeId}", isExposedInstance: ${exposed} }] })`,
           },
         ],
       };

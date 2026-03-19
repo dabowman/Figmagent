@@ -175,13 +175,35 @@ server.tool(
 // Delete Multiple Nodes Tool
 server.tool(
   "delete_multiple_nodes",
-  "Delete multiple nodes from Figma at once",
+  `Delete multiple nodes from Figma at once. DESTRUCTIVE operation.
+
+**Validation Mode**: When deleting many nodes (5+), use validateFirst: true to delete only the first node. Review the result with the user, then proceed with validateFirst: false (or omit) to delete all nodes:
+  { nodeIds: [...], validateFirst: true }  // Delete first node only
+  { nodeIds: [...] }                       // Delete all nodes after validation`,
   {
     nodeIds: z.array(z.string()).min(1).describe("Array of node IDs to delete"),
+    validateFirst: z
+      .boolean()
+      .optional()
+      .describe(
+        "If true, delete only the first node for validation. Use when deleting many nodes (5+) to validate the approach before mass deletion. Omit or set false to delete all nodes.",
+      ),
   },
-  async ({ nodeIds }: any) => {
+  async ({ nodeIds, validateFirst }: any) => {
     try {
-      const result = await sendCommandToFigma("delete_multiple_nodes", { nodeIds });
+      // If validateFirst is true and we have multiple nodes, delete only the first node
+      const nodesToProcess = validateFirst && nodeIds.length > 1 ? [nodeIds[0]] : nodeIds;
+
+      const result = await sendCommandToFigma("delete_multiple_nodes", { nodeIds: nodesToProcess });
+
+      // Add validation context if this was a validation run
+      if (validateFirst && nodeIds.length > 1) {
+        const typedResult = result as any;
+        typedResult.validationMode = true;
+        typedResult.remainingNodes = nodeIds.length - 1;
+        typedResult.message = `Validation complete: Deleted 1 of ${nodeIds.length} nodes. Review the result and call again with validateFirst: false to delete all ${nodeIds.length} nodes.`;
+      }
+
       return {
         content: [
           {

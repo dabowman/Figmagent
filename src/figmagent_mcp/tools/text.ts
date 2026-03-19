@@ -117,7 +117,11 @@ server.tool(
 // Set Multiple Text Contents Tool
 server.tool(
   "set_multiple_text_contents",
-  "Set multiple text contents parallelly in a node",
+  `Set multiple text contents parallelly in a node. Processed in batches of 5 for performance.
+
+**Validation Mode**: When updating many text nodes (5+), use validateFirst: true to update only the first node. Review the result with the user, then proceed with validateFirst: false (or omit) to update all nodes:
+  { nodeId: "...", text: [...], validateFirst: true }  // Update first text node only
+  { nodeId: "...", text: [...] }                       // Update all text nodes after validation`,
   {
     nodeId: z.string().describe("The ID of the node containing the text nodes to replace"),
     text: z
@@ -129,8 +133,14 @@ server.tool(
       )
       .min(1)
       .describe("Array of text node IDs and their replacement texts"),
+    validateFirst: z
+      .boolean()
+      .optional()
+      .describe(
+        "If true, update only the first text node for validation. Use when updating many text nodes (5+) to validate the approach before mass update. Omit or set false to update all nodes.",
+      ),
   },
-  async ({ nodeId, text }: any) => {
+  async ({ nodeId, text, validateFirst }: any) => {
     try {
       if (!text || text.length === 0) {
         return {
@@ -143,19 +153,22 @@ server.tool(
         };
       }
 
+      // If validateFirst is true and we have multiple text updates, process only the first one
+      const textToProcess = validateFirst && text.length > 1 ? [text[0]] : text;
+
       // Initial response to indicate we're starting the process
       const initialStatus = {
         type: "text" as const,
-        text: `Starting text replacement for ${text.length} nodes. This will be processed in batches of 5...`,
+        text: `Starting text replacement for ${textToProcess.length} nodes. This will be processed in batches of 5...`,
       };
 
       // Track overall progress
-      const totalToProcess = text.length;
+      const totalToProcess = textToProcess.length;
 
       // Use the plugin's set_multiple_text_contents function with chunking
       const result = await sendCommandToFigma("set_multiple_text_contents", {
         nodeId,
-        text,
+        text: textToProcess,
       });
 
       // Cast the result to a specific type to work with it safely
@@ -176,12 +189,19 @@ server.tool(
       }
 
       const typedResult = result as TextReplaceResult;
+
+      // Add validation context if this was a validation run
+      if (validateFirst && text.length > 1) {
+        typedResult.validationMode = true;
+        typedResult.remainingNodes = text.length - 1;
+      }
+
       const progressText = `
       Text replacement completed:
       - ${typedResult.replacementsApplied || 0} of ${totalToProcess} successfully updated
       - ${typedResult.replacementsFailed || 0} failed
       - Processed in ${typedResult.completedInChunks || 1} batches
-      `;
+      ${validateFirst && text.length > 1 ? `\n- VALIDATION MODE: Updated 1 of ${text.length} nodes. Review result and call again with validateFirst: false to update all ${text.length} nodes.` : ""}`;
 
       // Detailed results
       const detailedResults = typedResult.results || [];
