@@ -423,7 +423,7 @@ export async function getAnnotations(params) {
         if ("annotations" in n && n.annotations && n.annotations.length > 0) {
           for (let idx = 0; idx < n.annotations.length; idx++) {
             const a = n.annotations[idx];
-            mergedAnnotations.push({ nodeId: n.id, nodeName: n.name, annotation: { annotationIndex: idx, ...a } });
+            mergedAnnotations.push({ nodeId: n.id, nodeName: n.name, annotation: Object.assign({ annotationIndex: idx }, a) });
           }
         }
         if ("children" in n) {
@@ -496,7 +496,7 @@ export async function getAnnotations(params) {
     const annotations = [];
     const processNode = async (node) => {
       if ("annotations" in node && node.annotations && node.annotations.length > 0) {
-        const indexedAnnotations = node.annotations.map((a, idx) => ({ annotationIndex: idx, ...a }));
+        const indexedAnnotations = node.annotations.map((a, idx) => Object.assign({ annotationIndex: idx }, a));
         annotations.push({
           nodeId: node.id,
           name: node.name,
@@ -619,7 +619,7 @@ export async function setAnnotation(params) {
     console.log("=== setAnnotation Debug End ===");
 
     const indexedAnnotations = node.annotations
-      ? node.annotations.map((a, idx) => ({ annotationIndex: idx, ...a }))
+      ? node.annotations.map((a, idx) => Object.assign({ annotationIndex: idx }, a))
       : [];
 
     return {
