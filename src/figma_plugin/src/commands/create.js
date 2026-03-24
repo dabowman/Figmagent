@@ -147,6 +147,10 @@ export async function create(params) {
 
     if (spec.fillColor) {
       applyFillColor(node, spec.fillColor);
+    } else if (nodeType !== "TEXT" && nodeType !== "INSTANCE" && nodeType !== "SVG" && "fills" in node) {
+      // Clear Figma's default white fill on FRAME, RECTANGLE, COMPONENT nodes.
+      // Unbound default fills create lint noise and are rarely intentional.
+      node.fills = [];
     }
 
     if (spec.strokeColor) {
