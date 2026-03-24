@@ -105,6 +105,16 @@ For text overrides on instances, use the path format `I<instanceId>;<componentTe
 ### Bind variables on COMPONENT nodes, not instances
 Variable bindings and text style assignments propagate from a COMPONENT to all its instances automatically. Always bind at the component level. Use `get(instanceId)` to read the instance — its `componentRef` in `defs.components` resolves to the main component's id, name, key, and description.
 
+### Auto-layout sizing defaults
+Frames default to 100px height when they have auto-layout but no explicit height. HORIZONTAL auto-layout frames default to `counterAxisSizingMode: FIXED` at 100px tall. **Checklist**:
+1. Container frames (cards, search bars): set `layoutSizingVertical: HUG` to avoid 100px balloon
+2. Fixed-size elements (buttons, icon containers): set explicit `width`/`height` with FIXED sizing
+3. Stretchy children (inputs, dividers): set `layoutSizingHorizontal: FILL` to span parent width
+4. When parent uses `counterAxisAlignItems: CENTER`, children that should span full width still need `layoutSizingHorizontal: FILL`
+
+### Variant naming convention
+Components inside a COMPONENT_SET must be named with `Property=Value` format (e.g. `Layout=Table, State=Default`). Figma parses these names into variant properties automatically. To add a new variant property to an existing component set: rename all existing components to include `, NewProp=DefaultValue`, clone each for new values, rename clones to target values. Figma auto-detects the new property axis from the naming.
+
 ### Reparenting nodes
 No `reparent_node` tool exists — `move_node` only changes x/y, not hierarchy. To move a node to a new parent: `clone_and_modify(nodeId, parentId=newParent)` + delete the original. Clones preserve all instance overrides.
 
