@@ -225,15 +225,27 @@ export async function create(params) {
       if (spec.layoutSizingVertical) node.layoutSizingVertical = spec.layoutSizingVertical;
     }
 
-    // For TEXT nodes, apply layout sizing and handle textAutoResize coercion
+    // For TEXT nodes: coerce textAutoResize and nudge width BEFORE setting FILL.
+    // Setting FILL with WIDTH_AND_HEIGHT collapses width; setting textAutoResize to HEIGHT
+    // on a width-0 node freezes 0. Handle both preemptively.
     if (nodeType === "TEXT") {
-      if (spec.layoutSizingHorizontal === "FILL") {
-        node.layoutSizingHorizontal = "FILL";
-        // Auto-coerce textAutoResize to prevent width collapse
-        if (spec.textAutoResize === undefined && node.textAutoResize === "WIDTH_AND_HEIGHT") {
-          node.textAutoResize = "HEIGHT";
-        }
-      } else if (spec.layoutSizingHorizontal) {
+      let effectiveTextAutoResize = spec.textAutoResize;
+      if (
+        effectiveTextAutoResize === undefined &&
+        spec.layoutSizingHorizontal === "FILL" &&
+        node.textAutoResize === "WIDTH_AND_HEIGHT"
+      ) {
+        effectiveTextAutoResize = "HEIGHT";
+      }
+      const willLockWidth = effectiveTextAutoResize !== undefined && effectiveTextAutoResize !== "WIDTH_AND_HEIGHT";
+      const willSetFill = spec.layoutSizingHorizontal === "FILL";
+      if ((willLockWidth || willSetFill) && node.width === 0) {
+        node.resize(100, Math.max(node.height, 1));
+      }
+      if (effectiveTextAutoResize !== undefined && effectiveTextAutoResize !== node.textAutoResize) {
+        node.textAutoResize = effectiveTextAutoResize;
+      }
+      if (spec.layoutSizingHorizontal) {
         node.layoutSizingHorizontal = spec.layoutSizingHorizontal;
       }
       if (spec.layoutSizingVertical) {
@@ -241,13 +253,9 @@ export async function create(params) {
       }
     }
 
-    if (parentNode && "layoutMode" in parentNode && parentNode.layoutMode !== "NONE") {
+    if (parentNode && "layoutMode" in parentNode && parentNode.layoutMode !== "NONE" && nodeType !== "TEXT") {
       if (spec.layoutSizingHorizontal === "FILL") {
         node.layoutSizingHorizontal = "FILL";
-        // Auto-coerce textAutoResize for TEXT nodes to prevent width collapse
-        if (nodeType === "TEXT" && spec.textAutoResize === undefined && node.textAutoResize === "WIDTH_AND_HEIGHT") {
-          node.textAutoResize = "HEIGHT";
-        }
       }
       if (spec.layoutSizingVertical === "FILL") node.layoutSizingVertical = "FILL";
     }

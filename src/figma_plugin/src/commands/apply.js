@@ -193,10 +193,33 @@ async function processNode(op, styleCache) {
     if (op.fontSize !== undefined) {
       node.fontSize = toNumber(op.fontSize, 14);
     }
+  }
 
-    // Apply text-specific properties
-    if (op.textAutoResize !== undefined) {
-      node.textAutoResize = op.textAutoResize;
+  // Text layout/resize properties (applies to any TEXT node — not gated on font props).
+  // Ordered BEFORE layoutSizingHorizontal so coercion and width-recovery happen before
+  // FILL is applied: setting FILL on a TEXT node with WIDTH_AND_HEIGHT collapses width to 0,
+  // and setting textAutoResize to HEIGHT on a width-0 node freezes 0 (FILL can't recover).
+  if (node.type === "TEXT") {
+    // Resolve effective textAutoResize: respect user value; else coerce WIDTH_AND_HEIGHT→HEIGHT
+    // when going FILL (matches Figma UI behavior; prevents width collapse).
+    let effectiveTextAutoResize = op.textAutoResize;
+    if (
+      effectiveTextAutoResize === undefined &&
+      op.layoutSizingHorizontal === "FILL" &&
+      node.textAutoResize === "WIDTH_AND_HEIGHT"
+    ) {
+      effectiveTextAutoResize = "HEIGHT";
+    }
+
+    // Width-0 recovery: nudge width non-zero before locking it via textAutoResize or FILL.
+    const willLockWidth = effectiveTextAutoResize !== undefined && effectiveTextAutoResize !== "WIDTH_AND_HEIGHT";
+    const willSetFill = op.layoutSizingHorizontal === "FILL";
+    if ((willLockWidth || willSetFill) && node.width === 0 && "resize" in node) {
+      node.resize(100, Math.max(node.height, 1));
+    }
+
+    if (effectiveTextAutoResize !== undefined) {
+      node.textAutoResize = effectiveTextAutoResize;
     }
     if (op.textTruncation !== undefined) {
       node.textTruncation = op.textTruncation;
@@ -223,15 +246,6 @@ async function processNode(op, styleCache) {
   }
   if (op.layoutSizingHorizontal !== undefined && "layoutSizingHorizontal" in node) {
     node.layoutSizingHorizontal = op.layoutSizingHorizontal;
-    // Auto-coerce textAutoResize for TEXT nodes to prevent width collapse
-    if (
-      node.type === "TEXT" &&
-      op.layoutSizingHorizontal === "FILL" &&
-      op.textAutoResize === undefined &&
-      node.textAutoResize === "WIDTH_AND_HEIGHT"
-    ) {
-      node.textAutoResize = "HEIGHT";
-    }
   }
   if (op.layoutSizingVertical !== undefined && "layoutSizingVertical" in node) {
     node.layoutSizingVertical = op.layoutSizingVertical;
