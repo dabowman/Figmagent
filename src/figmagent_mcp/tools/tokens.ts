@@ -18,7 +18,8 @@ Works on any Figma plan — no Enterprise required.
 For large design systems, use filtering params to reduce output:
 - collection: filter variables to specific collection(s) by name (ignored when includeVariables is false)
 - styleType: filter styles to specific type(s): "colors", "texts", "effects", "grids"
-- includeVariables/includeStyles: skip entire sections (omitted keys are absent from the response, not null)`,
+- includeVariables/includeStyles: skip entire sections (omitted keys are absent from the response, not null)
+- includeScopes: include each variable's scopes array (e.g. ["TEXT_FILL","STROKE_COLOR"]) to verify what update_variables set`,
   {
     maxOutputChars: z.coerce
       .number()
@@ -49,6 +50,12 @@ For large design systems, use filtering params to reduce output:
       .boolean()
       .optional()
       .describe("Include styles section in response. Default: true. Set false to skip styles entirely."),
+    includeScopes: z
+      .boolean()
+      .optional()
+      .describe(
+        "Include each variable's scopes array (e.g. [\"TEXT_FILL\",\"STROKE_COLOR\"]). Default: false. Enable to verify scopes set via update_variables.",
+      ),
   },
   async (params: {
     maxOutputChars?: number;
@@ -56,6 +63,7 @@ For large design systems, use filtering params to reduce output:
     styleType?: string | string[];
     includeVariables?: boolean;
     includeStyles?: boolean;
+    includeScopes?: boolean;
   }) => {
     try {
       const filterParams: Record<string, unknown> = {};
@@ -63,6 +71,7 @@ For large design systems, use filtering params to reduce output:
       if (params.styleType !== undefined) filterParams.styleType = params.styleType;
       if (params.includeVariables !== undefined) filterParams.includeVariables = params.includeVariables;
       if (params.includeStyles !== undefined) filterParams.includeStyles = params.includeStyles;
+      if (params.includeScopes !== undefined) filterParams.includeScopes = params.includeScopes;
       const result = await sendCommandToFigma("get_design_system", filterParams);
       const jsonText = JSON.stringify(result);
       const guarded = guardOutput(jsonText, {

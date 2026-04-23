@@ -279,7 +279,7 @@ async function handleCommand(command, params) {
     case "get_styles":
       return await getStyles();
     case "get_local_variables":
-      return await getLocalVariables();
+      return await getLocalVariables(params);
     case "get_local_components":
       return await getLocalComponents();
     case "get_design_system":
