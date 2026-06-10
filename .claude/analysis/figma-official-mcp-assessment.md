@@ -259,6 +259,78 @@ response itself**, computed in the same script execution:
 
 ---
 
+## 6. Phase 0 spike results (2026-06-10, same session)
+
+The spike from §5.5 was executed immediately. **Verdict: the port is a transport swap
+plus a bounded compatibility layer — our existing plugin command modules run inside
+`use_figma` largely unmodified.**
+
+### Method
+
+Bundled slices of `src/figma_plugin/src/commands/` with
+`bun build --minify --format=iife`, exposed handlers on `globalThis.__figmagent`,
+prepended the bundle to a `use_figma` call, and invoked the real handlers against the
+scratch file.
+
+### What worked
+
+- **`getDocumentInfo` + `getNodeTree` (FSGN traversal, structure detail) ran
+  end-to-end remotely, unmodified — 45ms in-VM** for a 5-node traversal.
+- **Bundle sizes are a non-issue.** Per-domain tree-shaken bundles, minified:
+  document 13.7KB, create 5.8KB, apply 8.4KB, modify 10.6KB, text 7.0KB,
+  components 14.3KB, find 5.4KB, scan 11.5KB, styles 15.8KB, lint 10.6KB.
+  Every domain fits a 50KB call with room for the invocation + params. The
+  `getNodeTree` slice alone is 6.7KB.
+- **The remote VM is *more* permissive than the desktop plugin sandbox.** Object
+  spread, optional chaining, nullish coalescing, private class fields all parse and
+  run (the desktop VM rejects spread). `eval` works. `globalThis` is writable within
+  a script. Our conservative `Object.assign` style runs as-is; the Biome restrictions
+  could even be relaxed for remote-only code paths.
+- **No UI shim needed.** `figma.ui.postMessage` is a safe no-op — `sendProgressUpdate`
+  calls don't crash. `console.log` doesn't throw (output is just discarded).
+  `figma.clientStorage`, `getSharedPluginData`, `importComponentByKeyAsync`,
+  `exportAsync` (image formats), `createImageAsync`, `findAllWithCriteria` all present.
+
+### Incompatibilities found (both bounded)
+
+1. **`exportAsync({format: "JSON_REST_V1"})` is unsupported** ("not supported in this
+   context"). Affects exactly three legacy reads: `getNodeInfo`, `getNodesInfo`,
+   `readMyDesign` (document.js:58/72/95). The FSGN path (`getNodeTree`) reads live
+   properties and is unaffected. Fix: reimplement the three on live-property
+   serialization (or retire them in favor of `get`).
+2. **Strict property guard on node objects.** Reading a property a node type doesn't
+   have *sometimes throws* `TypeError: no such property 'X' on TEXT node` instead of
+   returning `undefined` — and it's inconsistent per property (`layoutMode` on TEXT →
+   `undefined`, but `clipsContent`, `cornerRadius`, `itemSpacing`, `paddingLeft`,
+   `mainComponent`, `defaultVariant` on TEXT → throw; `characters`, `textStyleId` on
+   FRAME → throw). The same guard applies to the `figma` global
+   (`figma.documentAccess` throws). Our serializers (`getNodeTree`,
+   `filterFigmaNode`, scan/find/lint walkers) duck-type heavily, so this is the main
+   compat cost. Verified mitigations:
+   - `'prop' in node` returns `false` safely → mechanical codemod works and is
+     desktop-safe;
+   - `try/catch` around reads works (the throw is catchable);
+   - a ~6-line forwarding Proxy (`lax(node)`) fully restores desktop semantics —
+     missing props → `undefined`, real props and bound methods pass through.
+
+   Because the throw set is unpredictable per property, the right fix is mechanical:
+   a `prop(node, name)` helper (or lax-wrap) at serializer boundaries, not hand-picked
+   guards. Write paths are mostly safe — they set known properties on nodes whose
+   types they just created.
+
+### Revised effort estimate
+
+Phase 1 (reads) is mostly the compat helper + the JSON_REST_V1 replacement. Phase 2
+(writes) should run near-verbatim. The bundling pipeline already exists
+(`bun build`); the remote transport needs: per-domain bundle cache → script assembly
+(bundle + handler invocation with JSON-encoded params) → `use_figma` call via MCP
+client → result passthrough to the existing response formatters. The open items
+remain OAuth lifecycle and rate limits (not measurable from a single session; the
+server publishes a `rate-limits-access.md` resource worth reading during
+implementation).
+
+---
+
 ## Appendix: probe log
 
 1. `whoami` → identity + 2 team plan keys. Headless auth confirmed.
@@ -275,3 +347,10 @@ response itself**, computed in the same script execution:
    Quoted selector matched. Variable create+scope+bind succeeded headlessly.
 7. `get_metadata` → XML skeleton (geometry only). `get_variable_defs` → resolved
    values only. `get_design_context` → React+Tailwind with `data-node-id`s.
+8. VM capability probe → modern syntax all supported; `figma.ui.postMessage` no-op;
+   unknown props on `figma` global and (inconsistently) on nodes **throw** instead
+   of returning `undefined`; `in` operator and try/catch both safe.
+9. Bundled `getDocumentInfo`+`getNodeInfo` (2.6KB min) → `JSON_REST_V1` export
+   rejected. Bundled `getNodeTree` full-detail → strict-guard throw on
+   `clipsContent` of TEXT. Structure-detail rerun → clean pass, 45ms in-VM.
+10. Per-domain bundle size sweep → all 10 command domains 5–16KB minified.
