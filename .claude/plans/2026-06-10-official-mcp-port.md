@@ -1,7 +1,7 @@
 # Plan: Port to Figma's Official MCP + Claude Code-Shaped Tool Surface
 
 Date: 2026-06-10
-Status: **Plan** — next step is validation, then a development spec.
+Status: **Validated** (§9, live probes 2026-06-10) — next step is the development spec.
 Companion doc: `.claude/analysis/figma-official-mcp-assessment.md` (assessment of
 Figma's official MCP, empirical probe log, Phase 0 spike results).
 
@@ -34,9 +34,11 @@ One sentence: **their backend, our interface, Claude Code's shape.**
 
 ### D1. Dual transport — remote primary, plugin retained as local fallback
 
-The websocket relay + Figma plugin path is **kept, not deleted**. Rationale: Figma may
-gate the MCP behind a higher paywall or meter usage; the plugin is the hedge that keeps
-Figmagent functional locally regardless of Figma's pricing decisions.
+The websocket relay + Figma plugin path is **kept, not deleted**. Rationale: (a) Figma
+may gate the MCP behind a higher paywall or meter usage; the plugin is the hedge that
+keeps Figmagent functional locally regardless of Figma's pricing decisions. (b) Remote
+per-call overhead measured at ~4–7s vs sub-200ms locally (§9.3) — the plugin is also
+the low-latency option for interactive sessions, not just a pricing hedge.
 
 - Transport selected via `FIGMA_TRANSPORT=remote|plugin` (auto-detect: remote when
   OAuth is available, plugin otherwise).
@@ -200,9 +202,11 @@ boundaries).
 **Phase 1 — remote transport, reads.**
 `remote.ts` (bundle cache, script assembly, MCP client + OAuth), `prop()` compat
 codemod on serializers, `read`/`grep`/`get_design_system`/`screenshot` on remote.
-`scope: "DOCUMENT"` grep fans out one call per page server-side (their page-context
-constraint), merged invisibly. Client-side rate-limit queue replacing the 6-way
-plugin concurrency cap, sized to measured limits.
+`scope: "DOCUMENT"` grep loops pages inside a single script via
+`page.loadAsync()` — no fan-out needed (validated §9.7; Figma's
+"one `setCurrentPageAsync` per script" doctrine is overly conservative). Client-side
+**per-file FIFO queue** replacing the 6-way plugin concurrency cap — the server
+executes calls serially per file, so client-side parallelism buys nothing (§9.1).
 *Acceptance: all read tools pass against a scratch file on remote; plugin transport
 still green; latency + rate limits measured and recorded.*
 
@@ -251,7 +255,8 @@ messages are written once, against final names. Phases can overlap where indepen
 | Risk | Mitigation |
 |---|---|
 | Figma gates/meters the MCP (the motivating fear) | D1: plugin transport stays alive and CI-green permanently; transport interface keeps swap cost near zero |
-| Rate limits unknown; our 6-way parallel patterns may throttle | Measure in Phase 1 (server publishes `rate-limits-access.md`); client-side queue; chunk sizes tunable |
+| **Remote per-call latency (~4–7s) erases gains for chatty workloads** (measured §9.3) | Composite scripts are mandatory, not optional: batch reads into one script, validation in-response (D5) eliminates read-after-write, chunk sizes large; plugin remains the interactive low-latency path |
+| Rate limits: `use_figma` is exempt per Figma's docs, read tools are per-minute limited (unverified figures) | Verified empirically: 5-way burst + ~20 calls/session accepted without throttling (§9.1); per-file FIFO queue; re-read `rate-limits-access.md` resource during implementation |
 | OAuth lifecycle for long headless sessions | Validate token lifetime/refresh in Phase 1; document setup; fall back to plugin on auth failure |
 | 50KB script limit | Per-domain bundles are 5–16KB (verified); chunk large trees at existing UI-freeze seams |
 | Strict property guard regressions on remote | `prop()` helper applied mechanically at serializer boundaries; tests run on both VMs |
@@ -295,13 +300,82 @@ A/B in Phase 6 on comparable tasks. Provisional targets:
 
 ## 8. Open questions for the validation step
 
-1. Rate limits and concurrency ceilings (read `rate-limits-access.md`; measure
-   parallel fan-out).
-2. OAuth token lifetime and refresh path for headless sessions.
-3. Remote per-call latency vs plugin transport (informs chunk sizing and whether any
-   hot read paths should stay local when the plugin happens to be running).
-4. `exportAsync` parity on remote for all `screenshot` formats/scales (PNG verified).
-5. Comments tools: keep on REST with `FIGMA_API_TOKEN`, or check official MCP
-   coverage.
-6. Confirm no tool-name confusion when a user runs Figmagent and Figma's official MCP
-   in the same session (namespacing should handle it; verify agent behavior).
+All resolved 2026-06-10 — see §9.
+
+1. Rate limits and concurrency ceilings → §9.1.
+2. OAuth token lifetime and refresh path for headless sessions → §9.2.
+3. Remote per-call latency vs plugin transport → §9.3.
+4. `exportAsync` parity on remote for all `screenshot` formats/scales → §9.4.
+5. Comments tools: keep on REST or official MCP coverage → §9.5.
+6. Tool-name confusion when both servers run in one session → §9.6.
+
+---
+
+## 9. Validation results (2026-06-10, live probes against the scratch file)
+
+### 9.1 Rate limits & concurrency — RESOLVED (favorable)
+
+- Per Figma's published docs (developer docs / mcp-server-guide): **`use_figma` and
+  write tools are exempt from rate limits**; read tools (`get_metadata`,
+  `get_design_context`, …) get per-minute ceilings mirroring REST API Tier 1 on
+  Pro/Org/Enterprise Dev or Full seats; Starter plans get 6 tool calls/month.
+  (Figures from doc summaries — the canonical pages 403 from this container's network
+  policy; re-read the server's `rate-limits-access.md` MCP resource during
+  implementation.)
+- **Empirical**: a 5-way parallel `use_figma` burst plus ~20 calls in one session,
+  zero throttling. Since our transport routes *everything* through `use_figma`
+  (exempt), rate limits are effectively a non-issue for the compiled-tool path.
+- **Server execution is serialized per file**: the 5 parallel calls ran sequentially
+  in-VM (vmStart spacing 1.3–3.8s, mean ~2.3s). Client-side parallelism does not
+  increase per-file throughput → replace the plugin's 6-way concurrency with a simple
+  per-file FIFO queue. (Whether serialization is per-file or per-user is untested —
+  irrelevant until multi-file sessions exist.)
+
+### 9.2 OAuth lifecycle — PARTIALLY RESOLVED
+
+Token from the morning spike session remained valid hours later in the same container;
+refresh is transparent to the tool caller (handled by the MCP client/harness layer).
+Full lifetime and headless re-auth flow still need a longer-running test — carry as a
+Phase 1 checklist item, not a blocker.
+
+### 9.3 Latency — RESOLVED (the headline finding)
+
+- In-VM execution is fast (7ms minimal read; 1.0s for five image exports; 42ms
+  variables read; 24ms full-document traversal).
+- **Round-trip overhead is ~4–7s per call** (request path ~5.8s incl. one inference
+  hop, response path ~3.2s incl. one inference hop; VM clock is coarse, figures
+  approximate). Compare sub-200ms on the local websocket.
+- Implication, now load-bearing for the architecture: **the remote transport wins on
+  calls-per-task, not per-call speed.** Composite scripts, batched reads, and
+  validation-in-response (D5) are mandatory; any design that adds round trips is a
+  regression. The plugin transport remains the right choice for latency-sensitive
+  interactive work (folded into D1 rationale).
+
+### 9.4 Export parity — RESOLVED (full parity)
+
+`exportAsync` on remote: PNG @1x (6.1KB), PNG @2x (14.2KB), JPG, SVG, PDF — all
+succeed in one script. `screenshot` ports without feature loss.
+
+### 9.5 Comments — RESOLVED (keep REST)
+
+The official MCP's 18-tool inventory has no comment tools. Comments stay on the REST
+API with `FIGMA_API_TOKEN`, unchanged.
+
+### 9.6 Tool naming — RESOLVED with a flag for the spec
+
+MCP namespacing (`mcp__figmagent__read` vs built-in `Read`) prevents mechanical
+collision — both servers ran in this session without conflict. But the D3 names
+(`read`/`grep`/`edit`/`write`) *conceptually* shadow Claude Code built-ins, and prior
+transfer cuts both ways: an agent could reach for built-in `Read` with a Figma node ID
+or vice versa. Mitigation: tool descriptions lead with "Figma node" framing. Decide in
+the spec whether that suffices or names take a domain hint (e.g. `node_read`) — weigh
+against the prior-transfer benefit that motivated D3.
+
+### 9.7 New finding — document scope needs no fan-out
+
+A single script created a page, switched current page **twice** via
+`setCurrentPageAsync`, read across pages, and cleaned up; a second script iterated
+`figma.root.children` with `page.loadAsync()` and traversed every page. Figma's
+"one page switch per script" guidance is doctrine, not a hard limit. `grep
+scope: "DOCUMENT"` compiles to one script, not N calls — at ~4–7s per call saved per
+extra page, this is a meaningful win (folded into Phase 1).
