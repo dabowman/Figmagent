@@ -298,7 +298,15 @@ wall time recorded, not gated (remote wins on calls, plugin on per-call latency)
 Goal: core tool count ≤15; names/call shapes mirror Claude Code primitives (D3).
 Wire protocol unchanged.
 
-- [ ] **Task 3.1: Session-log frequency analysis → final disposition table**
+- [x] **Task 3.1: Session-log frequency analysis → final disposition table**
+
+  > **Execution note (2026-06-11):** no `~/.figmagent/sessions/` history exists
+  > in the execution environment (fresh container), so the frequency analysis
+  > cannot run here. Proceeding with the provisional disposition below as the
+  > working table, per the rules already stated. **Re-run
+  > `scripts/extract-sessions.ts` on a machine with real session history before
+  > Phase 6 sign-off** — any demotion/retirement the data contradicts is cheap
+  > to reverse at the MCP layer (wire protocol unchanged).
   - Files: analysis only (`scripts/extract-sessions.ts` exists); output table into
     this spec
   - Depends on: none (run against existing `~/.figmagent/sessions/` history)
