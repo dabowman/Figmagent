@@ -19,7 +19,7 @@ const lintableProperties = z.enum([
 ]);
 
 server.tool(
-  "lint_design",
+  "lint",
   `Scan a Figma subtree for properties not bound to design token variables. Reports unbound fills, strokes, corner radii, spacing, opacity, and font properties. Compares values against local variables using perceptual color distance (CIE76 deltaE) for colors and numeric proximity for scalars. Returns structured issues with severity levels and suggested variable matches.
 
 Use after building or modifying a design to verify all properties are tokenized. With autoFix=true, automatically binds exact matches.
@@ -68,7 +68,7 @@ Severity levels:
       const jsonText = JSON.stringify(result, null, 2);
       const guarded = guardOutput(jsonText, {
         metaExtractor: extractJsonSummary,
-        toolName: "lint_design",
+        toolName: "lint",
         narrowingHints: [
           "  • Lower maxIssues to reduce output",
           "  • Filter with the properties param to lint specific property types",
@@ -88,7 +88,7 @@ Severity levels:
         content: [
           {
             type: "text" as const,
-            text: `Error running lint_design: ${error instanceof Error ? error.message : String(error)}`,
+            text: `Error running lint: ${error instanceof Error ? error.message : String(error)}`,
           },
         ],
       };

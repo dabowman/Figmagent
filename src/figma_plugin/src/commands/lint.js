@@ -3,7 +3,7 @@
 // Scope-aware: matches variables based on their declared scopes and node context.
 // Flags ambiguous matches (multiple scope-compatible variables at same distance).
 
-import { sendProgressUpdate, generateCommandId, delay, rgbaToHex } from "../helpers.js";
+import { sendProgressUpdate, generateCommandId, delay, rgbaToHex, prop, fail } from "../helpers.js";
 
 // ─── Color Distance (CIE76 deltaE in CIELAB) ───────────────────────────────
 
@@ -11,7 +11,7 @@ function srgbToLinear(c) {
   return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
 }
 
-function rgbToLab(r, g, b) {
+export function rgbToLab(r, g, b) {
   const lr = srgbToLinear(r);
   const lg = srgbToLinear(g);
   const lb = srgbToLinear(b);
@@ -46,7 +46,7 @@ function deltaE(lab1, lab2) {
 // Maps lint property + node type → array of compatible Figma variable scopes.
 // A variable matches if its scopes include ALL_SCOPES or any scope in the list.
 // Node type "TEXT" gets text-specific fill scope; "FRAME" gets frame fill; others get shape fill.
-function getCompatibleScopes(propName, nodeType) {
+export function getCompatibleScopes(propName, nodeType) {
   if (propName === "fills") {
     if (nodeType === "TEXT") return ["ALL_SCOPES", "ALL_FILLS", "TEXT_FILL"];
     if (nodeType === "FRAME" || nodeType === "COMPONENT" || nodeType === "COMPONENT_SET" || nodeType === "INSTANCE")
@@ -71,7 +71,7 @@ function getCompatibleScopes(propName, nodeType) {
 
 // Check if a variable's scopes are compatible with the required scopes.
 // A variable with an empty scopes array is treated as ALL_SCOPES (Figma default).
-function isScopeCompatible(variableScopes, requiredScopes) {
+export function isScopeCompatible(variableScopes, requiredScopes) {
   // Empty scopes = unrestricted (Figma default when no scopes are set)
   if (!variableScopes || variableScopes.length === 0) return true;
 
@@ -86,7 +86,7 @@ function isScopeCompatible(variableScopes, requiredScopes) {
 
 // ─── Variable Index Builder ─────────────────────────────────────────────────
 
-async function buildVariableIndexes() {
+export async function buildVariableIndexes() {
   const collections = await figma.variables.getLocalVariableCollectionsAsync();
   const colorIndex = [];
   const scalarIndex = { FLOAT: [], STRING: [] };
@@ -146,7 +146,7 @@ async function buildVariableIndexes() {
 function collectNodes(node, path, depth, result) {
   // PAGE nodes don't have a `visible` property — skip visibility check for them.
   // For all other nodes, skip hidden ones.
-  if (node.type !== "PAGE" && !node.visible) return;
+  if (node.type !== "PAGE" && !prop(node, "visible")) return;
 
   // Don't lint the PAGE node itself (it has no lintable properties),
   // but traverse its children so a single lint_design call on a page covers everything.
@@ -356,7 +356,45 @@ function classifySeverity(distance, isColor, ambiguous) {
   return "near_match";
 }
 
-function checkColorProperty(node, fieldName, colorIndex, threshold, requiredScopes) {
+// ─── Single-value matcher (shared by lintDesign and the write-time mini-lint) ─
+//
+// value:       { r, g, b } for color properties, number for scalars, string for strings
+// property:    a LINT_PROPERTIES key ("fills", "cornerRadius", "fontSize", ...)
+// nodeContext: { nodeType, threshold } — nodeType drives scope filtering,
+//              threshold (default 5.0) bounds color distance
+// variables:   indexes from buildVariableIndexes()
+// Returns { severity, variable, ambiguous, alternatives } or null when no match.
+export function matchVariable(value, property, nodeContext, variables) {
+  const spec = LINT_PROPERTIES[property];
+  if (!spec || !variables) return null;
+
+  const nodeType = nodeContext && nodeContext.nodeType ? nodeContext.nodeType : null;
+  const threshold = nodeContext && nodeContext.threshold !== undefined ? nodeContext.threshold : 5.0;
+  const requiredScopes = getCompatibleScopes(property, nodeType);
+
+  let r;
+  if (spec.type === "color") {
+    if (!value || typeof value !== "object") return null;
+    r = findBestColorMatch(value.r, value.g, value.b, variables.colorIndex, threshold, requiredScopes);
+  } else if (spec.type === "scalar") {
+    if (typeof value !== "number") return null;
+    r = findBestScalarMatch(value, variables.scalarIndex.FLOAT, requiredScopes);
+  } else {
+    if (typeof value !== "string") return null;
+    r = findExactStringMatch(value, variables.scalarIndex.STRING, requiredScopes);
+  }
+
+  if (!r.match) return null;
+  return {
+    severity: classifySeverity(r.match.distance, spec.type === "color", r.ambiguous),
+    variable: r.match,
+    ambiguous: r.ambiguous,
+    alternatives: r.alternatives,
+  };
+}
+
+function checkColorProperty(node, propName, spec, indexes, nodeContext) {
+  const fieldName = spec.field;
   if (!(fieldName in node)) return null;
 
   const paints = node[fieldName];
@@ -371,28 +409,22 @@ function checkColorProperty(node, fieldName, colorIndex, threshold, requiredScop
   }
 
   const color = paint.color;
-  const { match, ambiguous, alternatives } = findBestColorMatch(
-    color.r,
-    color.g,
-    color.b,
-    colorIndex,
-    threshold,
-    requiredScopes,
-  );
+  const m = matchVariable({ r: color.r, g: color.g, b: color.b }, propName, nodeContext, indexes);
   const hexVal = rgbaToHex({ r: color.r, g: color.g, b: color.b, a: paint.opacity !== undefined ? paint.opacity : 1 });
 
   const result = {
     currentValue: hexVal,
-    suggestedVariable: match,
-    severity: match ? classifySeverity(match.distance, true, ambiguous) : "no_match",
+    suggestedVariable: m ? m.variable : null,
+    severity: m ? m.severity : "no_match",
   };
-  if (ambiguous && alternatives.length > 0) {
-    result.alternatives = alternatives;
+  if (m && m.ambiguous && m.alternatives.length > 0) {
+    result.alternatives = m.alternatives;
   }
   return result;
 }
 
-function checkScalarProperty(node, propName, figmaField, scalarList, requiredScopes) {
+function checkScalarProperty(node, propName, spec, indexes, nodeContext) {
+  const figmaField = spec.field;
   if (!(figmaField in node)) return null;
 
   const value = node[figmaField];
@@ -412,23 +444,24 @@ function checkScalarProperty(node, propName, figmaField, scalarList, requiredSco
   if (propName === "opacity" && value === 1) return null;
 
   // Check if already bound
-  const bv = node.boundVariables;
+  const bv = prop(node, "boundVariables");
   if (bv && bv[figmaField]) return null;
 
-  const { match, ambiguous, alternatives } = findBestScalarMatch(value, scalarList, requiredScopes);
+  const m = matchVariable(value, propName, nodeContext, indexes);
 
   const result = {
     currentValue: value,
-    suggestedVariable: match,
-    severity: match ? classifySeverity(match.distance, false, ambiguous) : "no_match",
+    suggestedVariable: m ? m.variable : null,
+    severity: m ? m.severity : "no_match",
   };
-  if (ambiguous && alternatives.length > 0) {
-    result.alternatives = alternatives;
+  if (m && m.ambiguous && m.alternatives.length > 0) {
+    result.alternatives = m.alternatives;
   }
   return result;
 }
 
-function checkStringProperty(node, propName, figmaField, stringList, requiredScopes) {
+function checkStringProperty(node, propName, spec, indexes, nodeContext) {
+  const figmaField = spec.field;
   if (!(figmaField in node)) return null;
 
   let value = node[figmaField];
@@ -453,18 +486,18 @@ function checkStringProperty(node, propName, figmaField, stringList, requiredSco
   }
 
   // Check if already bound
-  const bv = node.boundVariables;
+  const bv = prop(node, "boundVariables");
   if (bv && bv[figmaField]) return null;
 
-  const { match, ambiguous, alternatives } = findExactStringMatch(value, stringList, requiredScopes);
+  const m = matchVariable(value, propName, nodeContext, indexes);
 
   const result = {
     currentValue: value,
-    suggestedVariable: match,
-    severity: match ? classifySeverity(match.distance, false, ambiguous) : "no_match",
+    suggestedVariable: m ? m.variable : null,
+    severity: m ? m.severity : "no_match",
   };
-  if (ambiguous && alternatives.length > 0) {
-    result.alternatives = alternatives;
+  if (m && m.ambiguous && m.alternatives.length > 0) {
+    result.alternatives = m.alternatives;
   }
   return result;
 }
@@ -506,7 +539,10 @@ export async function lintDesign(params) {
   // Resolve root node
   const rootNode = await figma.getNodeByIdAsync(nodeId);
   if (!rootNode) {
-    throw new Error("Node not found: " + nodeId);
+    fail(
+      "Node not found: " + nodeId,
+      "verify the ID with read or search with grep — it may have been deleted or belong to another page",
+    );
   }
 
   // Phase 1: Build variable lookup tables
@@ -544,7 +580,18 @@ export async function lintDesign(params) {
 
   // Phase 2: Collect nodes
   const nodeList = [];
-  collectNodes(rootNode, "", 0, nodeList);
+  if (rootNode.type === "DOCUMENT") {
+    // DOCUMENT root: lint every page (load each page first for dynamic-page access)
+    for (let pi = 0; pi < rootNode.children.length; pi++) {
+      const page = rootNode.children[pi];
+      if (typeof page.loadAsync === "function") {
+        await page.loadAsync();
+      }
+      collectNodes(page, "", 0, nodeList);
+    }
+  } else {
+    collectNodes(rootNode, "", 0, nodeList);
+  }
 
   sendProgressUpdate(
     commandId,
@@ -592,15 +639,15 @@ export async function lintDesign(params) {
       for (let pi = 0; pi < propsToLint.length; pi++) {
         const propName = propsToLint[pi];
         const spec = LINT_PROPERTIES[propName];
-        const requiredScopes = getCompatibleScopes(propName, node.type);
+        const nodeContext = { nodeType: node.type, threshold: threshold };
         let result = null;
 
         if (spec.type === "color") {
-          result = checkColorProperty(node, spec.field, colorIndex, threshold, requiredScopes);
+          result = checkColorProperty(node, propName, spec, indexes, nodeContext);
         } else if (spec.type === "scalar") {
-          result = checkScalarProperty(node, propName, spec.field, scalarIndex.FLOAT, requiredScopes);
+          result = checkScalarProperty(node, propName, spec, indexes, nodeContext);
         } else if (spec.type === "string") {
-          result = checkStringProperty(node, propName, spec.field, scalarIndex.STRING, requiredScopes);
+          result = checkStringProperty(node, propName, spec, indexes, nodeContext);
         }
 
         if (!result) continue;
@@ -675,4 +722,67 @@ export async function lintDesign(params) {
     issues: issues,
     truncated: totalIssueCount > maxIssues,
   };
+}
+
+// ─── Write-time mini-lint (Phase 4.2) ───────────────────────────────────────
+//
+// Runs the single-value matcher over only the raw values a create/apply op
+// just set. Fetches local variables ONCE per command invocation. Advisory
+// only: any error is swallowed — mini-lint never fails the write.
+//
+// rawSets: [{ nodeId, property (LINT_PROPERTIES key), field (variables-map
+// field name for the suggestion), value, nodeType }]
+// Returns warnings: [{ nodeId, check: "unbound_value", message }]
+export async function miniLint(rawSets) {
+  if (!rawSets || rawSets.length === 0) return [];
+
+  let indexes;
+  try {
+    indexes = await buildVariableIndexes();
+  } catch (_e) {
+    return [];
+  }
+  if (indexes.colorIndex.length === 0 && indexes.scalarIndex.FLOAT.length === 0) {
+    return [];
+  }
+
+  const warnings = [];
+  for (let i = 0; i < rawSets.length; i++) {
+    const set = rawSets[i];
+    try {
+      const m = matchVariable(set.value, set.property, { nodeType: set.nodeType }, indexes);
+      if (!m || m.severity !== "exact_match" || m.ambiguous) continue;
+
+      let displayValue;
+      if (set.value && typeof set.value === "object") {
+        displayValue = rgbaToHex({
+          r: set.value.r,
+          g: set.value.g,
+          b: set.value.b,
+          a: set.value.a !== undefined ? set.value.a : 1,
+        });
+      } else {
+        displayValue = String(set.value);
+      }
+
+      warnings.push({
+        nodeId: set.nodeId,
+        check: "unbound_value",
+        message:
+          set.field +
+          " " +
+          displayValue +
+          " matches variable " +
+          m.variable.name +
+          " — pass variables: { " +
+          set.field +
+          ": '" +
+          m.variable.id +
+          "' } to bind",
+      });
+    } catch (_e) {
+      // advisory only — skip this value
+    }
+  }
+  return warnings;
 }

@@ -5,22 +5,25 @@ import { serializeYaml } from "../yaml.js";
 import { guardOutput, extractYamlMeta } from "../utils.js";
 
 server.tool(
-  "find",
-  `Search a Figma subtree for nodes matching criteria. Returns matches grouped by nearest component/frame ancestor with ancestry paths.
+  "grep",
+  `Search a Figma subtree for nodes matching a regex pattern or other criteria. Returns matches grouped by nearest component/frame ancestor with ancestry paths.
+
+The text, name, and annotation criteria are regex patterns matched against text content, node names, and annotation labels respectively.
 
 Criteria combine with AND (all must match). Within each criterion, values combine with OR.
 
 Search criteria (at least one required):
+- text: regex pattern matched against TEXT node content
+- name: regex pattern matched against node names
+- type: find nodes of these types (FRAME, TEXT, INSTANCE, COMPONENT, etc.)
 - componentId: find instances of these components or component sets
 - variableId: find nodes with direct variable bindings to these variable IDs
 - styleId: find nodes using these fill/stroke/text/effect/grid styles
-- text: find TEXT nodes whose content matches this regex
-- name: find nodes whose name matches this regex
-- type: find nodes of these types (FRAME, TEXT, INSTANCE, COMPONENT, etc.)
-- annotation: find nodes whose annotation label matches this regex
+- annotation: regex pattern matched against annotation labels
 - hasAnnotation: find all nodes that have any annotation (boolean)
 
-Use \`find\` to locate nodes, then \`get\` for details on specific matches.`,
+Combine type: ["TEXT"] with a text pattern to enumerate text nodes (replaces the old scan_text_nodes/scan_nodes_by_types flows).
+Use \`grep\` to locate nodes, then \`read\` for details on specific matches.`,
   {
     scope: z
       .string()
@@ -177,7 +180,7 @@ Use \`find\` to locate nodes, then \`get\` for details on specific matches.`,
       const guarded = guardOutput(yamlText, {
         maxChars: maxOutputChars,
         metaExtractor: extractYamlMeta,
-        toolName: "find",
+        toolName: "grep",
         narrowingHints: [
           "  • Lower maxResults",
           "  • Add more criteria to narrow matches",
@@ -198,7 +201,7 @@ Use \`find\` to locate nodes, then \`get\` for details on specific matches.`,
         content: [
           {
             type: "text" as const,
-            text: `Error in find: ${error instanceof Error ? error.message : String(error)}`,
+            text: `Error in grep: ${error instanceof Error ? error.message : String(error)}`,
           },
         ],
       };

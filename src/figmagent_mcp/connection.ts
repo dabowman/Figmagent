@@ -1,6 +1,7 @@
 import WebSocket from "ws";
 import { v4 as uuidv4 } from "uuid";
 import { logger } from "./utils.js";
+import { getTransport } from "./transport.js";
 import type { FigmaCommand, FigmaResponse, CommandProgressUpdate } from "./types.js";
 
 // WebSocket connection and request tracking
@@ -174,7 +175,7 @@ export async function joinChannel(channelName: string): Promise<void> {
   }
 
   try {
-    await sendCommandToFigma("join", { channel: channelName });
+    await pluginSendCommand("join", { channel: channelName });
     currentChannel = channelName;
     logger.info(`Joined channel: ${channelName}`);
   } catch (error) {
@@ -192,14 +193,24 @@ async function autoJoinChannel(): Promise<void> {
     logger.info(`Auto-joined channel: ${names[0]}`);
   } else if (names.length > 1) {
     const listing = names.map((n) => `  • ${n}`).join("\n");
-    throw new Error(`Multiple Figma files are open. Call join_channel with the file you want:\n${listing}`);
+    throw new Error(`Multiple Figma files are open. Call use_file with the file you want:\n${listing}`);
   } else {
     throw new Error("No active Figma channels found. Make sure the Figma plugin is open and connected.");
   }
 }
 
-// Function to send commands to Figma
+// Transport-agnostic entry point used by all tool modules. Delegates to the
+// active transport (plugin websocket or remote use_figma executor).
 export function sendCommandToFigma(
+  command: FigmaCommand,
+  params: unknown = {},
+  timeoutMs: number = 30000,
+): Promise<unknown> {
+  return getTransport().sendCommand(command, params, timeoutMs);
+}
+
+// Plugin-transport implementation: send a command over the websocket relay.
+export function pluginSendCommand(
   command: FigmaCommand,
   params: unknown = {},
   timeoutMs: number = 30000,

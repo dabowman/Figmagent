@@ -3,6 +3,7 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { logger } from "./utils.js";
 import { connectToFigma } from "./connection.js";
+import { getTransport } from "./transport.js";
 import { server } from "./instance.js";
 
 // Re-export for backwards compatibility
@@ -11,8 +12,6 @@ export { server };
 // Register all tools and prompts (side-effect imports)
 import "./tools/document.js";
 import "./tools/create.js";
-import "./tools/modify.js";
-import "./tools/text.js";
 import "./tools/apply.js";
 import "./tools/components.js";
 import "./tools/tokens.js";
@@ -23,16 +22,21 @@ import "./tools/libraries.js";
 import "./tools/comments.js";
 import "./tools/lint.js";
 import "./tools/session.js";
+import "./tools/file.js";
+import "./tools/script.js";
 import "./prompts/index.js";
 
 // Start the server
 async function main() {
-  try {
-    // Try to connect to Figma socket server
-    connectToFigma();
-  } catch (error) {
-    logger.warn(`Could not connect to Figma initially: ${error instanceof Error ? error.message : String(error)}`);
-    logger.warn("Will try to connect when the first command is sent");
+  // The websocket relay connection only exists on the plugin transport.
+  if (getTransport().name === "plugin") {
+    try {
+      // Try to connect to Figma socket server
+      connectToFigma();
+    } catch (error) {
+      logger.warn(`Could not connect to Figma initially: ${error instanceof Error ? error.message : String(error)}`);
+      logger.warn("Will try to connect when the first command is sent");
+    }
   }
 
   // Start the MCP server with stdio transport

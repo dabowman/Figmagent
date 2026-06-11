@@ -108,39 +108,10 @@ function buildFsgn(raw: any, params: any): string {
 
 // ─── Tools ───────────────────────────────────────────────────────────────────
 
-// Document Info Tool
-server.tool(
-  "get_document_info",
-  "Get pages and top-level frames in the current Figma document. Call this first to orient yourself, then use get_selection() to find what the user is looking at, then get(nodeId) to read details.",
-  {},
-  async () => {
-    try {
-      const result = await sendCommandToFigma("get_document_info");
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result),
-          },
-        ],
-      };
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error getting document info: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ],
-      };
-    }
-  },
-);
-
 // Selection Tool
 server.tool(
   "get_selection",
-  "Get the user's current selection in Figma. Returns selected node IDs and basic info. If empty, ask the user to select something. Use get(nodeId) on the result to read details.",
+  "Get the user's current selection in Figma. Returns selected node IDs and basic info. If empty, ask the user to select something. Use read(nodeId) on the result to read details.",
   {},
   async () => {
     try {
@@ -166,10 +137,12 @@ server.tool(
   },
 );
 
-// Get Tool — read nodes and their subtrees
+// Read Tool — read nodes and their subtrees (or the document overview)
 server.tool(
-  "get",
+  "read",
   `Read one or more Figma nodes and their subtrees. Returns structured YAML (FSGN format) with deduplicated variable, style, and component definitions.
+
+Called with NO nodeId/nodeIds, returns the document overview: pages and top-level frames. Use that first to orient yourself.
 
 IMPORTANT: Always start with detail="structure" and depth=2 for orientation. Only increase detail or depth after reviewing the structure. Going straight to detail="full" with high depth risks hitting the output budget.
 
@@ -178,11 +151,14 @@ Detail levels (pick the cheapest that works):
   - "layout": + dimensions, auto-layout, text content, componentRef/properties (~15 tokens/node). Use for building.
   - "full": + fills, strokes, variable bindings, text styles (~30 tokens/node). Use for styling.
 
-Workflow: get_document_info() → get(nodeId, detail="structure", depth=2) → narrow with depth/filter → get specific nodes at higher detail.
-Use find() to locate nodes by criteria before calling get() on them.
-Instances are leaf nodes by default — call get on the instance ID to expand its internals.`,
+Workflow: read() (document overview) → read(nodeId, detail="structure", depth=2) → narrow with depth/filter → read specific nodes at higher detail.
+Use grep() to locate nodes by criteria before calling read() on them.
+Instances are leaf nodes by default — call read on the instance ID to expand its internals.`,
   {
-    nodeId: z.string().optional().describe("ID of a single node to read"),
+    nodeId: z
+      .string()
+      .optional()
+      .describe("ID of a single node to read. Omit (and nodeIds) for the document overview."),
     nodeIds: z.array(z.string()).optional().describe("IDs of multiple nodes to read in parallel"),
     detail: z
       .enum(["structure", "layout", "full"])
@@ -238,12 +214,14 @@ Instances are leaf nodes by default — call get on the instance ID to expand it
       if (params.nodeId) ids.push(params.nodeId);
       if (params.nodeIds) ids.push(...params.nodeIds);
 
+      // No node IDs → document overview (pages + top-level frames)
       if (ids.length === 0) {
+        const overview = await sendCommandToFigma("get_document_info");
         return {
           content: [
             {
               type: "text",
-              text: "Error: provide either nodeId or nodeIds",
+              text: JSON.stringify(overview),
             },
           ],
         };
@@ -262,12 +240,12 @@ Instances are leaf nodes by default — call get on the instance ID to expand it
       const guarded = guardOutput(output, {
         maxChars: params.maxOutputChars,
         metaExtractor: extractYamlMeta,
-        toolName: "get",
+        toolName: "read",
         narrowingHints: [
           "  • Lower depth — try depth=1 or depth=2",
           '  • Use detail="structure" (~5 tokens/node)',
           "  • Target a specific child node instead of the whole subtree",
-          "  • Use find() to locate the nodes you need first",
+          "  • Use grep() to locate the nodes you need first",
         ],
       });
 

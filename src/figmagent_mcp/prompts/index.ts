@@ -13,13 +13,13 @@ server.prompt("design_workflow", "End-to-end workflow for reading, creating, and
 
 ## Phase 0: Connect (required before anything else)
 
-\`join_channel()\` — connects to the active Figma plugin. Call with no arguments to auto-discover. If multiple channels are listed, ask the user which file they want to work in, then call \`join_channel({ channel: "name" })\`.
+\`use_file()\` — connects to the active Figma plugin. Call with no arguments to auto-discover. If multiple channels are listed, ask the user which file they want to work in, then call \`use_file({ channel: "name" })\`.
 
 ## Phase 1: Orient
 
-1. \`get_document_info()\` — understand pages and top-level frames.
+1. \`read()\` (no nodeId) — understand pages and top-level frames.
 2. \`get_selection()\` — find what the user is looking at. If empty, ask them to select something.
-3. \`get(nodeId, detail="structure", depth=2)\` — lightweight overview (~5 tokens/node). Increase depth or switch to \`detail="layout"\` when you need auto-layout properties.
+3. \`read(nodeId, detail="structure", depth=2)\` — lightweight overview (~5 tokens/node). Increase depth or switch to \`detail="layout"\` when you need auto-layout properties.
 
 **Detail levels** (pick the cheapest one that works):
 - \`structure\` — names, types, hierarchy. Good for orientation.
@@ -43,16 +43,16 @@ Before creating anything, decide the **layout hierarchy**. Figma's auto-layout i
 
 **Sizing rules:**
 - \`HUG\` = shrink to fit content (good for buttons, tags)
-- \`FILL\` = stretch to fill parent (requires parent to have auto-layout). Cannot be set at creation time — the \`create\` tool handles this automatically in a second pass.
+- \`FILL\` = stretch to fill parent (requires parent to have auto-layout). Cannot be set at creation time — the \`write\` tool handles this automatically in a second pass.
 - \`FIXED\` = explicit width/height
 - Use FRAME with a fill color instead of RECTANGLE when the node needs \`FILL\` sizing.
 
 ## Phase 3: Build
 
-Use \`create()\` for all node creation. It handles single nodes, nested trees, COMPONENTs, and INSTANCEs.
+Use \`write()\` for all node creation. It handles single nodes, nested trees, COMPONENTs, INSTANCEs, and cloning existing nodes (\`fromNodeId\`).
 
 \`\`\`
-create({
+write({
   parentId: "target-frame",
   node: {
     type: "FRAME",
@@ -79,10 +79,10 @@ create({
 
 ## Phase 4: Modify
 
-Use \`apply()\` for all property changes on existing nodes — fills, strokes, fonts, layout, variables, styles.
+Use \`edit()\` for all changes to existing nodes — fills, strokes, fonts, layout, position, name, text content, variables, styles, deletion.
 
 \`\`\`
-apply({
+edit({
   nodes: [
     { nodeId: "abc", fillColor: { r: 0.2, g: 0.4, b: 1 }, cornerRadius: 12 },
     { nodeId: "def", fontWeight: 700, fontSize: 24 }
@@ -90,22 +90,23 @@ apply({
 })
 \`\`\`
 
-**Key capabilities of \`apply\`:**
+**Key capabilities of \`edit\`:**
 - Visual: fillColor, strokeColor, strokeWeight, cornerRadius, opacity, width, height
+- Structural: x/y (move), name (rename), index (reorder), characters (set text), delete: true
 - Font (TEXT only): fontFamily, fontWeight, fontSize, fontColor
 - Layout: layoutMode, padding, alignment, sizing, spacing
 - Design tokens: \`variables\` field maps property names → variable IDs
 - Styles: \`textStyleId\`, \`effectStyleId\` (from \`get_design_system\`)
 - Components: \`swapVariantId\` (swap instance variant), \`isExposedInstance\`
 
-**Do not** delete and recreate text nodes to change fonts — use \`apply\` with font properties.
+**Do not** delete and recreate text nodes to change fonts — use \`edit\` with font properties.
 
 ## Phase 5: Design System
 
 1. \`get_design_system()\` — discover all styles and variables in one call.
-2. \`apply({ nodes: [{ nodeId, variables: { fill: "VariableID:xxx" } }] })\` — bind tokens.
-3. \`apply({ nodes: [{ nodeId, textStyleId: "S:xxx" }] })\` — apply text styles.
-4. \`lint_design({ nodeId })\` — scan for unbound properties; use \`autoFix: true\` to bind exact matches.
+2. \`edit({ nodes: [{ nodeId, variables: { fill: "VariableID:xxx" } }] })\` — bind tokens.
+3. \`edit({ nodes: [{ nodeId, textStyleId: "S:xxx" }] })\` — apply text styles.
+4. \`lint({ nodeId })\` — scan for unbound properties; use \`autoFix: true\` to bind exact matches.
 
 Prefer variable bindings over hardcoded values — this keeps designs connected to the token system.
 
@@ -114,9 +115,9 @@ Prefer variable bindings over hardcoded values — this keeps designs connected 
 
 ## Phase 6: Verify
 
-- \`get(nodeId, detail="structure")\` — confirm hierarchy looks right.
-- \`export_node_as_image(nodeId, format="PNG", scale=1)\` — visual spot-check.
-- \`lint_design(nodeId)\` — check token coverage.
+- \`read(nodeId, detail="structure")\` — confirm hierarchy looks right.
+- \`screenshot(nodeId, format="PNG", scale=1)\` — visual spot-check.
+- \`lint(nodeId)\` — check token coverage.
 
 ## Common Pitfalls
 
@@ -126,19 +127,19 @@ These cause silent failures or wasted calls — learn them now:
 
 2. **Bind variables on COMPONENTs, not instances.** Variable bindings and text style assignments propagate from a COMPONENT to all its instances automatically. Always bind at the component level.
 
-3. **No reparenting.** \`move_node\` only changes x/y position, not hierarchy. To move a node to a new parent: \`clone_and_modify(nodeId, parentId=newParent)\` + \`delete_node(originalId)\`.
+3. **Reparenting = clone + delete.** \`edit\`'s x/y only changes coordinates, not hierarchy. To move a node to a new parent: \`write({ fromNodeId: originalId, parentId: newParent })\` + \`edit({ nodes: [{ nodeId: originalId, delete: true }] })\`.
 
-4. **Connection drops.** If 2+ commands time out in a row on any tool, the plugin↔relay WebSocket has likely dropped. The server auto-invalidates the channel on timeout and re-discovers on the next command. If auto-recovery fails, call \`join_channel()\` (no args) to re-discover manually.
+4. **Connection drops.** If 2+ commands time out in a row on any tool, the plugin↔relay WebSocket has likely dropped. The server auto-invalidates the channel on timeout and re-discovers on the next command. If auto-recovery fails, call \`use_file()\` (no args) to re-discover manually.
 
 5. **Stop after 2 identical errors.** If the same tool call fails twice with the same error, diagnose the root cause (wrong node ID, lost connection, type mismatch) instead of retrying.
 
 6. **Colors are RGBA 0-1.** All color values (fillColor, strokeColor, fontColor) use \`{ r, g, b, a? }\` where each channel is a float from 0 to 1. Not 0-255.
 
-7. **Use \`find\` → \`get\` → \`apply\` as your core loop.** \`find\` locates nodes by criteria, \`get\` reads their details, \`apply\` modifies them. Avoid brute-force traversals.
+7. **Use \`grep\` → \`read\` → \`edit\` as your core loop.** \`grep\` locates nodes by criteria, \`read\` reads their details, \`edit\` modifies them. Avoid brute-force traversals.
 
-8. **Batch over repeated singles.** Prefer \`set_multiple_text_contents\`, \`delete_multiple_nodes\`, \`set_multiple_annotations\` over repeated single-node calls. Use \`apply\` with multiple node entries instead of separate calls.
+8. **Batch over repeated singles.** One \`edit\` call handles many nodes — text changes (\`characters\`), deletions (\`delete: true\`), property changes. Prefer one call with multiple node entries over separate calls. Same for \`set_multiple_annotations\`.
 
-9. **Instances are leaf nodes in \`get\`.** Call \`get(instanceId)\` separately to expand instance internals. The \`componentRef\` in \`defs.components\` resolves to the main component's id, name, key, and description.`,
+9. **Instances are leaf nodes in \`read\`.** Call \`read(instanceId)\` separately to expand instance internals. The \`componentRef\` in \`defs.components\` resolves to the main component's id, name, key, and description.`,
         },
       },
     ],
@@ -158,30 +159,35 @@ server.prompt("text_replacement", "Strategy for finding and replacing text conte
           text: `# Text Replacement Strategy
 
 ## 1. Discover
-\`scan_text_nodes(nodeId)\` — returns all text nodes under a parent with their current content, node IDs, and layer paths.
+\`grep({ scope: nodeId, type: ["TEXT"], text: ".*" })\` — returns text nodes under a parent with their content, node IDs, and ancestry paths. Narrow the \`text\` regex to target specific content.
 
-Use the layer paths and content to understand the structure: tables, card groups, forms, lists, navigation.
+Use the ancestry paths and content to understand the structure: tables, card groups, forms, lists, navigation.
 
 ## 2. Replace
-\`set_multiple_text_contents({ nodeId: "parent", textNodes: [...] })\` — batch-replace up to ~50 text nodes in one call.
+\`edit\` with \`characters\` ops — batch-replace many text nodes in one call:
 
-Each entry: \`{ nodeId: "text-node-id", text: "New content" }\`.
+\`\`\`
+edit({ nodes: [
+  { nodeId: "text-node-1", characters: "New content" },
+  { nodeId: "text-node-2", characters: "Other content" }
+]})
+\`\`\`
 
-For very large designs (100+ text nodes), chunk into batches of 50 to avoid timeouts.
+The replacement is font-safe (handles mixed fonts automatically). For very large designs (100+ text nodes), chunk into batches of 50 to avoid timeouts.
 
 ## 3. Instance Text Overrides
 For text inside component instances, the nodeId format is:
 - \`I<instanceId>;<componentTextNodeId>\` for direct children
 - \`I<outerInstance>;<innerInstance>;<textNodeId>\` for nested instances
 
-Use \`scan_text_nodes\` on the component first to discover the text node IDs, then construct the override path.
+Use \`grep({ scope: componentId, type: ["TEXT"] })\` on the component first to discover the text node IDs, then construct the override path.
 
 ## 4. Font Changes
-To change font properties (family, weight, size, color), use \`apply\` — not text replacement:
-\`apply({ nodes: [{ nodeId: "text-id", fontFamily: "Space Grotesk", fontWeight: 600, fontSize: 16 }] })\`
+To change font properties (family, weight, size, color), use \`edit\` with font properties — not text replacement:
+\`edit({ nodes: [{ nodeId: "text-id", fontFamily: "Space Grotesk", fontWeight: 600, fontSize: 16 }] })\`
 
 ## 5. Verify
-\`get(nodeId, detail="structure")\` to confirm text content updated correctly. For visual verification, \`export_node_as_image(nodeId)\`.`,
+\`read(nodeId, detail="structure")\` to confirm text content updated correctly. For visual verification, \`screenshot(nodeId)\`.`,
         },
       },
     ],
@@ -208,8 +214,8 @@ Convert manual annotations (numbered markers with descriptions) to Figma's nativ
 ## Step 1: Gather Data
 
 Call these in parallel:
-- \`scan_text_nodes(nodeId)\` — find all text (markers like "1", "2", "A", "B" and their descriptions)
-- \`scan_nodes_by_types({ nodeId, types: ["COMPONENT", "INSTANCE", "FRAME"] })\` — find annotation targets
+- \`grep({ scope: nodeId, type: ["TEXT"] })\` — find all text (markers like "1", "2", "A", "B" and their descriptions)
+- \`grep({ scope: nodeId, type: ["COMPONENT", "INSTANCE", "FRAME"] })\` — find annotation targets
 - \`get_annotations({ nodeId, includeCategories: true })\` — get available annotation categories
 
 ## Step 2: Identify Markers and Descriptions
@@ -267,13 +273,13 @@ Transfer overrides (text content, property values, styles) from a source instanc
 
 ## Process
 
-1. **Identify instances** — \`get_selection()\` or \`scan_nodes_by_types({ nodeId, types: ["INSTANCE"] })\`. Determine which instance has the content to copy (source) and which are targets.
+1. **Identify instances** — \`get_selection()\` or \`grep({ scope: nodeId, type: ["INSTANCE"] })\`. Determine which instance has the content to copy (source) and which are targets.
 
 2. **Extract overrides** — \`get_instance_overrides({ nodeId: "source-instance-id" })\`. Returns text content, property values, and style overrides.
 
 3. **Apply to targets** — \`set_instance_overrides({ sourceInstanceId: "source-id", targetNodeIds: ["target-1", "target-2"] })\`.
 
-4. **Verify** — \`get(nodeId, detail="structure")\` on targets to confirm overrides applied.
+4. **Verify** — \`read(nodeId, detail="structure")\` on targets to confirm overrides applied.
 
 ## Tips
 - Preserve component relationships — use instance overrides rather than direct text manipulation.
@@ -325,7 +331,7 @@ Extract from each valid reaction:
 
 ## Step 4: Create Connections
 
-Build descriptive labels (e.g., "On click → Screen Name") using node names from \`get()\`.
+Build descriptive labels (e.g., "On click → Screen Name") using node names from \`read()\`.
 
 \`\`\`
 create_connections({
@@ -356,10 +362,10 @@ server.prompt("component_architecture", "Guide to building components, variants,
 
 ## Creating Components
 
-Use \`create\` with \`type: "COMPONENT"\` — works exactly like FRAME but produces a reusable component:
+Use \`write\` with \`type: "COMPONENT"\` — works exactly like FRAME but produces a reusable component:
 
 \`\`\`
-create({
+write({
   parentId: "page-or-frame",
   node: {
     type: "COMPONENT",
@@ -409,31 +415,31 @@ component_properties({
 
 **Important**: Adding a property definition alone does NOT wire it to child nodes. Always pass \`targetNodeId\` on \`add\` operations (or use \`bind\` afterward) to connect the property to the actual child node. Auto-detection maps: BOOLEAN→visible, TEXT→characters, INSTANCE_SWAP→mainComponent.
 
-Use \`get(nodeId)\` on a COMPONENT or COMPONENT_SET to discover existing \`componentPropertyDefinitions\` (names include a \`#suffix\`). Child nodes show \`componentPropertyReferences\` when wired to a property.
+Use \`read(nodeId)\` on a COMPONENT or COMPONENT_SET to discover existing \`componentPropertyDefinitions\` (names include a \`#suffix\`). Child nodes show \`componentPropertyReferences\` when wired to a property.
 
 ## Instances
 
-Create instances with \`create\`:
+Create instances with \`write\`:
 \`\`\`
-create({ parentId: "frame", node: { type: "INSTANCE", componentId: "local-component-id" } })
+write({ parentId: "frame", node: { type: "INSTANCE", componentId: "local-component-id" } })
 // or from library:
-create({ parentId: "frame", node: { type: "INSTANCE", componentKey: "published-key" } })
+write({ parentId: "frame", node: { type: "INSTANCE", componentKey: "published-key" } })
 \`\`\`
 
-Swap to a different variant: \`apply({ nodes: [{ nodeId: "instance-id", swapVariantId: "target-variant-component-id" }] })\`
+Swap to a different variant: \`edit({ nodes: [{ nodeId: "instance-id", swapVariantId: "target-variant-component-id" }] })\`
 
 ## Exposed Instances
 
 Surface a nested instance's properties at the parent component level:
-\`apply({ nodes: [{ nodeId: "nested-instance-inside-component", isExposedInstance: true }] })\`
+\`edit({ nodes: [{ nodeId: "nested-instance-inside-component", isExposedInstance: true }] })\`
 
 **Important:** \`isExposedInstance\` does NOT create a picker/dropdown for swapping — it surfaces the nested instance's own properties (like text overrides) on the parent. To create a dropdown that lets users pick between components, use \`component_properties\` with type \`INSTANCE_SWAP\` instead.
 
 ## Key Rules
 
 - **Bind variables on COMPONENT nodes**, not instances — bindings propagate automatically.
-- **No reparenting** — to move a node to a new parent, use \`clone_and_modify(nodeId, parentId=newParent)\` + delete the original.
-- Instances are leaf nodes in \`get\` output — call \`get(instanceId)\` to expand internals.`,
+- **Reparenting** — to move a node to a new parent, use \`write({ fromNodeId, parentId: newParent })\` + \`edit\` with \`delete: true\` on the original.
+- Instances are leaf nodes in \`read\` output — call \`read(instanceId)\` to expand internals.`,
         },
       },
     ],

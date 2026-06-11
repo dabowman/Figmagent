@@ -7,9 +7,9 @@ description: "Orchestrator guide for delegating Figma MCP phases to specialized 
 
 Large Figma sessions hit three problems in a single-agent context: **context pressure** (large node tree responses), **attention drift** (losing track of which nodes are done after 30+ sequential calls), and **error pollution** (9 retries of a failing tool consuming planning context). Sub-agents solve this by giving each phase its own clean context window.
 
-The primary tool for reading nodes is **`get`**, which returns structured YAML (FSGN format) with deduplicated variable/style/component defs and a `tokenEstimate` in the meta. It accepts `nodeId` (single) or `nodeIds` (multiple, fetched in parallel).
+The primary tool for reading nodes is **`read`**, which returns structured YAML (FSGN format) with deduplicated variable/style/component defs and a `tokenEstimate` in the meta. It accepts `nodeId` (single) or `nodeIds` (multiple, fetched in parallel).
 
-Sub-agents also enable **parallel execution**: multiple agents can modify different parts of the Figma document simultaneously, with plugin-level concurrency control ensuring safety.
+Sub-agents also enable **parallel execution — on the plugin transport only**: multiple agents can modify different parts of the Figma document simultaneously, with plugin-level concurrency control ensuring safety. **On the remote transport (`FIGMA_TRANSPORT=remote`) the MCP server serializes every command per file (FIFO queue), so parallel sub-agents do NOT increase throughput.** Sub-agents still pay off on remote for context isolation — just launch Build/Style agents serially instead of in parallel.
 
 **Available sub-agents:**
 - **Discovery** (`figma-discovery` agent) — read-only exploration, always runs serial
@@ -24,7 +24,7 @@ Sub-agents also enable **parallel execution**: multiple agents can modify differ
 - Target component set has **8+ variants**
 - Frame tree depth is unknown or likely > 4 levels
 - This is the first time seeing this Figma file in the session
-- A `get` response has `tokenEstimate > 8000` even at `detail=structure`
+- A `read` response has `tokenEstimate > 8000` even at `detail=structure`
 - You need both a full text node inventory AND a variable binding audit in the same pass
 
 **Skip it when** you already have the node IDs and structure, the target has < 20 children, or you only need one piece of info (just call the tool directly).
@@ -33,7 +33,7 @@ Sub-agents also enable **parallel execution**: multiple agents can modify differ
 - Build spec has **5+ nodes** to create or clone
 - Binding plan has **20+ variable bindings** or text style assignments
 - Work can be partitioned into **independent node subtrees** (different variants, different sections)
-- You want to parallelize to reduce wall-clock time
+- You want to parallelize to reduce wall-clock time (plugin transport only — remote serializes per file)
 
 ---
 
@@ -41,8 +41,8 @@ Sub-agents also enable **parallel execution**: multiple agents can modify differ
 
 ### Channel Setup (always do this first)
 
-1. **Orchestrator joins the channel first.** Call `join_channel` (no args) before spawning any sub-agent.
-2. **Pass the channel name explicitly** in every sub-agent prompt. Do not let sub-agents auto-discover — this avoids race conditions.
+1. **Orchestrator joins the channel first.** Call `use_file` (no args) before spawning any sub-agent.
+2. **Pass the channel name explicitly** in every sub-agent prompt. Do not let sub-agents auto-discover — this avoids race conditions. (Remote transport: there are no channels — `use_file` takes a Figma URL or fileKey; pass that same fileKey to every sub-agent.)
 3. **Check `status` first** in every sub-agent result — if `"blocked"`, surface the error to the user and stop.
 
 ### Serial Phases (must be in order)
@@ -53,12 +53,14 @@ Discovery → Planning → Building → Styling → Verification
 
 Discovery always runs alone. Planning happens in the orchestrator. Verification happens in the orchestrator.
 
-### Parallel Execution (within Building or Styling phases)
+### Parallel Execution (within Building or Styling phases — plugin transport only)
 
 The Figma plugin has concurrency control that makes parallel agent execution safe:
 - **Node-level write locks** prevent two agents from writing to the same node simultaneously
-- **Global mutex** serializes tree-mutation operations (`create`, `delete_multiple_nodes`, etc.)
+- **Global mutex** serializes tree-mutation operations (the `create`, `delete_multiple_nodes`, etc. wire commands)
 - **Concurrency cap** (max 6 in-flight operations) prevents Figma CPU budget exhaustion
+
+**Remote transport**: none of this applies — the server's per-file FIFO queue serializes every command, so parallel agents just wait in line. On remote, run Build/Style agents one at a time and keep the partitioning (it still bounds each agent's context).
 
 **Rules for parallel sub-agents:**
 
@@ -66,7 +68,7 @@ The Figma plugin has concurrency control that makes parallel agent execution saf
 2. **Don't mix phases.** Don't run a Builder and Styler in parallel — build everything first, then style everything. The Styler needs the nodes to exist before it can bind variables.
 3. **Use `run_in_background: true`** on the Agent tool to launch parallel agents. You will be notified when each completes.
 4. **All agents share one channel.** Sub-agents share the parent's MCP server and WebSocket connection. Request ID correlation handles response routing — no multi-channel needed.
-5. **Verify after parallel phases.** After all parallel agents complete, call `get(nodeId, detail="structure")` on the parent to confirm the expected structure.
+5. **Verify after parallel phases.** After all parallel agents complete, call `read(nodeId, detail="structure")` on the parent to confirm the expected structure.
 6. **Max 3 parallel agents** for build/style phases. More than 3 creates diminishing returns and risks hitting the plugin's concurrency cap (6 in-flight operations, ~2 per agent).
 
 ### Partitioning Strategies
@@ -101,7 +103,7 @@ The agent definition lives at `.claude/agents/figma-discovery.md`. It has:
 - A read-only tool set (no create/modify tools)
 - A system prompt with its full workflow and output schema
 
-**Tools available to the agent:** `join_channel`, `get`, `find`, `scan_text_nodes`, `get_local_variables`, `get_styles`, `get_local_components`, `get_design_system`. All tools are declared in the agent definition and loaded automatically — no ToolSearch needed. Note: `get_main_component` is no longer needed — `get` includes component metadata in `defs.components`.
+**Tools available to the agent:** `use_file`, `read`, `grep`, `get_local_components`, `get_design_system`. All tools are declared in the agent definition and loaded automatically — no ToolSearch needed. Note: `read` includes component metadata in `defs.components`, and `get_design_system` covers both variables and styles.
 
 ### Spawning the Agent
 
@@ -112,7 +114,7 @@ Agent(
   subagent_type: "figma-discovery",
   description: "Discover <component name> structure",
   prompt: JSON.stringify({
-    channelName: "<from your join_channel call>",
+    channelName: "<from your use_file call>",
     nodeId: "<target component set or frame ID>",
     description: "Map DataViews component set",
     include: ["text_nodes", "variables", "text_styles"],
@@ -136,7 +138,7 @@ if (discovery.status === "blocked") {
 } else {
   // discovery.component_set.variants[].id → parentId values for create/clone calls
   // discovery.component_sets_in_frame     → all component sets when target is a FRAME (pick one to deep-map)
-  // discovery.text_nodes[]                → input for apply (variables, textStyleId)
+  // discovery.text_nodes[]                → input for edit (variables, textStyleId)
   // discovery.unbound_nodes               → if >= 20, a Styler phase is needed; null = unknown
   // discovery.variables                   → sanity-check tokens are loaded
   // discovery.summary                     → user-facing status message
@@ -199,9 +201,9 @@ if (discovery.status === "blocked") {
 ```json
 {
   "status": "blocked",
-  "error": "get timed out twice",
-  "last_tool": "get",
-  "recommendation": "Call join_channel again — connection may have dropped"
+  "error": "read timed out twice",
+  "last_tool": "read",
+  "recommendation": "Call use_file again — connection may have dropped"
 }
 ```
 
@@ -218,7 +220,7 @@ Agent(
   description: "Build [description] variants",
   run_in_background: true,  // for parallel execution
   prompt: `You are a Figma Builder agent. The WebSocket channel is already joined —
-call join_channel with channelName "${channelName}" as your first action.
+call use_file with channelName "${channelName}" as your first action.
 
 YOUR ASSIGNED NODES (do NOT touch anything outside this list):
 ${JSON.stringify(assignedNodes)}
@@ -227,10 +229,10 @@ WHAT TO BUILD:
 ${buildSpec}
 
 RULES:
-- Use create for complex structures (reduces many calls to 1)
-- Use clone_node + clone_and_modify when duplicating existing patterns
-- Use create with type="INSTANCE" and componentId for reusing library parts
-- After creating nodes, verify with get(nodeId, detail="structure") that structure matches spec
+- Use write for complex structures (reduces many calls to 1)
+- Use write with fromNodeId when duplicating existing patterns
+- Use write with type="INSTANCE" and componentId for reusing library parts
+- write responses include the created structure plus a warnings block (100px balloons, FILL-not-applied, font fallback, overlaps) — act on warnings; only read(nodeId, detail="structure") back when warnings or the returned structure suggest a mismatch
 - Return JSON: {"status": "success", "created_nodes": [...ids], "summary": "..."}
 - If any tool fails twice on the same call, stop and return: {"status": "blocked", "error": "...", "last_tool": "...", "recommendation": "..."}
 `
@@ -241,7 +243,7 @@ RULES:
 
 - Multiple independent variants to create (e.g., 4 State variants each with the same structure)
 - Multiple independent component sets to build
-- Large `create` specs that don't share parent nodes
+- Large `write` specs that don't share parent nodes
 
 ### Output
 
@@ -259,9 +261,9 @@ RULES:
 
 Applies variable bindings and text styles. Uses general-purpose agent type.
 
-### Pre-flight with get
+### Pre-flight with read
 
-Before spawning Styler agents, the orchestrator can call `get(nodeId, detail="full")` on the built subtree. The FSGN `defs` section lists all variables and styles already present; `variableBindings` on each node shows what's already bound. This makes the binding plan explicit — pass it directly to the Styler via `VARIABLE BINDINGS TO APPLY`.
+Before spawning Styler agents, the orchestrator can call `read(nodeId, detail="full")` on the built subtree. The FSGN `defs` section lists all variables and styles already present; `variableBindings` on each node shows what's already bound. This makes the binding plan explicit — pass it directly to the Styler via `VARIABLE BINDINGS TO APPLY`.
 
 ### Spawning
 
@@ -270,7 +272,7 @@ Agent(
   description: "Style [description] variants",
   run_in_background: true,  // for parallel execution
   prompt: `You are a Figma Styler agent. The WebSocket channel is already joined —
-call join_channel with channelName "${channelName}" as your first action.
+call use_file with channelName "${channelName}" as your first action.
 
 YOUR ASSIGNED NODES (do NOT touch anything outside this list):
 ${JSON.stringify(assignedNodes)}
@@ -282,10 +284,10 @@ TEXT STYLE ASSIGNMENTS:
 ${JSON.stringify(textStyles)}
 
 RULES:
-- Use apply() with variables field to bind design tokens to node properties (supports flat list or nested tree)
-- Use apply() with textStyleId to apply text styles (deduplicates font loading automatically)
+- Use edit() with variables field to bind design tokens to node properties (supports flat list or nested tree)
+- Use edit() with textStyleId to apply text styles (deduplicates font loading automatically)
 - Process in order: variable bindings first, then text styles
-- After applying, verify a sample node with get(nodeId, detail="full") to confirm bindings took
+- edit responses report per-op failures and warnings (scope-mismatched binds are skipped with a warning) — act on those; spot-check ONE node with read(nodeId, detail="full") only if a result looks off
 - Return JSON: {"status": "success", "bindings_applied": N, "styles_applied": N, "summary": "..."}
 - If any tool fails twice on the same call, stop and return blocked status
 `
@@ -333,31 +335,31 @@ The orchestrator prepares a binding plan from Discovery output and passes it to 
 ```
 TIME    ORCHESTRATOR              BUILDER-A             BUILDER-B
 ─────   ────────────              ─────────             ─────────
-0:00    join_channel
+0:00    use_file
 0:01    → Discovery agent
 0:03    ← discovery JSON
 0:04    Plan: partition by State
-0:05    → Builder A (Loading)     create ──►
-0:05    → Builder B (Empty)                             create ──►
+0:05    → Builder A (Loading)     write ──►
+0:05    → Builder B (Empty)                             write ──►
         [both run_in_background]
 0:07                              ◄── done              ◄── done
 0:08    verify structure
 
 TIME    ORCHESTRATOR              STYLER-A              STYLER-B
 ─────   ────────────              ────────              ────────
-0:09    → Styler A (Loading)      batch_bind ──►
-0:09    → Styler B (Empty)                              batch_bind ──►
+0:09    → Styler A (Loading)      edit ──►
+0:09    → Styler B (Empty)                              edit ──►
         [both run_in_background]
 0:11                              ◄── done              ◄── done
 0:12    verify bindings
 0:13    Report to user
 ```
 
-**Estimated speedup:** For a 16-variant component set with 130+ variable bindings:
+**Estimated speedup (plugin transport):** For a 16-variant component set with 130+ variable bindings:
 - Serial: ~36 minutes
 - Parallel (3 agents): ~19 minutes (~1.9x speedup)
 
-The speedup scales with workload size. Design system builds with 50+ components see larger gains because build and style phases dominate.
+The speedup scales with workload size. Design system builds with 50+ components see larger gains because build and style phases dominate. On the remote transport expect NO parallel speedup (per-file FIFO) — the win there is fewer calls per task and context isolation.
 
 ---
 

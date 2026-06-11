@@ -196,7 +196,7 @@ Calculate these standard metrics from the extracted events:
 - **Total events**: count of all events
 - **Total tool calls**: use `metadata.toolCallCount` or count `tool_use` content blocks
 - **Total errors**: count `tool_result` blocks where `is_error: true`
-- **Reconnections**: count `tool_use` blocks where `name` is `join_channel` (subtract 1 for initial join)
+- **Reconnections**: count `tool_use` blocks where `name` is `use_file` (`join_channel` in pre-rename sessions; subtract 1 for initial join)
 - **Context overflows**: detect by looking for continuation summaries or session restart markers
 - **Phases completed**: identify distinct work phases from the transcript
 
@@ -205,7 +205,7 @@ For each unique tool name:
 - Count total invocations
 - Note patterns:
   - "no batch version" if >20 sequential calls to same tool
-  - "N redundant re-inspections" if same node ID appears in multiple `get` calls
+  - "N redundant re-inspections" if same node ID appears in multiple `read` (legacy `get`) calls
   - "N failed" if error count > 0
 
 ### Error Extraction
@@ -217,9 +217,9 @@ For each unique tool name:
 
 1. **Sequential same-tool runs**: 5+ consecutive calls to the same tool → batch candidate. Record: tool name, run length, what a batch version would look like.
 
-2. **Inspect-after-create**: `create` or `clone_node` immediately followed by `get` on the created node → indicates create response should be richer. Count occurrences.
+2. **Inspect-after-create**: `write` (legacy `create`/`clone_node`) immediately followed by `read` on the created node → indicates the create response should be richer. Count occurrences.
 
-3. **Delete-recreate cycles**: `delete_node`/`delete_multiple_nodes` followed by `create` for the same purpose → indicates missing modify capability or wrong initial approach.
+3. **Delete-recreate cycles**: `edit` delete ops (legacy `delete_node`/`delete_multiple_nodes`) followed by `write` for the same purpose → indicates missing modify capability or wrong initial approach.
 
 4. **ToolSearch overhead**: total ToolSearch calls, percentage of all calls, failed searches (found wrong tools or 0 results).
 
@@ -381,7 +381,7 @@ Only generate plans for these well-understood patterns:
 
 #### `missing-batch-tool`
 - **Trigger**: Single-item tool called 20+ times consecutively
-- **Fix**: Create batch variant following existing patterns (`set_multiple_text_contents`, `delete_multiple_nodes`)
+- **Fix**: Create batch variant following existing patterns (multi-node `edit` ops, `set_multiple_annotations`)
 - **Plan content**: Tool specification (name, parameters, behavior) for use with `/add-mcp-tool` skill. Include the proposed JSON input format based on observed usage patterns.
 
 ### Plan Format

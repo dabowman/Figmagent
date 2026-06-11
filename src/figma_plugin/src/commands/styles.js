@@ -1,7 +1,20 @@
 // Styles commands: getStyles, getLocalVariables, getLocalComponents,
 // getDesignSystem, createVariables, updateVariables, createStyles, updateStyles
 
-import { sendProgressUpdate } from "../helpers.js";
+import { sendProgressUpdate, prop, fail } from "../helpers.js";
+
+// Load a font for a text style, converting Figma's opaque load error into one
+// that names the exact fontFamily/fontStyle pair to pass.
+async function loadFontOrFail(family, style) {
+  try {
+    await figma.loadFontAsync({ family: family, style: style });
+  } catch (_fontErr) {
+    fail(
+      "Font load failed for fontFamily '" + family + "' fontStyle '" + style + "'",
+      "pass a fontFamily/fontStyle pair that exists exactly as Figma lists it (e.g. fontFamily: 'Inter', fontStyle: 'Semi Bold' — not 'SemiBold' or a weight number)",
+    );
+  }
+}
 
 // Coerce a lineHeight value into Figma's { value, unit } format.
 // - "AUTO" → { unit: "AUTO" }
@@ -39,7 +52,7 @@ function coerceLetterSpacing(val) {
 // Extract bound variable IDs from a style's boundVariables property.
 // Returns a flat map { field: "VariableID:xxx" } or undefined if none bound.
 function extractBoundVariables(style) {
-  const bv = style.boundVariables;
+  const bv = prop(style, "boundVariables");
   if (!bv) return undefined;
 
   const result = {};
@@ -396,8 +409,9 @@ export async function createVariables(params) {
         const validForType = VALID_SCOPES[resolvedType] || VALID_SCOPES.COLOR;
         for (let s = 0; s < spec.scopes.length; s++) {
           if (validForType.indexOf(spec.scopes[s]) === -1) {
-            throw new Error(
-              "Invalid scope '" + spec.scopes[s] + "' for type " + resolvedType + ". Valid: " + validForType.join(", "),
+            fail(
+              "Invalid scope '" + spec.scopes[s] + "' for type " + resolvedType,
+              "use one of: " + validForType.join(", "),
             );
           }
         }
@@ -712,7 +726,7 @@ export async function createStyles(params) {
         // Load and set font
         const family = spec.fontFamily || "Inter";
         const fontStyle = spec.fontStyle || "Regular";
-        await figma.loadFontAsync({ family: family, style: fontStyle });
+        await loadFontOrFail(family, fontStyle);
         style.fontName = { family: family, style: fontStyle };
 
         if (spec.fontSize !== undefined) {
@@ -860,7 +874,7 @@ export async function updateStyles(params) {
         if (update.fontFamily !== undefined || update.fontStyle !== undefined) {
           const family = update.fontFamily || style.fontName.family;
           const fStyle = update.fontStyle || style.fontName.style;
-          await figma.loadFontAsync({ family: family, style: fStyle });
+          await loadFontOrFail(family, fStyle);
           style.fontName = { family: family, style: fStyle };
         }
         if (update.fontSize !== undefined) {

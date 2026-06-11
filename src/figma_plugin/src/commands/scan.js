@@ -1,6 +1,6 @@
 // Scan commands: scanTextNodes, scanNodesByTypes, annotations
 
-import { sendProgressUpdate, generateCommandId, delay } from "../helpers.js";
+import { sendProgressUpdate, generateCommandId, delay, prop } from "../helpers.js";
 
 export async function scanTextNodes(params) {
   console.log(`Starting to scan text nodes from node ID: ${params.nodeId}`);
@@ -187,7 +187,7 @@ export async function scanTextNodes(params) {
 }
 
 async function collectNodesToProcess(node, parentPath, depth, nodesToProcess) {
-  if (node.visible === false) return;
+  if (prop(node, "visible") === false) return;
 
   const nodePath = [...parentPath, node.name || `Unnamed ${node.type}`];
 
@@ -274,7 +274,7 @@ async function processTextNode(node, parentPath, depth) {
 }
 
 async function findTextNodes(node, parentPath, depth, textNodes) {
-  if (node.visible === false) return;
+  if (prop(node, "visible") === false) return;
 
   const nodePath = [...parentPath, node.name || `Unnamed ${node.type}`];
 
@@ -370,18 +370,22 @@ export async function scanNodesByTypes(params) {
 }
 
 async function findNodesByTypes(node, types, matchingNodes) {
-  if (node.visible === false) return;
+  if (prop(node, "visible") === false) return;
 
   if (types.includes(node.type)) {
+    const x = prop(node, "x");
+    const y = prop(node, "y");
+    const width = prop(node, "width");
+    const height = prop(node, "height");
     matchingNodes.push({
       id: node.id,
       name: node.name || `Unnamed ${node.type}`,
       type: node.type,
       bbox: {
-        x: typeof node.x === "number" ? node.x : 0,
-        y: typeof node.y === "number" ? node.y : 0,
-        width: typeof node.width === "number" ? node.width : 0,
-        height: typeof node.height === "number" ? node.height : 0,
+        x: typeof x === "number" ? x : 0,
+        y: typeof y === "number" ? y : 0,
+        width: typeof width === "number" ? width : 0,
+        height: typeof height === "number" ? height : 0,
       },
     });
   }
@@ -423,7 +427,11 @@ export async function getAnnotations(params) {
         if ("annotations" in n && n.annotations && n.annotations.length > 0) {
           for (let idx = 0; idx < n.annotations.length; idx++) {
             const a = n.annotations[idx];
-            mergedAnnotations.push({ nodeId: n.id, nodeName: n.name, annotation: Object.assign({ annotationIndex: idx }, a) });
+            mergedAnnotations.push({
+              nodeId: n.id,
+              nodeName: n.name,
+              annotation: Object.assign({ annotationIndex: idx }, a),
+            });
           }
         }
         if ("children" in n) {

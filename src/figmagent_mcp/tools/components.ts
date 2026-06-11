@@ -99,7 +99,7 @@ server.tool(
 // Component Properties Tool — batch add/edit/delete property definitions
 server.tool(
   "component_properties",
-  `Batch add, edit, delete, and bind property definitions on a COMPONENT or COMPONENT_SET. Use get(nodeId, detail="layout") to discover existing property definitions first (componentPropertyDefinitions is included in FSGN output). Child nodes that are wired to properties show componentPropertyReferences in FSGN output.
+  `Batch add, edit, delete, and bind property definitions on a COMPONENT or COMPONENT_SET. Use read(nodeId, detail="layout") to discover existing property definitions first (componentPropertyDefinitions is included in FSGN output). Child nodes that are wired to properties show componentPropertyReferences in FSGN output.
 
 Operations:
   - add: Create a new property. Requires name, type (BOOLEAN/TEXT/INSTANCE_SWAP/VARIANT), defaultValue. Optional: targetNodeId to auto-bind the property to a child node (auto-detects field from type: BOOLEAN→visible, TEXT→characters, INSTANCE_SWAP→mainComponent). Optional: targetField to override auto-detection. Optional: preferredValues for INSTANCE_SWAP.
