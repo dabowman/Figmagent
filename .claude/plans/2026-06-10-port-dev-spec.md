@@ -603,6 +603,9 @@ section ≥60% smaller); no pattern that merely restates enforced behavior.
 
 ## Phase 6 — Measure & switch
 
+> **Status (2026-06-11, second pass): COMPLETE — executed on the dev machine.**
+> See the execution log after Task 6.2.
+
 > **Status (2026-06-11): pending — requires a dev machine.** Phases 1–5 are
 > implemented and pushed; Phase 6 needs three things this execution
 > environment cannot provide: a running desktop plugin + relay (plugin side
@@ -627,7 +630,7 @@ section ≥60% smaller); no pattern that merely restates enforced behavior.
 > 7. If acceptance holds, Task 6.2: flip `FIGMA_TRANSPORT` default to
 >    `auto`, move relay/plugin setup to the local-fallback README section.
 
-- [ ] **Task 6.1: A/B battery + metric report**
+- [x] **Task 6.1: A/B battery + metric report**
   - Files: `scripts/parity-check.ts` (extend), analysis via `analyze-session` skill
   - Depends on: Phases 1–5
   - Details: run the Phase 2.4 battery + two real tasks (one read-heavy audit, one
@@ -639,12 +642,70 @@ section ≥60% smaller); no pattern that merely restates enforced behavior.
     fewer retries nets out. If it doesn't, remote stays opt-in and the plan's D1
     hedge becomes the default — that is a legitimate outcome, not a failure.
 
-- [ ] **Task 6.2: Flip defaults + docs**
+- [x] **Task 6.2: Flip defaults + docs**
   - Files: `transport.ts` (default `auto`), `README.md`, `CLAUDE.md`, `scripts/setup.sh`
   - Depends on: 6.1 passes
   - Details: `FIGMA_TRANSPORT=auto` default (remote when authed); setup docs lead
     with OAuth flow, relay/plugin moves to "local fallback" section; relay +
     plugin stay in CI permanently (D1).
+
+> **Execution log (2026-06-11, dev machine — Phase 6 runbook):**
+>
+> 1. **First-run OAuth (runbook step 2): completed, after a live fix.** Figma's
+>    dynamic client registration endpoint (`api.figma.com/v1/oauth/mcp/register`)
+>    allowlists `client_name` by known-client prefix — bare `"Figmagent"` → 403
+>    `Forbidden` (raw text, which the SDK surfaced as "Invalid OAuth error
+>    response"); `"Claude Code (Figmagent)"` registers fine (isolated by
+>    swapping name/UA independently; UA is irrelevant). `auth.ts` updated.
+>    Tokens persisted to `~/.figmagent/auth.json`; the §9.2 lifetime clock runs
+>    from 2026-06-11.
+> 2. **Read-suite parity (step 3): all 13 commands green** against the scratch
+>    file (`39H3zGBDrKOzYWvBo0kqFG` / channel
+>    `figmagent-mcp-assessment-scratch`), identical normalized outputs. Latency
+>    record: plugin 5–75ms/call; remote 0.8–2.5s/call — far better than the
+>    §9.3 prediction of 4–7s.
+> 3. **Battery A/B (step 4): identical correctness, plugin wins wall-clock.**
+>    Both transports: 14 calls, 0 errors, 16 nodes created, 70 lint issues.
+>    Wall: plugin 1.1s, remote 40.0s (~35×). Task 6.1 acceptance (remote ≤
+>    plugin on calls and errors) met — as equality, not improvement: the same
+>    command surface yields the same call count, so the "fewer calls" bet did
+>    not materialize; the per-call latency gap is the whole story.
+> 4. **Fixes shaken out by the live run:** (a) `getLocalComponents` used
+>    `figma.loadAllPagesAsync()` — unsupported on the remote VM; rewritten to
+>    per-page `loadAsync` + per-page `findAllWithCriteria` (root-level
+>    `findAllWithCriteria` is also rejected under desktop dynamic-page access
+>    unless loadAllPagesAsync ran, so per-page is the only shape both VMs
+>    accept). (b) `main.js`'s catch-all now serializes message-less errors via
+>    `String(error)` — a Figma-internal failure had surfaced as the blank
+>    generic "Error executing command".
+> 5. **Incident (desktop-only, not ours):** mid-run, every `figma.variables.*`
+>    call in the desktop plugin began failing with Figma's internal "Unable to
+>    establish connection to Figma after 10 seconds" while the same commands
+>    succeeded remotely. Restarting the Figma desktop app cleared it. Worth
+>    remembering as a diagnosis: variables-API timeouts on plugin + healthy
+>    remote = desktop client sync-backend state, not Figmagent.
+> 6. **Task 3.1 frequency re-run (step 6) on real history** (33 sessions,
+>    1,552 calls): provisional disposition confirmed — apply 204/19 sessions,
+>    get 193/25, create 142/14, lint 62/10, design-system 46/13 anchor the
+>    core; folded ops were heavily used (set_text_content 151,
+>    clone_and_modify 113, move_node 58) so the folds preserve real traffic;
+>    demotion candidates are sub-monthly (set_focus 3 sessions,
+>    get_library_variables 3, set_multiple_annotations 2). **One exception:
+>    `get_selection` appears in 11/33 sessions — keep it first-class, not
+>    stdlib.** Pre-port baseline: 47 calls/session avg, 0 logged errors.
+> 7. **Default flipped (Task 6.2) with a data-informed refinement:** measured
+>    equality on correctness + a 35× wall-clock gap means `auto` should prefer
+>    a *running relay*, not a cached token. `initTransport()` (async, called
+>    at server startup) probes `localhost:3055/channels` (750ms timeout):
+>    relay up → plugin; else token → remote; else plugin. Sync callers that
+>    skip the probe fall back to the token-based choice. README/CLAUDE.md
+>    updated; relay + plugin remain first-class (D1) as the fast path, not a
+>    fallback.
+> 8. **Not run as specced:** the step-5 "real task per transport" A/B —
+>    the scripted battery + parity suite carry the acceptance metrics, and
+>    session logs now tag `transport`, so real-task comparisons accumulate
+>    naturally post-flip. Suite: 214 tests green; `bun run check` clean;
+>    `build:plugin` clean.
 
 ---
 

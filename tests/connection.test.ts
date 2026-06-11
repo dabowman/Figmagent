@@ -14,6 +14,11 @@ const PORT = 3057;
 const BUN = process.execPath;
 let relayProcess: Subprocess;
 
+// These tests exercise the plugin/WebSocket path through sendCommandToFigma —
+// pin the transport so auto mode can't lazily resolve to remote when a cached
+// OAuth token exists on the machine running the tests.
+process.env.FIGMA_TRANSPORT = "plugin";
+
 beforeAll(async () => {
   relayProcess = Bun.spawn([BUN, "run", "src/socket.ts"], {
     env: { ...process.env, PORT: String(PORT) },

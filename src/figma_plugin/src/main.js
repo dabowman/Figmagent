@@ -106,10 +106,12 @@ async function routeCommand(id, command, params) {
       result: sanitizeSymbols(result),
     });
   } catch (error) {
+    // Figma APIs sometimes reject with plain strings or message-less objects —
+    // String(error) preserves whatever detail exists instead of a blank generic.
     figma.ui.postMessage({
       type: "command-error",
       id: id,
-      error: error.message || "Error executing command",
+      error: (error && error.message) || String(error) || "Error executing command",
     });
   } finally {
     releaseSlot();

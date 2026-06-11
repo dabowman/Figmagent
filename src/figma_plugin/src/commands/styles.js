@@ -177,17 +177,29 @@ export async function getLocalVariables() {
 }
 
 export async function getLocalComponents() {
-  await figma.loadAllPagesAsync();
-
-  const componentSets = figma.root.findAllWithCriteria({
-    types: ["COMPONENT_SET"],
-  });
-
-  const standaloneComponents = figma.root
-    .findAllWithCriteria({
-      types: ["COMPONENT"],
-    })
-    .filter((c) => !c.parent || c.parent.type !== "COMPONENT_SET");
+  // Per-page loadAsync + per-page findAllWithCriteria (same pattern as
+  // find.js / lint.js): the remote use_figma VM has no loadAllPagesAsync,
+  // and desktop dynamic-page access rejects root-level findAllWithCriteria
+  // unless loadAllPagesAsync was called — per-page traversal satisfies both.
+  const pages = figma.root.children;
+  const componentSets = [];
+  const standaloneComponents = [];
+  for (let i = 0; i < pages.length; i++) {
+    const page = pages[i];
+    if (typeof page.loadAsync === "function") {
+      await page.loadAsync();
+    }
+    const sets = page.findAllWithCriteria({ types: ["COMPONENT_SET"] });
+    for (let j = 0; j < sets.length; j++) {
+      componentSets.push(sets[j]);
+    }
+    const components = page.findAllWithCriteria({ types: ["COMPONENT"] });
+    for (let j = 0; j < components.length; j++) {
+      if (!components[j].parent || components[j].parent.type !== "COMPONENT_SET") {
+        standaloneComponents.push(components[j]);
+      }
+    }
+  }
 
   const results = [];
 

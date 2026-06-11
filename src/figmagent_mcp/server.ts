@@ -3,7 +3,7 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { logger } from "./utils.js";
 import { connectToFigma } from "./connection.js";
-import { getTransport } from "./transport.js";
+import { initTransport } from "./transport.js";
 import { server } from "./instance.js";
 
 // Re-export for backwards compatibility
@@ -28,8 +28,10 @@ import "./prompts/index.js";
 
 // Start the server
 async function main() {
+  // Select the transport once at startup (auto mode probes the relay).
+  const transportImpl = await initTransport();
   // The websocket relay connection only exists on the plugin transport.
-  if (getTransport().name === "plugin") {
+  if (transportImpl.name === "plugin") {
     try {
       // Try to connect to Figma socket server
       connectToFigma();

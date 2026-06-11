@@ -1,19 +1,24 @@
 # Figmagent MCP
 
-MCP server that bridges AI agents (Claude Code, Cursor) with Figma through a WebSocket relay and Figma plugin. Originally forked from [sonnylazuardi/cursor-talk-to-figma-mcp](https://github.com/sonnylazuardi/cursor-talk-to-figma-mcp), now a standalone project with significant additions: structured tree inspection (FSGN), design token binding, batch operations, component property management, design linting, library access, file comments, plugin concurrency control, and sub-agent orchestration.
+MCP server that bridges AI agents (Claude Code, Cursor) with Figma. Originally forked from [sonnylazuardi/cursor-talk-to-figma-mcp](https://github.com/sonnylazuardi/cursor-talk-to-figma-mcp), now a standalone project with significant additions: structured tree inspection (FSGN), design token binding, batch operations, component property management, design linting, library access, file comments, plugin concurrency control, and sub-agent orchestration.
+
+Two transports share one command implementation:
 
 ```
-AI Agent <-(stdio)-> MCP Server <-(WebSocket)-> Relay <-(WebSocket)-> Figma Plugin
+plugin:  AI Agent <-(stdio)-> MCP Server <-(WebSocket)-> Relay <-(WebSocket)-> Figma Plugin
+remote:  AI Agent <-(stdio)-> MCP Server <-(HTTPS/OAuth)-> Figma official MCP (use_figma)
 ```
+
+The default `FIGMA_TRANSPORT=auto` picks the plugin path when the local relay is running (fastest: ~10–75ms/command) and falls back to the remote path when you're authed with Figma (headless, no relay, no plugin, no open Figma client; ~1–2.5s/command, atomic scripts). Both transports passed a full read-parity and build A/B with identical outputs, call counts, and error counts.
 
 ## Setup
 
 ### Prerequisites
 
 - [Bun](https://bun.sh) runtime
-- Figma desktop app
+- Figma desktop app (plugin transport only)
 
-### Quick Start
+### Quick Start (remote transport — no relay, no plugin)
 
 1. Install dependencies and configure MCP:
 
@@ -23,15 +28,21 @@ bun setup
 
 This writes MCP config for both Cursor (`.cursor/mcp.json`) and Claude Code (`.mcp.json`).
 
-2. Start the WebSocket relay in a separate terminal:
+2. Issue any Figma tool call. On first run the server prints an OAuth URL to stderr (and opens your browser) — approve, and tokens persist to `~/.figmagent/auth.json`. Select a file by passing a Figma URL to `use_file` or setting `FIGMA_FILE_KEY`.
+
+### Plugin transport (fastest — local relay + Figma plugin)
+
+When per-command latency matters (large interactive sessions, parallel sub-agents), run the local path; `auto` prefers it whenever the relay is up:
+
+1. Start the WebSocket relay in a separate terminal:
 
 ```bash
 bun socket
 ```
 
-3. In Figma: Plugins > Development > Link existing plugin > select `src/figma_plugin/manifest.json`
+2. In Figma: Plugins > Development > Link existing plugin > select `src/figma_plugin/manifest.json`
 
-4. Run the plugin in Figma and click Connect. The MCP server auto-joins on the first tool call.
+3. Run the plugin in Figma and click Connect. The MCP server auto-joins on the first tool call.
 
 ### Claude Code Setup
 
@@ -60,19 +71,19 @@ Add to your MCP configuration:
 
 Uncomment the `hostname: "0.0.0.0"` line in `src/socket.ts` to allow connections from the Windows host.
 
-### Remote transport (experimental)
+### Transport selection
 
-Figmagent can run against Figma's official MCP server (`mcp.figma.com`) instead of the relay + plugin: headless, no Figma client open, commands compile to atomic `use_figma` scripts. Select the transport with the `FIGMA_TRANSPORT` env var on the MCP server process:
+Select with the `FIGMA_TRANSPORT` env var on the MCP server process:
 
-- `plugin` (default) — local relay + Figma plugin
-- `remote` — official MCP; full read + write command surface, atomic per-script execution (a failed write rolls back entirely; oversized `write` payloads are chunked at depth-1 with a per-chunk rollback note)
-- `auto` — remote when a cached OAuth token exists (`~/.figmagent/auth.json`), plugin otherwise
+- `auto` (default) — plugin when the local relay is reachable, otherwise remote when a cached OAuth token exists (`~/.figmagent/auth.json`), otherwise plugin
+- `plugin` — local relay + Figma plugin, always
+- `remote` — Figma's official MCP (`mcp.figma.com`), always; full read + write command surface, atomic per-script execution (a failed write rolls back entirely; oversized `write` payloads are chunked at depth-1 with a per-chunk rollback note)
 
 **First-run OAuth:** on the first remote command the server prints an authorization URL to stderr (and tries to open your browser), then waits up to 5 minutes for the redirect on a local loopback port. Approve in the browser; tokens are saved to `~/.figmagent/auth.json` (0600) and refreshed automatically. Headless machines: open the printed URL anywhere, then complete the redirect from a browser that can reach `127.0.0.1` on that machine.
 
 **Selecting a file:** the remote transport has no channels. Pass a Figma file URL (or bare fileKey) to `use_file`, or set `FIGMA_FILE_KEY`. Override the endpoint with `FIGMA_MCP_URL` if needed.
 
-**Parity harness:** `bun scripts/parity-check.ts --file <figmaUrl> [--channel <relayChannel>]` runs the read suite (add `--battery` for the representative 8-variant build A/B) on both transports against the same file, diffs normalized outputs, and prints per-command latency. Expect ~4–7s/call overhead on remote — it wins on calls-per-task, not per-call speed.
+**Parity harness:** `bun scripts/parity-check.ts --file <figmaUrl> [--channel <relayChannel>]` runs the read suite (add `--battery` for the representative 8-variant build A/B) on both transports against the same file, diffs normalized outputs, and prints per-command latency. Measured (2026-06-11, 13-command suite + battery): identical outputs and call counts on both transports; remote ~0.8–2.5s/call vs plugin ~5–75ms/call — remote trades per-call speed for zero local setup and atomic rollback.
 
 ## Tools (39)
 

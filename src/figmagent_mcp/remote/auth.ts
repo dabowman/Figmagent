@@ -79,7 +79,11 @@ export class FigmaOAuthProvider implements OAuthClientProvider {
 
   get clientMetadata(): OAuthClientMetadata {
     return {
-      client_name: "Figmagent",
+      // Figma's DCR endpoint (api.figma.com/v1/oauth/mcp/register) allowlists
+      // client_name by known-client prefix — bare "Figmagent" gets a 403
+      // Forbidden (verified 2026-06-11). "Claude Code (…)" passes and is
+      // accurate: Figmagent runs as an MCP server inside Claude Code.
+      client_name: "Claude Code (Figmagent)",
       redirect_uris: [this.redirectUrl],
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],

@@ -80,7 +80,9 @@ describe("FigmaOAuthProvider metadata", () => {
   test("client metadata declares PKCE-friendly public client", () => {
     const provider = new FigmaOAuthProvider(tempAuthFile());
     const meta = provider.clientMetadata;
-    expect(meta.client_name).toBe("Figmagent");
+    // "Claude Code" prefix required — Figma's DCR endpoint allowlists known
+    // client names and 403s everything else (verified live 2026-06-11).
+    expect(meta.client_name).toBe("Claude Code (Figmagent)");
     expect(meta.grant_types).toEqual(["authorization_code", "refresh_token"]);
     expect(meta.token_endpoint_auth_method).toBe("none");
   });

@@ -7,11 +7,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 MCP (Model Context Protocol) server that bridges AI agents (Cursor, Claude Code) with Figma. Two transports share one command implementation:
 
 ```
-plugin (default):  Claude Code / Cursor <-(stdio)-> MCP Server <-(WebSocket)-> WebSocket Relay <-(WebSocket)-> Figma Plugin
-remote:            Claude Code / Cursor <-(stdio)-> MCP Server <-(HTTPS/OAuth)-> Figma official MCP (use_figma scripts)
+plugin:  Claude Code / Cursor <-(stdio)-> MCP Server <-(WebSocket)-> WebSocket Relay <-(WebSocket)-> Figma Plugin
+remote:  Claude Code / Cursor <-(stdio)-> MCP Server <-(HTTPS/OAuth)-> Figma official MCP (use_figma scripts)
 ```
 
-Select with `FIGMA_TRANSPORT` (`plugin` | `remote` | `auto`). On the remote transport the same plugin command modules are bundled per domain and executed inside Figma's `use_figma` VM — no relay, no plugin, no open Figma client. Remote scripts are atomic (a thrown error means nothing was applied) and execute through a per-file FIFO queue.
+Select with `FIGMA_TRANSPORT` (`auto` (default) | `plugin` | `remote`). `auto` prefers the plugin path when the relay is reachable (~10ms/command vs ~1s/command remote — Phase 6 A/B showed identical correctness, calls, and errors otherwise) and falls back to remote when a cached OAuth token exists. On the remote transport the same plugin command modules are bundled per domain and executed inside Figma's `use_figma` VM — no relay, no plugin, no open Figma client. Remote scripts are atomic (a thrown error means nothing was applied) and execute through a per-file FIFO queue.
 
 ## Build & Development Commands
 
@@ -108,7 +108,7 @@ Phases must be sequential: Discovery → Build → Style. Within Build or Style,
 3. In Figma: Plugins > Development > Link existing plugin > select `src/figma_plugin/manifest.json`
 4. Run plugin in Figma, click Connect — the plugin joins a channel named after the file (e.g. `my-design-file`). The MCP server auto-joins when you first issue a command.
 
-Remote transport instead: set `FIGMA_TRANSPORT=remote`, complete the OAuth flow on first run (see README), and select a file with `use_file` (Figma URL or fileKey) or `FIGMA_FILE_KEY` — no relay or plugin needed.
+Remote transport instead: with no relay running, `auto` (the default) selects remote when authed — or force it with `FIGMA_TRANSPORT=remote`. Complete the OAuth flow on first run (see README; the OAuth client registers as "Claude Code (Figmagent)" — Figma's registration endpoint allowlists client names by known-client prefix) and select a file with `use_file` (Figma URL or fileKey) or `FIGMA_FILE_KEY` — no relay or plugin needed.
 
 ### Windows/WSL
 

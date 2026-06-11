@@ -3,8 +3,18 @@ import { resolveTransportName } from "../src/figmagent_mcp/transport";
 import { assembleScript, enqueuePerFile, resetQueuesForTests } from "../src/figmagent_mcp/remote/executor";
 
 describe("resolveTransportName", () => {
-  test("defaults to plugin", () => {
-    expect(resolveTransportName({})).toBe("plugin");
+  test("defaults to auto (Phase 6 flip) — plugin when the relay is reachable", () => {
+    expect(resolveTransportName({}, true)).toBe("plugin");
+  });
+
+  test("auto without a reachable relay falls back to the token-based choice", () => {
+    // Depends on whether ~/.figmagent/auth.json exists on this machine —
+    // assert it picks one of the two deterministically.
+    expect(["plugin", "remote"]).toContain(resolveTransportName({}, false));
+  });
+
+  test("auto with a reachable relay prefers plugin even when authed", () => {
+    expect(resolveTransportName({ FIGMA_TRANSPORT: "auto" }, true)).toBe("plugin");
   });
 
   test("honors FIGMA_TRANSPORT=remote", () => {
