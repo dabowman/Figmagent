@@ -4,90 +4,65 @@ Use this skill when adding new tools or commands that let AI agents control Figm
 
 ## Architecture Overview
 
-Three components form a pipeline. The relay and plugin UI are generic routers — adding a new tool only touches the two endpoints:
+One command implementation serves two transports. The relay and plugin UI are generic routers — adding a new tool never touches them:
 
 ```
-MCP Server (server.ts) ←WebSocket→ Relay (socket.ts) ←WebSocket→ Plugin UI (ui.html) ←postMessage→ Plugin Code (code.js)
+plugin:  MCP Server (tools/*.ts) ←WS→ Relay (socket.ts) ←WS→ Plugin UI (ui.html) ←postMessage→ code.js (registry dispatch)
+remote:  MCP Server (tools/*.ts) → remote/executor.ts → per-domain bundle of the same command modules → Figma's use_figma VM
 ```
 
-**Files you MUST edit:**
-1. `src/figmagent_mcp/tools/<domain>.ts` — tool registration (e.g., `modify.ts`, `components.ts`, `create.ts`)
-2. `src/figmagent_mcp/types.ts` — add command name to `FigmaCommand` union type
-3. `src/figma_plugin/code.js` — command case in `handleCommand` switch + handler function
+MCP tool names (first arg of `server.tool`) are **decoupled from wire command names** — e.g. the `edit` tool sends the `apply` wire command. Pick an agent-facing tool name freely; the wire command name is permanent protocol (it never changes after shipping — renames happen at the MCP layer only).
 
-**Files you do NOT edit** (generic message routers):
-- `src/socket.ts` — relay, just broadcasts messages within channels
-- `src/figma_plugin/ui.html` — forwards commands/results between WebSocket and code.js
+**Before adding a tool, check it's needed**: `write`/`edit` already cover most node creation/mutation, `grep`/`read` cover search/reads, and `run_script` is the escape hatch for one-offs. New first-class tools should come from recurring needs (recurring `run_script` scripts in session logs are the roadmap).
+
+## Files to edit for a new wire command (the checklist that tests enforce)
+
+1. `src/figma_plugin/src/commands/<domain>.js` — the handler function. Takes a single `params` object, returns a JSON-serializable result. Runs in BOTH Figma VMs (see constraints below).
+2. `src/figma_plugin/src/registry/<domain>.js` — registry entry:
+   ```js
+   my_command: { lock: "read", handler: (params) => myCommand(params) },
+   ```
+   `lock` is the concurrency class: `"read"` (runs freely), `"global"` (serialized via global mutex — tree mutations, batch writes), `"node"` (locks by `params.nodeId` — single-node writes). The registry is the single source of truth; `main.js` dispatches from it and the remote entry shim (`src/figma_plugin/src/remote_entries/<domain>.js`) picks the new command up **automatically** — do not edit the shim.
+3. `src/figmagent_mcp/remote/domains.ts` — add the command to `COMMAND_DOMAINS` (command → bundle domain). If it's a pure read, also add it to `REMOTE_READ_COMMANDS` (controls the atomic-retry suffix on remote errors).
+4. `src/figmagent_mcp/types.ts` — add the wire name to the `FigmaCommand` union.
+5. `tests/registry.test.ts` — add the wire name to `EXPECTED_COMMANDS`, and to `EXPECTED_READ` or `EXPECTED_GLOBAL` if its lock is `read`/`global` (anything not in those lists must be `node`). This test also asserts `COMMAND_DOMAINS` mirrors the registry — steps 2/3/5 fail loudly if they drift.
+6. `src/figmagent_mcp/tools/<domain>.ts` — the MCP tool registration (or extend an existing tool's schema — folding an op into `edit`/`write` is often better than a new tool).
+7. Run `bun run build:plugin` (regenerates `code.js`), `bun test`, `bun run check`.
+
+**Files you do NOT edit**: `src/socket.ts` (relay), `src/figma_plugin/ui.html` (forwarder), `src/figma_plugin/src/remote_entries/<domain>.js` (auto-derived from the registry), `src/figma_plugin/code.js` (build artifact — never hand-edit).
+
+New domain instead of new command? Also create `src/figma_plugin/src/registry/<newdomain>.js` + `src/figma_plugin/src/remote_entries/<newdomain>.js` (copy an existing shim, swap the import), register the domain in `src/figma_plugin/src/registry.js` (`DOMAINS`), and keep the bundle under 40KB (asserted in tests).
 
 ## Request/Response Lifecycle
 
-When an AI agent calls a tool:
+Plugin transport:
+1. **tools/<domain>.ts** handler calls `sendCommandToFigma(wireCommand, params)` (from `../connection.js`)
+2. A UUID is generated, stored in `pendingRequests` with resolve/reject callbacks and a 30s timeout (extended when progress updates arrive)
+3. Message → relay → plugin UI → `code.js`, which looks the command up in the registry, acquires the lock, runs the handler
+4. Result (sanitized of `figma.mixed` symbols) flows back and resolves the promise by UUID
 
-1. **tools/<domain>.ts** handler calls `sendCommandToFigma(commandName, params)`
-2. A UUID is generated, stored in `pendingRequests` Map with resolve/reject callbacks and a 30s timeout (extended to 60s when progress updates are received)
-3. Message sent over WebSocket: `{ id, type: "message", channel, message: { id, command, params } }`
-4. **Relay** broadcasts to all other clients in the same channel
-5. **Plugin UI** receives, forwards to code.js via `parent.postMessage({ pluginMessage: { type: "execute-command", id, command, params } })`
-6. **code.js** `figma.ui.onmessage` handler dispatches to `handleCommand(command, params)`
-7. `handleCommand` switch matches the command string and calls the handler function
-8. Handler executes against `figma.*` APIs, returns a result object
-9. Result flows back: `figma.ui.postMessage({ type: "command-result", id, result })` → UI → WebSocket → relay → server.ts
-10. **connection.ts** matches the response UUID to `pendingRequests`, resolves the promise
+Remote transport: the same `sendCommandToFigma` call routes through `remote/executor.ts`, which prepends the domain's bundled IIFE, injects `params` as JSON, awaits `globalThis.__figmagent.<command>(params)` inside one `use_figma` script, and returns the JSON result. Scripts are atomic (a thrown error rolls back everything) and queue FIFO per fileKey. `sendProgressUpdate` is a no-op remotely.
 
-**Critical**: The command name string must match EXACTLY between `sendCommandToFigma("my_command")` in the tool file and `case "my_command":` in code.js, and must be in the `FigmaCommand` union in `types.ts`. Parameter shapes must also agree — there is no shared schema, just convention.
+**Critical**: the wire command string must match EXACTLY across `sendCommandToFigma("my_command")`, the registry key, `COMMAND_DOMAINS`, and `FigmaCommand`. Parameter shapes must agree between the Zod schema and the handler's destructuring — there is no shared schema, just convention (and tests).
 
-## Step-by-Step: Adding a Simple Tool
-
-### Step 1: Define the tool in the appropriate tools/ module
-
-Add the tool in the relevant domain file under `src/figmagent_mcp/tools/`:
-- `document.ts` — get_selection, read (unified node reading with FSGN output; no nodeId = document overview)
-- `create.ts` — write (single nodes and nested trees, COMPONENT and INSTANCE types, clone via fromNodeId)
-- `apply.ts` — edit (unified node modification: fill, stroke, corner radius, opacity, layout, move/rename/reorder, text content, variables, text styles, variant swapping, exposed instances, delete)
-- `components.ts` — get_local_components, combine_as_variants, component_properties (batch add/edit/delete), get/set_instance_overrides
-- `scan.ts` — use_file, get_reactions, connector tools, set_focus, set_selections
-- `find.ts` — grep (unified node search)
-- `export.ts` — screenshot
-- `lint.ts` — lint
-- `libraries.ts` — remote library tools (REST API based)
-- `comments.ts` — get_comments, post_comment, delete_comment (REST API based, requires FIGMA_API_TOKEN), annotations
-
-Note: MCP tool names (first arg of `server.tool`) are decoupled from wire command names — e.g. the `edit` tool sends the `apply` wire command. New tools should pick an agent-facing name and a stable wire command name; only the wire name goes in `types.ts`.
-
-Also add the command name to the `FigmaCommand` union type in `src/figmagent_mcp/types.ts`.
+## MCP tool registration template
 
 ```typescript
 server.tool(
-  "my_new_tool",                              // Command name — must match code.js
-  "Description of what this tool does",        // Shown to the AI agent
+  "my_new_tool",                               // agent-facing name
+  "Description — this is the source of truth the agent reads. State capabilities, call shapes, and constraints here, not in CLAUDE.md.",
   {
-    // Zod schema for parameters
     nodeId: z.string().describe("The ID of the node to modify"),
     someValue: z.number().describe("A numeric value"),
-    optionalParam: z.string().optional().describe("Optional parameter"),
   },
-  async ({ nodeId, someValue, optionalParam }: any) => {
+  async ({ nodeId, someValue }: any) => {
     try {
-      const result = await sendCommandToFigma("my_new_tool", {
-        nodeId,
-        someValue,
-        optionalParam,
-      });
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result),
-          },
-        ],
-      };
+      const result = await sendCommandToFigma("my_new_tool", { nodeId, someValue });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
     } catch (error) {
       return {
         content: [
-          {
-            type: "text",
-            text: `Error: ${error instanceof Error ? error.message : String(error)}`,
-          },
+          { type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` },
         ],
       };
     }
@@ -95,207 +70,49 @@ server.tool(
 );
 ```
 
-### Step 2: Add the command case in code.js handleCommand
+For write tools, append `formatWarningsBlock(result.warnings)` (from `../utils.js`) to surface post-write assertion warnings, and consider running `runPostWriteAssertions`/`miniLint` in the handler (see `commands/create.js` / `commands/apply.js` for the pattern).
 
-Find the `handleCommand` function's switch statement and add a case:
+## Handler constraints (both Figma VMs)
 
-```javascript
-case "my_new_tool":
-  return await myNewTool(params);
-```
+- **Async-first**: `await figma.getNodeByIdAsync(nodeId)`, never the sync version; `await page.loadAsync()` before touching another page's children.
+- **No `?.`, no `??`, no object spread** (`{ ...obj }`) in `src/figma_plugin/src/` — the VMs reject them and Bun does not transpile them down. Use `Object.assign({}, obj)`. Array spread is fine. Biome enforces part of this.
+- **Strict property guard**: the remote VM throws on reading properties that don't exist on a node type. Use `prop(node, "name")` (from `helpers.js`) for any duck-typed read at serializer/read boundaries.
+- **Errors state fixes**: use `fail(message, fix)` from `helpers.js` — no user-facing error without a stated fix.
+- **Font loading before text mutation**: `await figma.loadFontAsync(node.fontName)` before setting `.characters`; for mixed fonts use the existing `setCharacters()` from `setcharacters.js`.
+- **Immutable property arrays**: clone-modify-reassign `.fills`/`.strokes`/`.effects` (`JSON.parse(JSON.stringify(...))`); never mutate in place.
+- **Colors are 0–1 floats**, opacity separate.
+- **Type-check before type-specific access**: `if (!("fills" in node)) fail(...)` or `if (node.type !== "TEXT") fail(...)`.
+- **Return JSON-serializable values only** (no Figma objects; run results through `sanitizeSymbols` if they may contain `figma.mixed` — the registry shim and `routeCommand` do this for you on the standard paths).
 
-### Step 3: Write the handler function in code.js
+## Batch/chunked pattern (10+ nodes)
 
-Add the function anywhere in code.js (convention: near related functions):
+Chunk with `CHUNK_SIZE = 5`: chunks sequential, items within a chunk parallel (`Promise.all`). Call `sendProgressUpdate(commandId, type, status, progress, total, processed, message)` per chunk — on the plugin path it resets the server-side inactivity timeout (30s → extended); remotely it's a harmless no-op. `params.commandId` is injected by `sendCommandToFigma`. Return `{ success, totalCount, successCount, failureCount, results }` with per-item success/error entries — batches continue past per-op failures.
 
-```javascript
-async function myNewTool(params) {
-  const { nodeId, someValue, optionalParam } = params || {};
+See `setMultipleTextContents` in `commands/text.js` for the canonical implementation.
 
-  if (!nodeId) {
-    throw new Error("Missing nodeId parameter");
-  }
+## Helpers available in `src/figma_plugin/src/`
 
-  const node = await figma.getNodeByIdAsync(nodeId);
-  if (!node) {
-    throw new Error("Node not found with ID: " + nodeId);
-  }
-
-  // Do something with the node...
-
-  return {
-    id: node.id,
-    name: node.name,
-    // ... result data
-  };
-}
-```
-
-## Figma Plugin API Constraints
-
-These are real constraints of the Figma plugin environment that you must follow:
-
-### Async-first API
-- Always use `await figma.getNodeByIdAsync(nodeId)` — never `figma.getNodeById()` (sync version)
-- Call `await figma.currentPage.loadAsync()` before accessing `figma.currentPage.children`
-- All handler functions must be `async`
-
-### Font loading before text mutation
-Before setting `node.characters` on a TEXT node, you MUST load the font first:
-```javascript
-await figma.loadFontAsync(node.fontName);
-node.characters = "new text";
-```
-For mixed fonts (multiple fonts in one text node), `node.fontName` returns `figma.mixed`. Use the existing `setCharacters()` helper which handles this.
-
-### Deep-clone Figma property arrays
-Figma node properties like `.fills`, `.strokes`, `.effects` are special objects. To save/restore them:
-```javascript
-const savedFills = JSON.parse(JSON.stringify(node.fills));
-// ... modify node ...
-node.fills = savedFills;  // restore
-```
-Direct assignment of modified arrays works: `node.fills = [{ type: "SOLID", color: { r, g, b }, opacity: a }]`
-
-### Colors are 0–1 floats
-Figma uses `{ r, g, b }` in 0–1 range (not 0–255), with opacity separate. The MCP tools accept 0–1 floats directly.
-
-### Node type checking
-Always verify a node's type before accessing type-specific properties:
-```javascript
-if (!("fills" in node)) {
-  throw new Error("Node does not support fills: " + nodeId);
-}
-// or
-if (node.type !== "TEXT") {
-  throw new Error("Node is not a text node");
-}
-```
-
-### code.js is not bundled
-`code.js` is the direct runtime artifact — it is not compiled or bundled. Write plain JavaScript (ES2020+ is fine — `let`, `const`, template literals, spread syntax, `async/await`, `Promise.all`, `Object.entries()` all work). There is no TypeScript, no imports, no module system.
-
-## Adding a Batch/Chunked Tool
-
-For operations on many nodes (10+), use chunking to prevent Figma UI freezing and to keep the MCP timeout alive via progress updates.
-
-### server.ts side
-Same as simple tool — just call `sendCommandToFigma`. The server handles progress updates automatically (resets the inactivity timeout when it receives them).
-
-### code.js side — chunked pattern
-
-```javascript
-async function myBatchTool(params) {
-  const { items } = params || {};
-  const commandId = params.commandId || generateCommandId();
-
-  if (!items || !Array.isArray(items) || items.length === 0) {
-    throw new Error("Missing or invalid items parameter");
-  }
-
-  // Signal start
-  sendProgressUpdate(
-    commandId, "my_batch_tool", "started",
-    0, items.length, 0,
-    `Starting batch operation for ${items.length} items`
-  );
-
-  const results = [];
-  let successCount = 0;
-  let failureCount = 0;
-  const CHUNK_SIZE = 5;
-  const chunks = [];
-
-  for (let i = 0; i < items.length; i += CHUNK_SIZE) {
-    chunks.push(items.slice(i, i + CHUNK_SIZE));
-  }
-
-  for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
-    const chunk = chunks[chunkIndex];
-
-    // Progress update per chunk — this resets the server-side timeout
-    sendProgressUpdate(
-      commandId, "my_batch_tool", "in_progress",
-      Math.round(5 + (chunkIndex / chunks.length) * 90),
-      items.length, successCount + failureCount,
-      `Processing chunk ${chunkIndex + 1}/${chunks.length}`
-    );
-
-    // Process items within chunk in parallel
-    const chunkResults = await Promise.all(chunk.map(async (item) => {
-      try {
-        const node = await figma.getNodeByIdAsync(item.nodeId);
-        if (!node) return { success: false, nodeId: item.nodeId, error: "Not found" };
-
-        // ... do work ...
-
-        return { success: true, nodeId: item.nodeId };
-      } catch (error) {
-        return { success: false, nodeId: item.nodeId, error: error.message };
-      }
-    }));
-
-    chunkResults.forEach((result) => {
-      if (result.success) successCount++;
-      else failureCount++;
-      results.push(result);
-    });
-  }
-
-  // Final progress
-  sendProgressUpdate(
-    commandId, "my_batch_tool", "completed",
-    100, items.length, successCount + failureCount,
-    `Completed: ${successCount} succeeded, ${failureCount} failed`
-  );
-
-  return {
-    success: failureCount === 0,
-    totalCount: items.length,
-    successCount,
-    failureCount,
-    results,
-  };
-}
-```
-
-Key points:
-- `CHUNK_SIZE = 5` is the convention
-- Chunks processed sequentially, items within a chunk processed in parallel
-- `sendProgressUpdate()` calls are essential — they flow from code.js → UI → WebSocket (as `type: "progress_update"`) → relay → server, where they reset the inactivity timeout from 30s to 60s. Without these, long batch operations will time out.
-- `params.commandId` is injected by `sendCommandToFigma` — use it for progress tracking
-- The relay (`socket.ts`) only forwards `type: "message"` and `type: "progress_update"`. If you introduce a new message type, you must add handling for it in the relay or it will be silently dropped.
-
-## Existing Helpers Available in code.js
-
-| Helper | Purpose |
+| Helper (module) | Purpose |
 |--------|---------|
-| `sendProgressUpdate(commandId, type, status, progress, total, processed, message, payload)` | Send progress through the chain — required for batch ops |
-| `setCharacters(node, text, options)` | Set text content with smart font handling (handles mixed fonts) |
-| `rgbaToHex(color)` | Convert Figma 0–1 RGBA to hex string |
-| `findNodeByIdInTree(nodeId)` | Walk `figma.currentPage` depth-first to find a node — fallback for `getNodeByIdAsync` failures on nested instance IDs |
-| `toNumber(value)` | Safe string-to-number coercion |
-| `delay(ms)` | Promise-based delay |
-| `generateCommandId()` | Create a unique command ID |
-| `uniqBy(arr, predicate)` | De-duplicate an array by key |
-
-### Dead file: setcharacters.js
-
-`src/figma_plugin/setcharacters.js` contains duplicated `setCharacters` and `uniqBy` functions from code.js. The manifest only loads `code.js` — this file is unused. Do not edit it; always edit `code.js` directly.
+| `prop(node, name)` (helpers) | Strict-guard property read — required for duck-typed reads on the remote VM |
+| `fail(message, fix)` (helpers) | Throw an error that states its fix |
+| `sendProgressUpdate(...)` (helpers) | Progress through the chain — required for batch ops on the plugin path |
+| `loadFontWithFallback(family, weightOrStyle)` (helpers) | Font resolution with fallback chain (weight→style name→Inter Regular) |
+| `setCharacters(node, text, options)` (setcharacters) | Font-safe text replacement (mixed fonts) |
+| `sanitizeSymbols(obj)` (helpers) | Replace `figma.mixed` symbols with the string `"mixed"` |
+| `toNumber(value, fallback)`, `rgbaToHex(color)`, `delay(ms)`, `generateCommandId()`, `findNodeByIdInTree(nodeId)`, `customBase64Encode(bytes)` (helpers) | Utilities |
+| `runPostWriteAssertions(ctx)`, `checkNodes(nodeIds)` (assertions) | Post-write structural warnings (balloon, width collapse, FILL-not-applied, font fallback, overlaps) |
+| `matchVariable(...)`, `miniLint(rawSets)` (commands/lint) | Write-time exact-match variable suggestions |
 
 ## Checklist
 
-Before considering the tool complete:
-
-- [ ] Command name string matches exactly in tools/<domain>.ts and code.js
-- [ ] Command name added to `FigmaCommand` union in `types.ts`
-- [ ] Parameter names/shapes match between Zod schema (tool file) and destructuring (code.js)
-- [ ] Handler function in code.js is `async`
-- [ ] Every `case` in `handleCommand` ends with `return` or `throw` — never fall through. (A missing `return` on `set_instance_overrides` once caused it to silently execute `set_layout_mode`.)
-- [ ] Uses `figma.getNodeByIdAsync()` (not sync version)
-- [ ] Font loaded before text mutation (if applicable)
-- [ ] Node type/capability checked before accessing type-specific properties
-- [ ] Batch operations use chunking with `sendProgressUpdate()`
-- [ ] Error cases throw Error objects (code.js) or return error content (server.ts)
-- [ ] Return value from code.js handler is JSON-serializable (no Figma internal objects)
-- [ ] If using custom message types beyond command/result, verify the relay (`socket.ts`) forwards that type
+- [ ] Wire command string identical in tools/<domain>.ts, registry/<domain>.js, remote/domains.ts, types.ts
+- [ ] Registry entry has the right `lock` (`read`/`global`/`node`)
+- [ ] `tests/registry.test.ts` EXPECTED lists updated (EXPECTED_COMMANDS always; EXPECTED_READ/EXPECTED_GLOBAL per lock)
+- [ ] `REMOTE_READ_COMMANDS` updated if the command is a pure read
+- [ ] Handler takes a single params object; param names match the Zod schema
+- [ ] No `?.`/`??`/object-spread; `prop()` for duck-typed reads; `fail(message, fix)` for errors
+- [ ] Font loaded before text mutation (if applicable); node type/capability checked
+- [ ] Batch operations chunked with `sendProgressUpdate()`
+- [ ] Tool description carries the full agent-facing knowledge (descriptions are the source of truth, not CLAUDE.md)
+- [ ] `bun run build:plugin` + `bun test` + `bun run check` all green

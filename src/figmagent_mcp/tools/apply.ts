@@ -66,7 +66,7 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
         .string()
         .optional()
         .describe(
-          "Set text content (TEXT nodes only). Font-safe — handles mixed fonts. For text inside instances use the path format I<instanceId>;<textNodeId>.",
+          "Set text content (TEXT nodes only). Font-safe — handles mixed fonts. For text inside instances use the path format I<instanceId>;<textNodeId> (nested instances: I<outerInstanceId>;<innerInstanceId>;<textNodeId>). Discover text node IDs with grep({ scope: componentId, type: ['TEXT'] }).",
         ),
       delete: z
         .boolean()

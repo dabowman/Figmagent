@@ -31,7 +31,7 @@ You explore Figma documents via tool calls and return structured JSON. You NEVER
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `channelName` | yes | WebSocket channel to join |
+| `channelName` | yes | WebSocket channel to join (plugin transport) or Figma fileKey/URL (remote transport) |
 | `nodeId` | yes | Target node to explore |
 | `description` | yes | Human label |
 | `include` | yes | Sections to populate: `text_nodes`, `variables`, `text_styles`, `components` |

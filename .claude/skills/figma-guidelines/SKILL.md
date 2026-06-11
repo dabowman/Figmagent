@@ -11,9 +11,9 @@ You are controlling Figma through MCP tools that bridge to the Figma Plugin API.
 
 1. **Frames are the universal container.** Use frames for everything — layouts, components, wrappers. Groups are almost never what you want. Rectangles cannot have children or auto layout.
 2. **Auto layout replaces manual positioning.** Once a frame has auto layout, its children's x/y are controlled by the layout engine. Use sizing properties (`FILL`, `HUG`, `FIXED`) instead of coordinates.
-3. **Fonts must be loaded before text changes.** Every text content or style change requires loading the font first. This is the #1 source of errors.
+3. **Fonts must be loaded before text changes.** Every text content or style change requires loading the font first. The Figmagent `write`/`edit` tools load fonts automatically — this rule matters when using `run_script` or when a `font_fallback` warning appears in a write response.
 4. **Properties are immutable.** Fills, strokes, and effects cannot be mutated in place. You must replace the entire property value, not modify sub-properties.
-5. **Verify before modifying.** Always check a node's type and current state before changing it. An instance behaves differently from a frame. A node may have been deleted.
+5. **Read the write response, don't re-read the node.** The tools pre-check type mismatches and impossible requests (warn or per-op error, batches continue), and `write`/`edit` responses carry a warnings block (balloon frames, FILL-not-applied, font fallback, overlaps, unbound-value suggestions). Act on warnings and failures from the response; only `read` back when something looks off.
 
 For deeper coverage on any topic, read the corresponding reference file in `references/`.
 
@@ -269,7 +269,7 @@ Figma colors use `{r, g, b, a}` with values from 0 to 1, not 0 to 255. `#FF0000`
 
 ### Auto Layout Parent Required
 
-Setting `layoutSizingHorizontal`, `layoutSizingVertical`, `layoutGrow`, or `layoutAlign` on a node that isn't inside an auto layout frame throws an error. Enable auto layout on the parent first.
+Setting `layoutSizingHorizontal`, `layoutSizingVertical`, `layoutGrow`, or `layoutAlign` on a node that isn't inside an auto layout frame fails. The `edit` tool pre-checks this — FILL is skipped with a warning naming the parent and the fix; enable auto layout on the parent first.
 
 ### Min/Max Constraints
 
@@ -298,9 +298,9 @@ Images in Figma are **fills on frames/rectangles**, not standalone nodes. To add
 
 When creating multiple similar elements, build one correctly first. Verify it looks right. Then replicate the pattern for the rest. This avoids cascading errors across many elements.
 
-### Verify Type Before Modify
+### Know the Node Type You're Targeting
 
-Always check `node.type` before operating on a node. An InstanceNode has different capabilities than a FrameNode. A TextNode requires font loading. A GroupNode can't have fills.
+An InstanceNode has different capabilities than a FrameNode; a GroupNode can't have fills. The tools pre-check type mismatches (text props on non-TEXT, clipsContent on non-frames, structural edits inside instances) and report them as warnings or per-op errors — read those instead of defensively re-reading every node, but don't plan batches around node types you haven't confirmed.
 
 ### Fail Fast
 

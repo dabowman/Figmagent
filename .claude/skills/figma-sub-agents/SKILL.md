@@ -9,7 +9,7 @@ Large Figma sessions hit three problems in a single-agent context: **context pre
 
 The primary tool for reading nodes is **`read`**, which returns structured YAML (FSGN format) with deduplicated variable/style/component defs and a `tokenEstimate` in the meta. It accepts `nodeId` (single) or `nodeIds` (multiple, fetched in parallel).
 
-Sub-agents also enable **parallel execution**: multiple agents can modify different parts of the Figma document simultaneously, with plugin-level concurrency control ensuring safety.
+Sub-agents also enable **parallel execution — on the plugin transport only**: multiple agents can modify different parts of the Figma document simultaneously, with plugin-level concurrency control ensuring safety. **On the remote transport (`FIGMA_TRANSPORT=remote`) the MCP server serializes every command per file (FIFO queue), so parallel sub-agents do NOT increase throughput.** Sub-agents still pay off on remote for context isolation — just launch Build/Style agents serially instead of in parallel.
 
 **Available sub-agents:**
 - **Discovery** (`figma-discovery` agent) — read-only exploration, always runs serial
@@ -33,7 +33,7 @@ Sub-agents also enable **parallel execution**: multiple agents can modify differ
 - Build spec has **5+ nodes** to create or clone
 - Binding plan has **20+ variable bindings** or text style assignments
 - Work can be partitioned into **independent node subtrees** (different variants, different sections)
-- You want to parallelize to reduce wall-clock time
+- You want to parallelize to reduce wall-clock time (plugin transport only — remote serializes per file)
 
 ---
 
@@ -42,7 +42,7 @@ Sub-agents also enable **parallel execution**: multiple agents can modify differ
 ### Channel Setup (always do this first)
 
 1. **Orchestrator joins the channel first.** Call `use_file` (no args) before spawning any sub-agent.
-2. **Pass the channel name explicitly** in every sub-agent prompt. Do not let sub-agents auto-discover — this avoids race conditions.
+2. **Pass the channel name explicitly** in every sub-agent prompt. Do not let sub-agents auto-discover — this avoids race conditions. (Remote transport: there are no channels — `use_file` takes a Figma URL or fileKey; pass that same fileKey to every sub-agent.)
 3. **Check `status` first** in every sub-agent result — if `"blocked"`, surface the error to the user and stop.
 
 ### Serial Phases (must be in order)
@@ -53,12 +53,14 @@ Discovery → Planning → Building → Styling → Verification
 
 Discovery always runs alone. Planning happens in the orchestrator. Verification happens in the orchestrator.
 
-### Parallel Execution (within Building or Styling phases)
+### Parallel Execution (within Building or Styling phases — plugin transport only)
 
 The Figma plugin has concurrency control that makes parallel agent execution safe:
 - **Node-level write locks** prevent two agents from writing to the same node simultaneously
 - **Global mutex** serializes tree-mutation operations (the `create`, `delete_multiple_nodes`, etc. wire commands)
 - **Concurrency cap** (max 6 in-flight operations) prevents Figma CPU budget exhaustion
+
+**Remote transport**: none of this applies — the server's per-file FIFO queue serializes every command, so parallel agents just wait in line. On remote, run Build/Style agents one at a time and keep the partitioning (it still bounds each agent's context).
 
 **Rules for parallel sub-agents:**
 
@@ -230,7 +232,7 @@ RULES:
 - Use write for complex structures (reduces many calls to 1)
 - Use write with fromNodeId when duplicating existing patterns
 - Use write with type="INSTANCE" and componentId for reusing library parts
-- After creating nodes, verify with read(nodeId, detail="structure") that structure matches spec
+- write responses include the created structure plus a warnings block (100px balloons, FILL-not-applied, font fallback, overlaps) — act on warnings; only read(nodeId, detail="structure") back when warnings or the returned structure suggest a mismatch
 - Return JSON: {"status": "success", "created_nodes": [...ids], "summary": "..."}
 - If any tool fails twice on the same call, stop and return: {"status": "blocked", "error": "...", "last_tool": "...", "recommendation": "..."}
 `
@@ -285,7 +287,7 @@ RULES:
 - Use edit() with variables field to bind design tokens to node properties (supports flat list or nested tree)
 - Use edit() with textStyleId to apply text styles (deduplicates font loading automatically)
 - Process in order: variable bindings first, then text styles
-- After applying, verify a sample node with read(nodeId, detail="full") to confirm bindings took
+- edit responses report per-op failures and warnings (scope-mismatched binds are skipped with a warning) — act on those; spot-check ONE node with read(nodeId, detail="full") only if a result looks off
 - Return JSON: {"status": "success", "bindings_applied": N, "styles_applied": N, "summary": "..."}
 - If any tool fails twice on the same call, stop and return blocked status
 `
@@ -345,19 +347,19 @@ TIME    ORCHESTRATOR              BUILDER-A             BUILDER-B
 
 TIME    ORCHESTRATOR              STYLER-A              STYLER-B
 ─────   ────────────              ────────              ────────
-0:09    → Styler A (Loading)      batch_bind ──►
-0:09    → Styler B (Empty)                              batch_bind ──►
+0:09    → Styler A (Loading)      edit ──►
+0:09    → Styler B (Empty)                              edit ──►
         [both run_in_background]
 0:11                              ◄── done              ◄── done
 0:12    verify bindings
 0:13    Report to user
 ```
 
-**Estimated speedup:** For a 16-variant component set with 130+ variable bindings:
+**Estimated speedup (plugin transport):** For a 16-variant component set with 130+ variable bindings:
 - Serial: ~36 minutes
 - Parallel (3 agents): ~19 minutes (~1.9x speedup)
 
-The speedup scales with workload size. Design system builds with 50+ components see larger gains because build and style phases dominate.
+The speedup scales with workload size. Design system builds with 50+ components see larger gains because build and style phases dominate. On the remote transport expect NO parallel speedup (per-file FIFO) — the win there is fewer calls per task and context isolation.
 
 ---
 

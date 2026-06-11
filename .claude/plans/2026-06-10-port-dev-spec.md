@@ -557,7 +557,7 @@ all state fixes.
 
 Goal: CLAUDE.md shrinks; every pattern lives in code, error, or assertion first.
 
-- [ ] **Task 5.1: Pattern-by-pattern disposition of CLAUDE.md "Figma Design Patterns"**
+- [x] **Task 5.1: Pattern-by-pattern disposition of CLAUDE.md "Figma Design Patterns"**
   - Files: `CLAUDE.md`, tool descriptions in `tools/*.ts`
   - Depends on: Phase 4 complete (destinations must exist)
   - Parallelizable: yes
@@ -575,7 +575,7 @@ Goal: CLAUDE.md shrinks; every pattern lives in code, error, or assertion first.
     | Tool-usage guidance (get/find/apply flows) | rewritten for new names, halved — descriptions carry the detail |
   - Tests: n/a; acceptance = diff shows net deletion.
 
-- [ ] **Task 5.2: Skills + agent defs update**
+- [x] **Task 5.2: Skills + agent defs update**
   - Files: `.claude/skills/figma-guidelines/`, `.claude/skills/figma-sub-agents/`,
     `.claude/agents/figma-discovery.md`, `.claude/skills/add-mcp-tool/`
   - Depends on: 5.1
@@ -588,6 +588,16 @@ Goal: CLAUDE.md shrinks; every pattern lives in code, error, or assertion first.
 
 **Phase 5 acceptance:** CLAUDE.md line count materially down (target: Patterns
 section ≥60% smaller); no pattern that merely restates enforced behavior.
+
+> **Execution log (2026-06-11):** Patterns section 40→9 lines (−77.5%); full
+> CLAUDE.md 166→139; Key Patterns bullets halved (27→14); plugin-transport
+> material moved to an appendix; skills/agents updated (per-file FIFO
+> parallelism guidance, add-mcp-tool rewritten for the registry architecture).
+> Two enforcement gaps found and deferred as follow-ups: (1) no pre-mutation
+> boundary error names the "use a FRAME with fillColor" fix for RECTANGLE+FILL
+> (post-write assertion + write description carry it); (2) mini-lint does not
+> yet warn when `variables` binds on a node inside an INSTANCE (edit
+> description + one CLAUDE.md line carry the rule).
 
 ---
 
