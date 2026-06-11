@@ -2,7 +2,7 @@
 // Supports searching by componentId, variableId, styleId, text, name, type.
 // Returns matches grouped by nearest component/frame ancestor with ancestry paths.
 
-import { sendProgressUpdate, generateCommandId, delay } from "../helpers.js";
+import { sendProgressUpdate, generateCommandId, delay, prop } from "../helpers.js";
 
 // ─── Predicate builders ─────────────────────────────────────────────────────
 
@@ -31,7 +31,7 @@ function checkVariableBindings(node, targetSet) {
   const matched = [];
 
   // 1. Scalar bindings via node.boundVariables
-  const bv = node.boundVariables;
+  const bv = prop(node, "boundVariables");
   if (bv) {
     const keys = Object.keys(bv);
     for (let i = 0; i < keys.length; i++) {
@@ -49,9 +49,10 @@ function checkVariableBindings(node, targetSet) {
   }
 
   // 2. Paint bindings via fills[].boundVariables.color
-  if (node.fills && Array.isArray(node.fills)) {
-    for (let fi = 0; fi < node.fills.length; fi++) {
-      const fill = node.fills[fi];
+  const fills = prop(node, "fills");
+  if (fills && Array.isArray(fills)) {
+    for (let fi = 0; fi < fills.length; fi++) {
+      const fill = fills[fi];
       if (fill && fill.boundVariables && fill.boundVariables.color) {
         const colorBinding = fill.boundVariables.color;
         if (colorBinding && colorBinding.id && targetSet[colorBinding.id]) {
@@ -62,9 +63,10 @@ function checkVariableBindings(node, targetSet) {
   }
 
   // 3. Paint bindings via strokes[].boundVariables.color
-  if (node.strokes && Array.isArray(node.strokes)) {
-    for (let si = 0; si < node.strokes.length; si++) {
-      const stroke = node.strokes[si];
+  const strokes = prop(node, "strokes");
+  if (strokes && Array.isArray(strokes)) {
+    for (let si = 0; si < strokes.length; si++) {
+      const stroke = strokes[si];
       if (stroke && stroke.boundVariables && stroke.boundVariables.color) {
         const strokeBinding = stroke.boundVariables.color;
         if (strokeBinding && strokeBinding.id && targetSet[strokeBinding.id]) {
@@ -204,7 +206,7 @@ export async function find(params) {
   // Recursive traversal
   async function traverse(node, path, currentGroup, insideExcludedDef) {
     if (truncated) return;
-    if (node.visible === false) return;
+    if (prop(node, "visible") === false) return;
 
     nodesVisited++;
 
@@ -389,7 +391,7 @@ export async function find(params) {
     // Recurse into children
     if ("children" in node && !truncated) {
       // Load non-current pages for document-wide search (dynamic-page access)
-      if (node.type === "PAGE" && node !== figma.currentPage) {
+      if (node.type === "PAGE" && node !== figma.currentPage && typeof node.loadAsync === "function") {
         await node.loadAsync();
       }
       for (let ci = 0; ci < node.children.length; ci++) {

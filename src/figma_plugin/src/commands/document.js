@@ -7,6 +7,7 @@ import {
   customBase64Encode,
   rgbaToHex,
   toNumber,
+  prop,
 } from "../helpers.js";
 
 export async function getDocumentInfo() {
@@ -43,7 +44,7 @@ export async function getSelection() {
       id: node.id,
       name: node.name,
       type: node.type,
-      visible: node.visible,
+      visible: prop(node, "visible"),
     })),
   };
 }
@@ -129,8 +130,9 @@ export async function getReactions(nodeIds) {
       processedNodes.add(node.id);
 
       let filteredReactions = [];
-      if (node.reactions && node.reactions.length > 0) {
-        filteredReactions = node.reactions.filter((r) => {
+      const reactions = prop(node, "reactions");
+      if (reactions && reactions.length > 0) {
+        filteredReactions = reactions.filter((r) => {
           if (r.action && r.action.navigation === "CHANGE_TO") return false;
           if (Array.isArray(r.actions)) {
             return !r.actions.some((a) => a.navigation === "CHANGE_TO");
@@ -153,8 +155,9 @@ export async function getReactions(nodeIds) {
         await highlightNodeWithAnimation(node);
       }
 
-      if (node.children) {
-        for (const child of node.children) {
+      const children = prop(node, "children");
+      if (children) {
+        for (const child of children) {
           await findNodesWithReactions(child, processedNodes, depth + 1, results);
         }
       }
@@ -163,8 +166,9 @@ export async function getReactions(nodeIds) {
     }
 
     async function highlightNodeWithAnimation(node) {
-      const originalStrokeWeight = node.strokeWeight;
-      const originalStrokes = node.strokes ? [...node.strokes] : [];
+      const originalStrokeWeight = prop(node, "strokeWeight");
+      const currentStrokes = prop(node, "strokes");
+      const originalStrokes = currentStrokes ? [...currentStrokes] : [];
 
       try {
         node.strokeWeight = 4;
@@ -283,31 +287,40 @@ async function buildNodeOutput(n, detail, inclVars, inclStyles, inclComp, collVa
   const out = { id: n.id, name: n.name, type: n.type };
 
   // dimensions
-  if (n.absoluteBoundingBox) {
-    out.x = n.absoluteBoundingBox.x;
-    out.y = n.absoluteBoundingBox.y;
-    out.width = n.absoluteBoundingBox.width;
-    out.height = n.absoluteBoundingBox.height;
+  const bbox = prop(n, "absoluteBoundingBox");
+  if (bbox) {
+    out.x = bbox.x;
+    out.y = bbox.y;
+    out.width = bbox.width;
+    out.height = bbox.height;
   }
 
   // auto-layout (omit defaults)
-  if (n.layoutMode && n.layoutMode !== "NONE") {
-    out.layoutMode = n.layoutMode;
-    if (n.primaryAxisSizingMode) out.primaryAxisSizingMode = n.primaryAxisSizingMode;
-    if (n.counterAxisSizingMode) out.counterAxisSizingMode = n.counterAxisSizingMode;
-    if (n.primaryAxisAlignItems && n.primaryAxisAlignItems !== "MIN")
-      out.primaryAxisAlignItems = n.primaryAxisAlignItems;
-    if (n.counterAxisAlignItems && n.counterAxisAlignItems !== "MIN")
-      out.counterAxisAlignItems = n.counterAxisAlignItems;
-    if (n.itemSpacing && n.itemSpacing > 0) out.itemSpacing = n.itemSpacing;
-    if (n.paddingLeft && n.paddingLeft > 0) out.paddingLeft = n.paddingLeft;
-    if (n.paddingRight && n.paddingRight > 0) out.paddingRight = n.paddingRight;
-    if (n.paddingTop && n.paddingTop > 0) out.paddingTop = n.paddingTop;
-    if (n.paddingBottom && n.paddingBottom > 0) out.paddingBottom = n.paddingBottom;
-    if (n.layoutWrap === "WRAP") out.layoutWrap = "WRAP";
+  const layoutMode = prop(n, "layoutMode");
+  if (layoutMode && layoutMode !== "NONE") {
+    out.layoutMode = layoutMode;
+    const primaryAxisSizingMode = prop(n, "primaryAxisSizingMode");
+    if (primaryAxisSizingMode) out.primaryAxisSizingMode = primaryAxisSizingMode;
+    const counterAxisSizingMode = prop(n, "counterAxisSizingMode");
+    if (counterAxisSizingMode) out.counterAxisSizingMode = counterAxisSizingMode;
+    const primaryAxisAlignItems = prop(n, "primaryAxisAlignItems");
+    if (primaryAxisAlignItems && primaryAxisAlignItems !== "MIN") out.primaryAxisAlignItems = primaryAxisAlignItems;
+    const counterAxisAlignItems = prop(n, "counterAxisAlignItems");
+    if (counterAxisAlignItems && counterAxisAlignItems !== "MIN") out.counterAxisAlignItems = counterAxisAlignItems;
+    const itemSpacing = prop(n, "itemSpacing");
+    if (itemSpacing && itemSpacing > 0) out.itemSpacing = itemSpacing;
+    const paddingLeft = prop(n, "paddingLeft");
+    if (paddingLeft && paddingLeft > 0) out.paddingLeft = paddingLeft;
+    const paddingRight = prop(n, "paddingRight");
+    if (paddingRight && paddingRight > 0) out.paddingRight = paddingRight;
+    const paddingTop = prop(n, "paddingTop");
+    if (paddingTop && paddingTop > 0) out.paddingTop = paddingTop;
+    const paddingBottom = prop(n, "paddingBottom");
+    if (paddingBottom && paddingBottom > 0) out.paddingBottom = paddingBottom;
+    if (prop(n, "layoutWrap") === "WRAP") out.layoutWrap = "WRAP";
   }
 
-  if (n.clipsContent) out.clipsContent = true;
+  if (prop(n, "clipsContent")) out.clipsContent = true;
 
   // text content
   if (n.type === "TEXT" && n.characters) {
@@ -330,10 +343,10 @@ async function buildNodeOutput(n, detail, inclVars, inclStyles, inclComp, collVa
       const propKeys = Object.keys(n.componentProperties);
       for (let i = 0; i < propKeys.length; i++) {
         const k = propKeys[i];
-        const prop = n.componentProperties[k];
-        cleaned[k] = { type: prop.type, value: prop.value };
-        if (prop.boundVariables) {
-          cleaned[k].boundVariables = prop.boundVariables;
+        const cp = n.componentProperties[k];
+        cleaned[k] = { type: cp.type, value: cp.value };
+        if (cp.boundVariables) {
+          cleaned[k].boundVariables = cp.boundVariables;
         }
       }
       out.componentProperties = cleaned;
@@ -365,23 +378,25 @@ async function buildNodeOutput(n, detail, inclVars, inclStyles, inclComp, collVa
   }
 
   // variant properties (COMPONENT nodes)
-  if (n.variantProperties) {
-    out.variantProperties = n.variantProperties;
+  const variantProperties = prop(n, "variantProperties");
+  if (variantProperties) {
+    out.variantProperties = variantProperties;
   }
 
   // component property references (child nodes wired to component properties)
-  if (n.componentPropertyReferences) {
-    const refs = n.componentPropertyReferences;
-    const refKeys = Object.keys(refs);
+  const cpRefs = prop(n, "componentPropertyReferences");
+  if (cpRefs) {
+    const refKeys = Object.keys(cpRefs);
     if (refKeys.length > 0) {
-      out.componentPropertyReferences = refs;
+      out.componentPropertyReferences = cpRefs;
     }
   }
 
   // full level: fills, strokes, variable bindings, text style
   if (detail === "full") {
-    if (n.fills && typeof n.fills !== "symbol" && n.fills.length > 0) {
-      out.fills = n.fills.map((fill) => {
+    const fills = prop(n, "fills");
+    if (fills && typeof fills !== "symbol" && fills.length > 0) {
+      out.fills = fills.map((fill) => {
         const f = { type: fill.type };
         if (fill.color) f.color = rgbaToHex(fill.color);
         if (fill.opacity !== undefined && fill.opacity !== 1) f.opacity = fill.opacity;
@@ -390,30 +405,36 @@ async function buildNodeOutput(n, detail, inclVars, inclStyles, inclComp, collVa
       });
     }
 
-    if (n.strokes && typeof n.strokes !== "symbol" && n.strokes.length > 0) {
-      out.strokes = n.strokes.map((stroke) => {
+    const strokes = prop(n, "strokes");
+    if (strokes && typeof strokes !== "symbol" && strokes.length > 0) {
+      const strokeWeight = prop(n, "strokeWeight");
+      const strokeAlign = prop(n, "strokeAlign");
+      out.strokes = strokes.map((stroke) => {
         const s = { type: stroke.type };
         if (stroke.color) s.color = rgbaToHex(stroke.color);
-        if (n.strokeWeight && typeof n.strokeWeight !== "symbol") s.weight = n.strokeWeight;
-        if (n.strokeAlign) s.align = n.strokeAlign;
+        if (strokeWeight && typeof strokeWeight !== "symbol") s.weight = strokeWeight;
+        if (strokeAlign) s.align = strokeAlign;
         return s;
       });
     }
 
-    if (n.cornerRadius !== undefined && n.cornerRadius !== null && typeof n.cornerRadius !== "symbol") {
-      out.cornerRadius = n.cornerRadius;
+    const cornerRadius = prop(n, "cornerRadius");
+    if (cornerRadius !== undefined && cornerRadius !== null && typeof cornerRadius !== "symbol") {
+      out.cornerRadius = cornerRadius;
     }
 
-    if (n.opacity !== undefined && n.opacity !== 1) {
-      out.opacity = n.opacity;
+    const opacity = prop(n, "opacity");
+    if (opacity !== undefined && opacity !== 1) {
+      out.opacity = opacity;
     }
 
     // variable bindings
-    if (inclVars && n.boundVariables) {
+    const boundVariables = inclVars ? prop(n, "boundVariables") : null;
+    if (boundVariables) {
       const bindings = {};
-      const bvKeys = Object.keys(n.boundVariables);
+      const bvKeys = Object.keys(boundVariables);
       for (const field of bvKeys) {
-        const binding = n.boundVariables[field];
+        const binding = boundVariables[field];
         if (Array.isArray(binding)) {
           const refs = [];
           for (const slot of binding) {
@@ -434,9 +455,10 @@ async function buildNodeOutput(n, detail, inclVars, inclStyles, inclComp, collVa
     }
 
     // text style
-    if (inclStyles && n.textStyleId && typeof n.textStyleId === "string") {
-      out.textStyle = "STYLE::" + n.textStyleId;
-      collStyleIds[n.textStyleId] = true;
+    const textStyleId = inclStyles ? prop(n, "textStyleId") : null;
+    if (textStyleId && typeof textStyleId === "string") {
+      out.textStyle = "STYLE::" + textStyleId;
+      collStyleIds[textStyleId] = true;
     }
   }
 
@@ -485,14 +507,15 @@ export async function getNodeTree(params) {
   async function walkNode(n, currentDepthFromRoot) {
     nodeCount++;
 
-    const isVisible = n.visible !== false;
+    const isVisible = prop(n, "visible") !== false;
     if (visibleOnly && !isVisible) return [];
 
     const typeOk = !typeWhitelist || typeWhitelist.indexOf(n.type) !== -1;
     const nameOk = !nameRegex || nameRegex.test(n.name);
 
     const isInstance = n.type === "INSTANCE";
-    const hasChildren = n.children && n.children.length > 0;
+    const children = prop(n, "children");
+    const hasChildren = children && children.length > 0;
     const atDepthLimit = userDepth !== undefined && currentDepthFromRoot >= userDepth;
     // Stop at instance boundary when no explicit depth, except at root
     const stopAtInstance = isInstance && userDepth === undefined && currentDepthFromRoot > 0;
@@ -501,7 +524,7 @@ export async function getNodeTree(params) {
     // Collect child results (always descend even if this node is filtered)
     const childResults = [];
     if (shouldExpand) {
-      for (const child of n.children) {
+      for (const child of children) {
         const sub = await walkNode(child, currentDepthFromRoot + 1);
         for (const item of sub) {
           childResults.push(item);
@@ -521,7 +544,7 @@ export async function getNodeTree(params) {
     }
 
     if (hasChildren && (atDepthLimit || stopAtInstance)) {
-      out.childCount = n.children.length;
+      out.childCount = children.length;
     }
 
     return [out];
@@ -589,8 +612,8 @@ export async function getNodeTree(params) {
           return {
             id: cid,
             name: comp.name,
-            key: comp.key || null,
-            description: comp.description || null,
+            key: prop(comp, "key") || null,
+            description: prop(comp, "description") || null,
             parentType: comp.parent ? comp.parent.type : null,
             parentName: comp.parent ? comp.parent.name : null,
           };

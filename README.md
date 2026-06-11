@@ -60,6 +60,20 @@ Add to your MCP configuration:
 
 Uncomment the `hostname: "0.0.0.0"` line in `src/socket.ts` to allow connections from the Windows host.
 
+### Remote transport (experimental — Phase 1: reads only)
+
+Figmagent can run against Figma's official MCP server (`mcp.figma.com`) instead of the relay + plugin: headless, no Figma client open, commands compile to atomic `use_figma` scripts. Select the transport with the `FIGMA_TRANSPORT` env var on the MCP server process:
+
+- `plugin` (default) — local relay + Figma plugin
+- `remote` — official MCP; read tools only until Phase 2
+- `auto` — remote when a cached OAuth token exists (`~/.figmagent/auth.json`), plugin otherwise
+
+**First-run OAuth:** on the first remote command the server prints an authorization URL to stderr (and tries to open your browser), then waits up to 5 minutes for the redirect on a local loopback port. Approve in the browser; tokens are saved to `~/.figmagent/auth.json` (0600) and refreshed automatically. Headless machines: open the printed URL anywhere, then complete the redirect from a browser that can reach `127.0.0.1` on that machine.
+
+**Selecting a file:** the remote transport has no channels. Pass a Figma file URL (or bare fileKey) to `join_channel`, or set `FIGMA_FILE_KEY`. Override the endpoint with `FIGMA_MCP_URL` if needed.
+
+**Parity harness:** `bun scripts/parity-check.ts --file <figmaUrl> [--channel <relayChannel>]` runs the read suite on both transports against the same file, diffs normalized outputs, and prints per-command latency. Expect ~4–7s/call overhead on remote — it wins on calls-per-task, not per-call speed.
+
 ## Tools (48)
 
 ### Document & Navigation

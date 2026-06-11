@@ -8,11 +8,14 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { logger } from "./utils.js";
+import { getTransport } from "./transport.js";
 
 const SESSION_DIR = join(homedir(), ".figmagent", "sessions");
 
 interface ToolCallEntry {
   tool: string;
+  /** Active transport when the call ran — feeds the Phase 6 plugin/remote A/B */
+  transport: "plugin" | "remote";
   /** ISO timestamp */
   ts: string;
   /** Duration in ms */
@@ -92,8 +95,15 @@ export function recordToolCall(
   error?: string,
 ): void {
   const s = ensureSession();
+  let transport: "plugin" | "remote";
+  try {
+    transport = getTransport().name;
+  } catch {
+    transport = "plugin";
+  }
   s.toolCalls.push({
     tool,
+    transport,
     ts: new Date().toISOString(),
     durationMs: Math.round(performance.now() - startTime),
     params: summarizeParams(params),

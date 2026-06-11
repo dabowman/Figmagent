@@ -44,6 +44,12 @@ export function sendProgressUpdate(
   return update;
 }
 
+// Strict-property-guard compat: the remote VM throws on reading properties that
+// don't exist on a node type; the desktop VM returns undefined. `in` is safe on both.
+export function prop(node, name) {
+  return name in node ? node[name] : undefined;
+}
+
 // Coerce value to number with fallback (handles string "4" → 4)
 export function toNumber(val, fallback) {
   if (val === undefined || val === null) return fallback;
@@ -98,9 +104,10 @@ export function findNodeByIdInTree(nodeId) {
       found = node;
       return;
     }
-    if (node.children) {
-      for (let i = 0; i < node.children.length; i++) {
-        walk(node.children[i]);
+    const children = prop(node, "children");
+    if (children) {
+      for (let i = 0; i < children.length; i++) {
+        walk(children[i]);
       }
     }
   }
@@ -181,8 +188,9 @@ export function filterFigmaNode(node) {
     type: node.type,
   };
 
-  if (node.fills && node.fills.length > 0) {
-    filtered.fills = node.fills.map((fill) => {
+  const fills = prop(node, "fills");
+  if (fills && fills.length > 0) {
+    filtered.fills = fills.map((fill) => {
       var processedFill = Object.assign({}, fill);
       delete processedFill.boundVariables;
       delete processedFill.imageRef;
@@ -206,8 +214,9 @@ export function filterFigmaNode(node) {
     });
   }
 
-  if (node.strokes && node.strokes.length > 0) {
-    filtered.strokes = node.strokes.map((stroke) => {
+  const strokes = prop(node, "strokes");
+  if (strokes && strokes.length > 0) {
+    filtered.strokes = strokes.map((stroke) => {
       var processedStroke = Object.assign({}, stroke);
       delete processedStroke.boundVariables;
       if (processedStroke.color) {
@@ -217,66 +226,80 @@ export function filterFigmaNode(node) {
     });
   }
 
-  if (node.cornerRadius !== undefined) {
-    filtered.cornerRadius = node.cornerRadius;
+  const cornerRadius = prop(node, "cornerRadius");
+  if (cornerRadius !== undefined) {
+    filtered.cornerRadius = cornerRadius;
   }
 
-  if (node.absoluteBoundingBox) {
-    filtered.absoluteBoundingBox = node.absoluteBoundingBox;
+  const absoluteBoundingBox = prop(node, "absoluteBoundingBox");
+  if (absoluteBoundingBox) {
+    filtered.absoluteBoundingBox = absoluteBoundingBox;
   }
 
-  if (node.characters) {
-    filtered.characters = node.characters;
+  const characters = prop(node, "characters");
+  if (characters) {
+    filtered.characters = characters;
   }
 
-  if (node.style) {
+  const style = prop(node, "style");
+  if (style) {
     filtered.style = {
-      fontFamily: node.style.fontFamily,
-      fontStyle: node.style.fontStyle,
-      fontWeight: node.style.fontWeight,
-      fontSize: node.style.fontSize,
-      textAlignHorizontal: node.style.textAlignHorizontal,
-      letterSpacing: node.style.letterSpacing,
-      lineHeightPx: node.style.lineHeightPx,
+      fontFamily: style.fontFamily,
+      fontStyle: style.fontStyle,
+      fontWeight: style.fontWeight,
+      fontSize: style.fontSize,
+      textAlignHorizontal: style.textAlignHorizontal,
+      letterSpacing: style.letterSpacing,
+      lineHeightPx: style.lineHeightPx,
     };
   }
 
   // Auto-layout properties
-  if (node.layoutMode && node.layoutMode !== "NONE") {
-    filtered.layoutMode = node.layoutMode;
-    filtered.primaryAxisSizingMode = node.primaryAxisSizingMode;
-    filtered.counterAxisSizingMode = node.counterAxisSizingMode;
-    if (node.primaryAxisAlignItems && node.primaryAxisAlignItems !== "MIN") {
-      filtered.primaryAxisAlignItems = node.primaryAxisAlignItems;
+  const layoutMode = prop(node, "layoutMode");
+  if (layoutMode && layoutMode !== "NONE") {
+    filtered.layoutMode = layoutMode;
+    filtered.primaryAxisSizingMode = prop(node, "primaryAxisSizingMode");
+    filtered.counterAxisSizingMode = prop(node, "counterAxisSizingMode");
+    const primaryAxisAlignItems = prop(node, "primaryAxisAlignItems");
+    if (primaryAxisAlignItems && primaryAxisAlignItems !== "MIN") {
+      filtered.primaryAxisAlignItems = primaryAxisAlignItems;
     }
-    if (node.counterAxisAlignItems && node.counterAxisAlignItems !== "MIN") {
-      filtered.counterAxisAlignItems = node.counterAxisAlignItems;
+    const counterAxisAlignItems = prop(node, "counterAxisAlignItems");
+    if (counterAxisAlignItems && counterAxisAlignItems !== "MIN") {
+      filtered.counterAxisAlignItems = counterAxisAlignItems;
     }
-    if (node.itemSpacing > 0) {
-      filtered.itemSpacing = node.itemSpacing;
+    const itemSpacing = prop(node, "itemSpacing");
+    if (itemSpacing > 0) {
+      filtered.itemSpacing = itemSpacing;
     }
-    if (node.counterAxisSpacing > 0) {
-      filtered.counterAxisSpacing = node.counterAxisSpacing;
+    const counterAxisSpacing = prop(node, "counterAxisSpacing");
+    if (counterAxisSpacing > 0) {
+      filtered.counterAxisSpacing = counterAxisSpacing;
     }
-    if (node.paddingLeft > 0) {
-      filtered.paddingLeft = node.paddingLeft;
+    const paddingLeft = prop(node, "paddingLeft");
+    if (paddingLeft > 0) {
+      filtered.paddingLeft = paddingLeft;
     }
-    if (node.paddingRight > 0) {
-      filtered.paddingRight = node.paddingRight;
+    const paddingRight = prop(node, "paddingRight");
+    if (paddingRight > 0) {
+      filtered.paddingRight = paddingRight;
     }
-    if (node.paddingTop > 0) {
-      filtered.paddingTop = node.paddingTop;
+    const paddingTop = prop(node, "paddingTop");
+    if (paddingTop > 0) {
+      filtered.paddingTop = paddingTop;
     }
-    if (node.paddingBottom > 0) {
-      filtered.paddingBottom = node.paddingBottom;
+    const paddingBottom = prop(node, "paddingBottom");
+    if (paddingBottom > 0) {
+      filtered.paddingBottom = paddingBottom;
     }
-    if (node.layoutWrap === "WRAP") {
-      filtered.layoutWrap = node.layoutWrap;
+    if (prop(node, "layoutWrap") === "WRAP") {
+      filtered.layoutWrap = "WRAP";
     }
   }
 
-  if (node.children) {
-    filtered.children = node.children
+  const children = prop(node, "children");
+  if (children) {
+    filtered.children = children
       .map((child) => {
         return filterFigmaNode(child);
       })

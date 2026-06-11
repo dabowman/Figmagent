@@ -1,7 +1,7 @@
 // Styles commands: getStyles, getLocalVariables, getLocalComponents,
 // getDesignSystem, createVariables, updateVariables, createStyles, updateStyles
 
-import { sendProgressUpdate } from "../helpers.js";
+import { sendProgressUpdate, prop } from "../helpers.js";
 
 // Coerce a lineHeight value into Figma's { value, unit } format.
 // - "AUTO" → { unit: "AUTO" }
@@ -39,7 +39,7 @@ function coerceLetterSpacing(val) {
 // Extract bound variable IDs from a style's boundVariables property.
 // Returns a flat map { field: "VariableID:xxx" } or undefined if none bound.
 function extractBoundVariables(style) {
-  const bv = style.boundVariables;
+  const bv = prop(style, "boundVariables");
   if (!bv) return undefined;
 
   const result = {};

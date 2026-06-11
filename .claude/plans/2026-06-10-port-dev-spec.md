@@ -27,7 +27,7 @@ Cross-phase invariants:
 Goal: `FIGMA_TRANSPORT=remote` serves every read tool against a Figma file with no
 relay, no plugin, no open Figma client. Plugin path untouched.
 
-- [ ] **Task 1.1: Transport interface + plugin refactor**
+- [x] **Task 1.1: Transport interface + plugin refactor**
   - Files: `src/figmagent_mcp/transport.ts` (new), `src/figmagent_mcp/connection.ts`
     (edit), `src/figmagent_mcp/server.ts` (edit)
   - Depends on: none
@@ -55,7 +55,7 @@ relay, no plugin, no open Figma client. Plugin path untouched.
   - Tests: existing suite passes with `FIGMA_TRANSPORT=plugin` (default); unit test
     that `getTransport` honors the env var.
 
-- [ ] **Task 1.2: Remote MCP client + OAuth**
+- [x] **Task 1.2: Remote MCP client + OAuth**
   - Files: `src/figmagent_mcp/remote/client.ts` (new),
     `src/figmagent_mcp/remote/auth.ts` (new)
   - Depends on: none
@@ -81,7 +81,7 @@ relay, no plugin, no open Figma client. Plugin path untouched.
   - Tests: unit-test token persistence round-trip with a mock provider; manual
     first-run auth flow (documented in README); `whoami` smoke call.
 
-- [ ] **Task 1.3: File context (replaces channels on remote)**
+- [x] **Task 1.3: File context (replaces channels on remote)**
   - Files: `src/figmagent_mcp/remote/filecontext.ts` (new),
     `src/figmagent_mcp/tools/document.ts` (edit — `join_channel` tool)
   - Depends on: 1.1
@@ -98,7 +98,7 @@ relay, no plugin, no open Figma client. Plugin path untouched.
     - `create_new_file` passthrough is **out of scope until Phase 2** (write).
   - Tests: resolution order unit tests; error message snapshot.
 
-- [ ] **Task 1.4: Command registry + remote entry shims + bundle cache**
+- [x] **Task 1.4: Command registry + remote entry shims + bundle cache**
   - Files: `src/figma_plugin/src/registry.js` (new), `src/figma_plugin/src/main.js`
     (edit), `src/figma_plugin/src/remote_entries/<domain>.js` (new, ~11 files),
     `src/figmagent_mcp/remote/bundles.ts` (new)
@@ -135,7 +135,7 @@ relay, no plugin, no open Figma client. Plugin path untouched.
     < 40KB; dispatcher behavior unchanged on plugin path (`bun run build:plugin` +
     existing tests).
 
-- [ ] **Task 1.5: Remote executor (script assembly + per-file FIFO queue)**
+- [x] **Task 1.5: Remote executor (script assembly + per-file FIFO queue)**
   - Files: `src/figmagent_mcp/remote/executor.ts` (new),
     `src/figmagent_mcp/remote/transport.ts` (new — implements `FigmaTransport`)
   - Depends on: 1.2, 1.3, 1.4
@@ -165,7 +165,7 @@ relay, no plugin, no open Figma client. Plugin path untouched.
   - Tests: assembly snapshot per domain; queue serialization unit test (two
     concurrent commands, same fileKey → sequential); 50KB guard test.
 
-- [ ] **Task 1.6: `prop()` strict-guard compat in serializers**
+- [x] **Task 1.6: `prop()` strict-guard compat in serializers**
   - Files: `src/figma_plugin/src/helpers.js` (edit), `src/figma_plugin/src/commands/`
     `document.js`, `scan.js`, `find.js`, `lint.js`, `styles.js` (edit)
   - Depends on: none

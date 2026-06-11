@@ -2,6 +2,8 @@ import { z } from "zod";
 import { server } from "../instance.js";
 import { sendCommandToFigma } from "../connection.js";
 import { joinChannel, discoverChannels } from "../connection.js";
+import { getTransport } from "../transport.js";
+import { setFileKey } from "../remote/filecontext.js";
 import { guardOutput, extractJsonSummary } from "../utils.js";
 
 // Node Type Scanning Tool
@@ -291,12 +293,36 @@ server.tool(
 // Join Channel Tool
 server.tool(
   "join_channel",
-  "Join a channel to communicate with Figma. If no channel name is provided, auto-discovers active channels from the relay and joins if exactly one is found. You usually don't need to call this — the server auto-joins on first command and auto-recovers on timeout. Call this explicitly when: (1) auto-recovery fails after repeated timeouts, (2) you need to switch between multiple open Figma files. If a specific channel name is provided, it is validated against the relay — nonexistent channels return the list of available options.",
+  "Select the Figma file to work in. On the plugin transport this joins a relay channel: with no argument it auto-discovers active channels and joins if exactly one is found; you usually don't need to call it — the server auto-joins on first command and auto-recovers on timeout. Call it explicitly when (1) auto-recovery fails after repeated timeouts, or (2) you need to switch between multiple open Figma files; named channels are validated against the relay and nonexistent ones return the available options. On the remote transport (FIGMA_TRANSPORT=remote) there are no channels — pass a Figma file URL (https://www.figma.com/design/<fileKey>/...) or a bare fileKey to select the target file.",
   {
-    channel: z.string().describe("The name of the channel to join").default(""),
+    channel: z
+      .string()
+      .describe("Channel name (plugin transport) or Figma file URL / fileKey (remote transport)")
+      .default(""),
   },
   async ({ channel }: any) => {
     try {
+      if (getTransport().name === "remote") {
+        if (!channel) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Remote transport selects files by fileKey, not channels. Pass a Figma file URL (e.g. https://www.figma.com/design/<fileKey>/...) or a bare fileKey.",
+              },
+            ],
+          };
+        }
+        const fileKey = setFileKey(channel);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Now targeting Figma file ${fileKey} on the remote transport.`,
+            },
+          ],
+        };
+      }
       if (!channel) {
         // Auto-discover: query relay for active channels
         try {

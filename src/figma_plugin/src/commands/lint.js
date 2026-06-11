@@ -3,7 +3,7 @@
 // Scope-aware: matches variables based on their declared scopes and node context.
 // Flags ambiguous matches (multiple scope-compatible variables at same distance).
 
-import { sendProgressUpdate, generateCommandId, delay, rgbaToHex } from "../helpers.js";
+import { sendProgressUpdate, generateCommandId, delay, rgbaToHex, prop } from "../helpers.js";
 
 // ─── Color Distance (CIE76 deltaE in CIELAB) ───────────────────────────────
 
@@ -146,7 +146,7 @@ async function buildVariableIndexes() {
 function collectNodes(node, path, depth, result) {
   // PAGE nodes don't have a `visible` property — skip visibility check for them.
   // For all other nodes, skip hidden ones.
-  if (node.type !== "PAGE" && !node.visible) return;
+  if (node.type !== "PAGE" && !prop(node, "visible")) return;
 
   // Don't lint the PAGE node itself (it has no lintable properties),
   // but traverse its children so a single lint_design call on a page covers everything.
@@ -412,7 +412,7 @@ function checkScalarProperty(node, propName, figmaField, scalarList, requiredSco
   if (propName === "opacity" && value === 1) return null;
 
   // Check if already bound
-  const bv = node.boundVariables;
+  const bv = prop(node, "boundVariables");
   if (bv && bv[figmaField]) return null;
 
   const { match, ambiguous, alternatives } = findBestScalarMatch(value, scalarList, requiredScopes);
@@ -453,7 +453,7 @@ function checkStringProperty(node, propName, figmaField, stringList, requiredSco
   }
 
   // Check if already bound
-  const bv = node.boundVariables;
+  const bv = prop(node, "boundVariables");
   if (bv && bv[figmaField]) return null;
 
   const { match, ambiguous, alternatives } = findExactStringMatch(value, stringList, requiredScopes);
@@ -544,7 +544,18 @@ export async function lintDesign(params) {
 
   // Phase 2: Collect nodes
   const nodeList = [];
-  collectNodes(rootNode, "", 0, nodeList);
+  if (rootNode.type === "DOCUMENT") {
+    // DOCUMENT root: lint every page (load each page first for dynamic-page access)
+    for (let pi = 0; pi < rootNode.children.length; pi++) {
+      const page = rootNode.children[pi];
+      if (typeof page.loadAsync === "function") {
+        await page.loadAsync();
+      }
+      collectNodes(page, "", 0, nodeList);
+    }
+  } else {
+    collectNodes(rootNode, "", 0, nodeList);
+  }
 
   sendProgressUpdate(
     commandId,
