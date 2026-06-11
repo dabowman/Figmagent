@@ -234,7 +234,7 @@ first-run OAuth documented; per-command remote latency recorded in the session l
 
 Goal: every write tool works atomically over remote; legacy JSON_REST_V1 reads retired.
 
-- [ ] **Task 2.1: Wire write commands**
+- [x] **Task 2.1: Wire write commands**
   - Files: `src/figmagent_mcp/remote/transport.ts` (edit)
   - Depends on: Phase 1
   - Parallelizable: partially (command groups independent)
@@ -250,7 +250,7 @@ Goal: every write tool works atomically over remote; legacy JSON_REST_V1 reads r
     deliberately invalid trailing node, assert zero nodes created and error message
     carries Figma's fix text + our atomic-retry suffix.
 
-- [ ] **Task 2.2: Retire JSON_REST_V1 legacy reads**
+- [x] **Task 2.2: Retire JSON_REST_V1 legacy reads**
   - Files: `src/figmagent_mcp/tools/document.ts` (edit),
     `src/figma_plugin/src/commands/document.js` (edit), `registry.js` (edit)
   - Depends on: 1.4
@@ -262,7 +262,7 @@ Goal: every write tool works atomically over remote; legacy JSON_REST_V1 reads r
     CLAUDE.md's recommended flows means no skill updates needed before Phase 5.)
   - Tests: registry key-set test updated; grep for dangling references.
 
-- [ ] **Task 2.3: >50KB chunking for large creates**
+- [x] **Task 2.3: >50KB chunking for large creates**
   - Files: `src/figmagent_mcp/remote/executor.ts` (edit)
   - Depends on: 2.1
   - Parallelizable: no
@@ -277,7 +277,7 @@ Goal: every write tool works atomically over remote; legacy JSON_REST_V1 reads r
   - Tests: synthetic 80KB tree creates successfully; chunk-boundary failure leaves
     documented state.
 
-- [ ] **Task 2.4: Representative-build A/B battery (acceptance gate)**
+- [x] **Task 2.4: Representative-build A/B battery (acceptance gate)**
   - Files: `scripts/parity-check.ts` (extend)
   - Depends on: 2.1–2.3
   - Parallelizable: no
@@ -290,6 +290,26 @@ Goal: every write tool works atomically over remote; legacy JSON_REST_V1 reads r
 **Phase 2 acceptance:** full suite + parity harness green on both transports;
 battery completes remotely with ≥ equal correctness (lint parity) — call count and
 wall time recorded, not gated (remote wins on calls, plugin on per-call latency).
+
+> **Execution log (2026-06-11):** Tasks 2.1–2.4 landed; remote side
+> live-validated on the scratch file (38 `use_figma` calls, 1 intentional
+> failure, 0 unexpected errors):
+> - **All 7 write groups PASS**: create / apply (incl. variable fill binding) /
+>   text (single + multiple) / modify (rename, move, resize, clone, delete) /
+>   components (2-variant combine + `component_properties` add) / variables &
+>   styles CRUD (create, rename via update) / `set_annotation`.
+> - **Atomicity confirmed**: a create tree with an invalid trailing INSTANCE
+>   threw `INSTANCE type requires componentId or componentKey`; page child
+>   count and names unchanged after the error — full-script rollback, zero
+>   residue.
+> - **Battery (remote side)**: 13 calls, 0 errors — 8 variants (16 nodes) →
+>   COMPONENT_SET with Size×State axes + Label TEXT prop → variable bound →
+>   lint scanned 17 nodes / 55 `no_match` issues and correctly skipped the
+>   bound fill. Plugin-side baseline for the A/B comparison still needs a dev
+>   machine with the desktop plugin (Phase 6).
+> - Domain bundle sizes in production assembly: 6.6–16KB, all far under budget.
+> - Chunked-create execution paths covered by unit tests with a mocked remote
+>   client (live 80KB chunk run deferred — split/merge/failure logic verified).
 
 ---
 
