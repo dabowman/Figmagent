@@ -74,7 +74,7 @@ Figmagent can run against Figma's official MCP server (`mcp.figma.com`) instead 
 
 **Parity harness:** `bun scripts/parity-check.ts --file <figmaUrl> [--channel <relayChannel>]` runs the read suite (add `--battery` for the representative 8-variant build A/B) on both transports against the same file, diffs normalized outputs, and prints per-command latency. Expect ~4–7s/call overhead on remote — it wins on calls-per-task, not per-call speed.
 
-## Tools (38)
+## Tools (39)
 
 The core tools mirror Claude Code primitives (`read`, `grep`, `edit`, `write`) but operate on Figma nodes, not files.
 
@@ -90,6 +90,7 @@ The core tools mirror Claude Code primitives (`read`, `grep`, `edit`, `write`) b
 | `lint` | Scan a subtree for unbound properties, match against variables (CIE76 deltaE for colors), auto-fix exact matches |
 | `screenshot` | Export a node as PNG, JPG, SVG, or PDF |
 | `get_selection` | Get the user's current selection |
+| `run_script` | Escape hatch (remote transport only): run a raw Plugin API script with the `fig.*` stdlib preloaded (font-safe text, FSGN serializer, scope-validated variable binding, post-write checks). Last resort — use only when no first-class tool covers the operation. Scripts are session-logged in full. |
 
 ### Files & Navigation
 

@@ -128,11 +128,15 @@ async function runOne(
   code: string,
   timeoutMs: number,
   atomicWrite: boolean,
+  description?: string,
 ): Promise<unknown> {
   const client = getRemoteClient();
   const start = performance.now();
   try {
-    const result = await client.runScript({ fileKey, code, description: `figmagent:${command}` }, timeoutMs);
+    const result = await client.runScript(
+      { fileKey, code, description: description || `figmagent:${command}` },
+      timeoutMs,
+    );
     logger.info(`Remote ${command} completed in ${Math.round(performance.now() - start)}ms`);
     return result;
   } catch (err) {
@@ -144,6 +148,35 @@ async function runOne(
     // A thrown script error means the whole script rolled back (verified).
     throw new Error(atomicWrite ? `${message} (atomic: no changes were applied; safe to retry)` : message);
   }
+}
+
+// ─── Raw scripts (run_script tool) ───────────────────────────────────────────
+
+export interface RawScriptOptions {
+  fileKey: string;
+  /** Fully assembled script (stdlib bundle + user code + wrapper). */
+  code: string;
+  /** Human-readable description, surfaced to the official server. */
+  description: string;
+  timeoutMs?: number;
+  /** Append the atomic-retry note to errors (mode: "write" scripts). */
+  atomicWrite?: boolean;
+}
+
+/**
+ * Run a pre-assembled script through the same per-file FIFO queue and
+ * timeout/error mapping as regular commands. Used by the run_script tool —
+ * assembly (stdlib + deny-list scan + write wrapper) happens in tools/script.ts.
+ */
+export async function executeRawScript(options: RawScriptOptions): Promise<unknown> {
+  const { fileKey, code, description, timeoutMs = 120000, atomicWrite = false } = options;
+  if (code.length > SCRIPT_CHAR_BUDGET) {
+    throw new Error(
+      `run_script payload is ${code.length} chars — over the ${SCRIPT_CHAR_BUDGET} char use_figma limit ` +
+        "(stdlib bundle + your code combined). Split the script into smaller sequential run_script calls.",
+    );
+  }
+  return enqueue(fileKey, () => runOne(fileKey, "run_script", code, timeoutMs, atomicWrite, description));
 }
 
 // ─── Chunked create (>50KB payloads) ─────────────────────────────────────────

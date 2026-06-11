@@ -56,6 +56,41 @@ export function fail(message, fix) {
   throw new Error(message + ". Fix: " + fix);
 }
 
+// Font weight number → Figma style name. Shared by create.js and the
+// run_script stdlib (fig.loadFont).
+export var FONT_WEIGHT_STYLES = {
+  100: "Thin",
+  200: "Extra Light",
+  300: "Light",
+  400: "Regular",
+  500: "Medium",
+  600: "Semi Bold",
+  700: "Bold",
+  800: "Extra Bold",
+  900: "Black",
+};
+
+// Resolve and load a font. weightOrStyle: a numeric weight (600 → "Semi Bold"),
+// a style name ("Italic"), or undefined (→ "Regular"). Fallback chain mirrors
+// create.js: requested family+style → Inter Regular. Returns the FontName
+// that was actually loaded — assign it to node.fontName before setting characters.
+export async function loadFontWithFallback(family, weightOrStyle) {
+  var fam = family || "Inter";
+  var style = "Regular";
+  if (typeof weightOrStyle === "number" || /^\d+$/.test(String(weightOrStyle))) {
+    style = FONT_WEIGHT_STYLES[toNumber(weightOrStyle, 400)] || "Regular";
+  } else if (weightOrStyle) {
+    style = String(weightOrStyle);
+  }
+  try {
+    await figma.loadFontAsync({ family: fam, style: style });
+    return { family: fam, style: style };
+  } catch (_e) {
+    await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+    return { family: "Inter", style: "Regular" };
+  }
+}
+
 // Coerce value to number with fallback (handles string "4" → 4)
 export function toNumber(val, fallback) {
   if (val === undefined || val === null) return fallback;

@@ -461,7 +461,7 @@ state fixes.
     entries, batch continues, summary reports per-op status).
   - Tests: one test per rejection path; batch-continues-on-per-op-error test.
 
-- [ ] **Task 4.4: `run_script` tool (remote transport only)**
+- [x] **Task 4.4: `run_script` tool (remote transport only)**
   - Files: `src/figmagent_mcp/tools/script.ts` (new),
     `src/figma_plugin/src/remote_entries/stdlib.js` (new),
     `src/figmagent_mcp/remote/executor.ts` (edit)
@@ -515,6 +515,15 @@ state fixes.
 **Phase 4 acceptance:** the five assertion classes are caught in tests; mini-lint
 fires on exact matches; `run_script` works with stdlib + logging; audited errors
 all state fixes.
+
+> **Execution log (2026-06-11):** all five tasks landed. Assertions, mini-lint,
+> boundary checks, and error rewrites: 196→212 tests. run_script: stdlib bundle
+> 29.4KB (fig.prop/setCharacters/loadFont/serialize/bindVariable/check/
+> createNode), read-mode deny-list with the spec's message shape, write-mode
+> { nodeIds } post-check wrapper in the same script, full script text in the
+> session log, per-file FIFO reused via executeRawScript. Live remote
+> round-trip of a run_script write deferred with the OAuth items (headless
+> container). 39 tools registered.
 
 > **Execution log (2026-06-11):** Tasks 4.1, 4.2, 4.3, 4.5 landed (4.4
 > `run_script` is a follow-up). `assertions.js` exports pure predicates

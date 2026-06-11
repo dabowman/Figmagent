@@ -20,7 +20,7 @@ interface ToolCallEntry {
   ts: string;
   /** Duration in ms */
   durationMs: number;
-  /** Truncated params (first 500 chars of JSON) */
+  /** Truncated params (first 500 chars of JSON; run_script is logged in full) */
   params: string;
   /** Whether the call succeeded */
   success: boolean;
@@ -75,9 +75,13 @@ function flush(): void {
 }
 
 /** Summarize params — truncate to avoid logging huge payloads */
-function summarizeParams(params: unknown): string {
+function summarizeParams(params: unknown, tool?: string): string {
   try {
     const json = JSON.stringify(params);
+    // run_script params (the full script text) are logged untruncated:
+    // recurring scripts are the tool roadmap (D4) — each one is a missing
+    // first-class tool or stdlib function, so truncation destroys the signal.
+    if (tool === "run_script") return json;
     if (json.length <= 500) return json;
     return json.slice(0, 497) + "...";
   } catch {
@@ -106,7 +110,7 @@ export function recordToolCall(
     transport,
     ts: new Date().toISOString(),
     durationMs: Math.round(performance.now() - startTime),
-    params: summarizeParams(params),
+    params: summarizeParams(params, tool),
     success,
     error,
     responseChars,

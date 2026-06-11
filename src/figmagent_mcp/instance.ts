@@ -35,9 +35,10 @@ The core tools mirror Claude Code primitives but operate on Figma nodes, NOT fil
 
 ## Available Tools
 
-All 38 tools provided by this server, grouped by domain:
+All 39 tools provided by this server, grouped by domain:
 
 **Core:** read, grep, edit, write, lint, screenshot, use_file, get_selection
+**Escape Hatch:** run_script (remote transport only) — raw Plugin API script with the fig.* stdlib preloaded. LAST RESORT: use only when no first-class tool covers the operation. mode: "write" scripts that return { nodeIds: [...] } get post-run structural checks.
 **Creating Files:** create_new_file (remote transport)
 **Components:** get_local_components, combine_as_variants, component_properties, get_instance_overrides, set_instance_overrides
 **Design System:** get_design_system, create_variables, update_variables, create_styles, update_styles, prepare_figma_variables

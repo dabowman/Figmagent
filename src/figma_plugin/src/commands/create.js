@@ -1,6 +1,6 @@
 // Create command: builds one or more nodes from a recursive spec
 
-import { toNumber, sendProgressUpdate, fail } from "../helpers.js";
+import { toNumber, sendProgressUpdate, fail, FONT_WEIGHT_STYLES } from "../helpers.js";
 import { runPostWriteAssertions } from "../assertions.js";
 import { miniLint } from "./lint.js";
 
@@ -69,19 +69,8 @@ export async function create(params) {
       // Determine the target font style: fontWeight mapping takes precedence if provided
       let targetStyle = fontStyle;
       if (spec.fontWeight !== undefined) {
-        const weightMap = {
-          100: "Thin",
-          200: "Extra Light",
-          300: "Light",
-          400: "Regular",
-          500: "Medium",
-          600: "Semi Bold",
-          700: "Bold",
-          800: "Extra Bold",
-          900: "Black",
-        };
         const w = toNumber(spec.fontWeight, 400);
-        targetStyle = weightMap[w] || "Regular";
+        targetStyle = FONT_WEIGHT_STYLES[w] || "Regular";
       }
       // Load and assign font BEFORE setting characters
       try {

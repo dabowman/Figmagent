@@ -88,7 +88,7 @@ function applyStrokeColor(node, colorSpec) {
 // Binds a variable to a node field. Returns a warning object (and skips the
 // bind) when the variable's declared scopes don't cover this field on this
 // node type — Figma's API would accept the bind silently, so we surface it.
-async function bindVariableToNode(node, field, variableId) {
+export async function bindVariableToNode(node, field, variableId) {
   const variable = await figma.variables.getVariableByIdAsync(variableId);
   if (!variable)
     fail(
