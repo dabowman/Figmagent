@@ -10,10 +10,7 @@ const EXPECTED_COMMANDS = [
   // document
   "get_document_info",
   "get_selection",
-  "get_node_info",
-  "get_nodes_info",
   "get_node_tree",
-  "read_my_design",
   "get_reactions",
   "export_node_as_image",
   // create / apply
@@ -76,10 +73,7 @@ const EXPECTED_COMMANDS = [
 const EXPECTED_READ = [
   "get_document_info",
   "get_selection",
-  "get_node_info",
-  "get_nodes_info",
   "get_node_tree",
-  "read_my_design",
   "scan_text_nodes",
   "scan_nodes_by_types",
   "get_styles",

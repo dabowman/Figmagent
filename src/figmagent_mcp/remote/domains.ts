@@ -8,10 +8,7 @@ export const COMMAND_DOMAINS: Record<string, string> = {
   // document
   get_document_info: "document",
   get_selection: "document",
-  get_node_info: "document",
-  get_nodes_info: "document",
   get_node_tree: "document",
-  read_my_design: "document",
   get_reactions: "document",
   export_node_as_image: "document",
   // create
@@ -72,9 +69,9 @@ export const COMMAND_DOMAINS: Record<string, string> = {
 };
 
 /**
- * Commands enabled on the remote transport in Phase 1 (reads only).
- * Phase 2 wires the writes; until then write commands fail with a
- * fix-stating error pointing at FIGMA_TRANSPORT=plugin.
+ * Read commands — no mutation, no atomic-retry note on errors. Everything
+ * else is a write: a thrown script error means the whole script rolled back
+ * (verified), so write errors carry the atomic-retry suffix.
  */
 export const REMOTE_READ_COMMANDS = new Set<string>([
   "get_document_info",
@@ -96,11 +93,12 @@ export const REMOTE_READ_COMMANDS = new Set<string>([
   "get_component_properties",
 ]);
 
-export function isRemoteEnabled(command: string, params: unknown): boolean {
-  if (!REMOTE_READ_COMMANDS.has(command)) return false;
-  // lint_design with autoFix mutates — write path, Phase 2
+/** True when the command mutates the file (atomic rollback applies). */
+export function isWriteCommand(command: string, params: unknown): boolean {
+  if (!REMOTE_READ_COMMANDS.has(command)) return true;
+  // lint_design is a read unless autoFix binds variables
   if (command === "lint_design" && params && typeof params === "object" && (params as any).autoFix) {
-    return false;
+    return true;
   }
-  return true;
+  return false;
 }

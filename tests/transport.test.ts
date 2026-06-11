@@ -115,3 +115,30 @@ describe("script assembly", () => {
     await expect(assembleScript("create", big)).rejects.toThrow(/over the 49000.*nodes/s);
   });
 });
+
+describe("chunked create fallback", () => {
+  test("oversized create with a single monolithic node surfaces the budget error", async () => {
+    const { executeRemoteCommand } = await import("../src/figmagent_mcp/remote/executor");
+    // One giant childless node — nothing to split at depth-1, so the
+    // original 50KB guard error must surface (no network touched).
+    const tree = { type: "TEXT", name: "huge", text: "x".repeat(60000) };
+    await expect(
+      executeRemoteCommand({ fileKey: "f", command: "create", params: { tree }, atomicWrite: true }),
+    ).rejects.toThrow(/over the 49000/);
+  });
+
+  test("oversized create with one giant child names the unsplittable child", async () => {
+    const { executeRemoteCommand } = await import("../src/figmagent_mcp/remote/executor");
+    const tree = {
+      type: "FRAME",
+      name: "root",
+      children: [
+        { type: "TEXT", name: "small", text: "hi" },
+        { type: "TEXT", name: "giant", text: "x".repeat(60000) },
+      ],
+    };
+    await expect(
+      executeRemoteCommand({ fileKey: "f", command: "create", params: { tree }, atomicWrite: true }),
+    ).rejects.toThrow(/cannot be chunked.*giant/s);
+  });
+});

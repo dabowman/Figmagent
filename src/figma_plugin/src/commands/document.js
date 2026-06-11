@@ -1,14 +1,6 @@
 // Document, selection, node info, and export commands
 
-import {
-  filterFigmaNode,
-  sendProgressUpdate,
-  generateCommandId,
-  customBase64Encode,
-  rgbaToHex,
-  toNumber,
-  prop,
-} from "../helpers.js";
+import { sendProgressUpdate, generateCommandId, customBase64Encode, rgbaToHex, toNumber, prop } from "../helpers.js";
 
 export async function getDocumentInfo() {
   await figma.currentPage.loadAsync();
@@ -47,66 +39,6 @@ export async function getSelection() {
       visible: prop(node, "visible"),
     })),
   };
-}
-
-export async function getNodeInfo(nodeId) {
-  const node = await figma.getNodeByIdAsync(nodeId);
-
-  if (!node) {
-    throw new Error(`Node not found with ID: ${nodeId}`);
-  }
-
-  const response = await node.exportAsync({
-    format: "JSON_REST_V1",
-  });
-
-  return filterFigmaNode(response.document);
-}
-
-export async function getNodesInfo(nodeIds) {
-  try {
-    const nodes = await Promise.all(nodeIds.map((id) => figma.getNodeByIdAsync(id)));
-    const validNodes = nodes.filter((node) => node !== null);
-
-    const responses = await Promise.all(
-      validNodes.map(async (node) => {
-        const response = await node.exportAsync({
-          format: "JSON_REST_V1",
-        });
-        return {
-          nodeId: node.id,
-          document: filterFigmaNode(response.document),
-        };
-      }),
-    );
-
-    return responses;
-  } catch (error) {
-    throw new Error(`Error getting nodes info: ${error.message}`);
-  }
-}
-
-export async function readMyDesign() {
-  try {
-    const nodes = await Promise.all(figma.currentPage.selection.map((node) => figma.getNodeByIdAsync(node.id)));
-    const validNodes = nodes.filter((node) => node !== null);
-
-    const responses = await Promise.all(
-      validNodes.map(async (node) => {
-        const response = await node.exportAsync({
-          format: "JSON_REST_V1",
-        });
-        return {
-          nodeId: node.id,
-          document: filterFigmaNode(response.document),
-        };
-      }),
-    );
-
-    return responses;
-  } catch (error) {
-    throw new Error(`Error getting nodes info: ${error.message}`);
-  }
 }
 
 export async function getReactions(nodeIds) {

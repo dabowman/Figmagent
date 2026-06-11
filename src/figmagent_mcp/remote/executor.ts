@@ -107,24 +107,141 @@ export interface ExecuteOptions {
 
 export async function executeRemoteCommand(options: ExecuteOptions): Promise<unknown> {
   const { fileKey, command, params, timeoutMs = 120000, atomicWrite = false } = options;
-  const code = await assembleScript(command, params);
+
+  let code: string;
+  try {
+    code = await assembleScript(command, params);
+  } catch (err) {
+    // Oversized create payloads chunk at depth-1 children instead of failing.
+    if (command === "create" && err instanceof Error && err.message.includes("use_figma limit")) {
+      return executeChunkedCreate(options, err);
+    }
+    throw err;
+  }
+
+  return enqueue(fileKey, () => runOne(fileKey, command, code, timeoutMs, atomicWrite));
+}
+
+async function runOne(
+  fileKey: string,
+  command: string,
+  code: string,
+  timeoutMs: number,
+  atomicWrite: boolean,
+): Promise<unknown> {
   const client = getRemoteClient();
+  const start = performance.now();
+  try {
+    const result = await client.runScript({ fileKey, code, description: `figmagent:${command}` }, timeoutMs);
+    logger.info(`Remote ${command} completed in ${Math.round(performance.now() - start)}ms`);
+    return result;
+  } catch (err) {
+    if (isTimeoutError(err)) {
+      // Match the plugin transport's timeout shape
+      throw new Error("Request to Figma timed out");
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    // A thrown script error means the whole script rolled back (verified).
+    throw new Error(atomicWrite ? `${message} (atomic: no changes were applied; safe to retry)` : message);
+  }
+}
+
+// ─── Chunked create (>50KB payloads) ─────────────────────────────────────────
+// Params dominate script size (bundles are ≤16KB). Split the tree at depth-1:
+// chunk 1 creates the root plus as many leading children as fit; each
+// remaining child is created in its own sequential script with parentId =
+// the root ID. All chunks run inside ONE queue slot so no other command
+// interleaves mid-create. Rollback is per-chunk, not whole-call — the
+// response says so, and a mid-chunk failure names the root to clean up.
+
+interface CreateTreeResult {
+  success: boolean;
+  totalNodesCreated: number;
+  tree: { id: string; name: string; type: string; children?: unknown[] };
+}
+
+async function executeChunkedCreate(options: ExecuteOptions, oversizeError: Error): Promise<unknown> {
+  const { fileKey, command, timeoutMs = 120000 } = options;
+  const params = options.params as { parentId?: string; tree?: { children?: unknown[] } };
+  const tree = params?.tree;
+  const children = tree && Array.isArray(tree.children) ? tree.children : null;
+
+  if (!children || children.length < 2) {
+    // Nothing to split at depth-1 — surface the original guard error.
+    throw oversizeError;
+  }
+
+  // Budget for the params JSON in each script: total budget minus the create
+  // bundle and the fixed wrapper lines (~200 chars).
+  const bundleSize = (await getDomainBundle(COMMAND_DOMAINS[command])).length;
+  const paramsBudget = SCRIPT_CHAR_BUDGET - bundleSize - 500;
+
+  const rootShell = { ...tree, children: [] as unknown[] };
+  const shellSize = JSON.stringify({ parentId: params.parentId, tree: rootShell }).length;
+
+  // Greedily pack leading children into chunk 1 alongside the root.
+  const childSizes = children.map((c) => JSON.stringify(c).length);
+  let firstSliceEnd = 0;
+  let used = shellSize;
+  while (firstSliceEnd < children.length && used + childSizes[firstSliceEnd] < paramsBudget) {
+    used += childSizes[firstSliceEnd];
+    firstSliceEnd++;
+  }
+
+  // Each remaining child must fit a script on its own.
+  for (let i = Math.max(firstSliceEnd, 1); i < children.length; i++) {
+    if (childSizes[i] > paramsBudget - 200) {
+      throw new Error(
+        `create payload cannot be chunked: child ${i} ("${(children[i] as any)?.name ?? "unnamed"}") is ` +
+          `${childSizes[i]} chars by itself — over the per-script budget. Split that subtree into ` +
+          "multiple create calls manually.",
+      );
+    }
+  }
+
+  const chunkTrees: { parentRelative: boolean; tree: unknown }[] = [
+    { parentRelative: false, tree: { ...tree, children: children.slice(0, Math.max(firstSliceEnd, 1)) } },
+  ];
+  for (let i = Math.max(firstSliceEnd, 1); i < children.length; i++) {
+    chunkTrees.push({ parentRelative: true, tree: children[i] });
+  }
 
   return enqueue(fileKey, async () => {
-    const start = performance.now();
+    let rootResult: CreateTreeResult | null = null;
+    let completed = 0;
     try {
-      const result = await client.runScript({ fileKey, code, description: `figmagent:${command}` }, timeoutMs);
-      logger.info(`Remote ${command} completed in ${Math.round(performance.now() - start)}ms`);
-      return result;
-    } catch (err) {
-      if (isTimeoutError(err)) {
-        // Match the plugin transport's timeout shape
-        throw new Error("Request to Figma timed out");
+      for (const chunk of chunkTrees) {
+        const chunkParams = chunk.parentRelative
+          ? { parentId: rootResult!.tree.id, tree: chunk.tree }
+          : { parentId: params.parentId, tree: chunk.tree };
+        const code = await assembleScript(command, chunkParams);
+        const result = (await runOne(fileKey, command, code, timeoutMs, true)) as CreateTreeResult;
+        if (!chunk.parentRelative) {
+          rootResult = result;
+          if (!rootResult.tree.children) rootResult.tree.children = [];
+        } else {
+          rootResult!.totalNodesCreated += result.totalNodesCreated;
+          rootResult!.tree.children!.push(result.tree);
+        }
+        completed++;
       }
+    } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      // A thrown script error means the whole script rolled back (verified).
-      throw new Error(atomicWrite ? `${message} (atomic: no changes were applied; safe to retry)` : message);
+      if (rootResult) {
+        throw new Error(
+          `${message} — chunked create failed after ${completed}/${chunkTrees.length} chunks; ` +
+            `root ${rootResult.tree.id} holds a partial tree (rollback is per-chunk). ` +
+            `Delete ${rootResult.tree.id} to clean up, then retry.`,
+        );
+      }
+      throw err;
     }
+    return {
+      ...rootResult!,
+      chunked: true,
+      chunks: chunkTrees.length,
+      note: "Payload exceeded the 50KB script limit and was created in sequential chunks. Rollback is per-chunk, not whole-call.",
+    };
   });
 }
 

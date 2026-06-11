@@ -6,7 +6,7 @@
 
 import type { FigmaCommand } from "../types.js";
 import { executeRemoteCommand } from "./executor.js";
-import { isRemoteEnabled, COMMAND_DOMAINS } from "./domains.js";
+import { isWriteCommand, COMMAND_DOMAINS } from "./domains.js";
 import { resolveFileKey } from "./filecontext.js";
 
 export class RemoteTransport {
@@ -26,11 +26,12 @@ export class RemoteTransport {
       throw new Error(`Command "${command}" is not available on the remote transport.`);
     }
 
-    if (!isRemoteEnabled(command, params)) {
-      throw new Error(
-        `Command "${command}" is not yet supported on the remote transport (writes land in Phase 2). ` +
-          "Set FIGMA_TRANSPORT=plugin to use the local plugin path.",
-      );
+    // Viewport/selection manipulation has no effect in a headless session.
+    if (command === "set_focus" || command === "set_selections") {
+      return {
+        success: true,
+        note: `${command} is a no-op on the remote transport (headless — no viewport or live selection).`,
+      };
     }
 
     const fileKey = resolveFileKey();
@@ -43,7 +44,7 @@ export class RemoteTransport {
       command,
       params,
       timeoutMs: effectiveTimeout,
-      atomicWrite: false,
+      atomicWrite: isWriteCommand(command, params),
     });
 
     // Headless sessions have no user selection — say so instead of returning

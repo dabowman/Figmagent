@@ -39,7 +39,7 @@ Runs inside Figma. Source lives in `src/figma_plugin/src/` as ES modules, bundle
 - `src/main.js` — entry point: imports, concurrency control, command dispatcher, plugin UI handlers
 - `src/helpers.js` — shared utilities: state, progress updates, toNumber, filterFigmaNode, sanitizeSymbols, etc.
 - `src/setcharacters.js` — font-safe text replacement (handles mixed fonts)
-- `src/commands/document.js` — getDocumentInfo, getSelection, getNodeInfo, readMyDesign, getNodeTree (FSGN traversal), exportNodeAsImage
+- `src/commands/document.js` — getDocumentInfo, getSelection, getNodeTree (FSGN traversal), exportNodeAsImage
 - `src/commands/create.js` — create (single nodes and nested trees, including COMPONENT and INSTANCE types)
 - `src/commands/apply.js` — unified property application: fill, stroke, corner radius, opacity, font properties, layout, variables, text styles, variant swapping, exposed instances
 - `src/commands/modify.js` — moveNode, resizeNode, renameNode, deleteNode, cloneNode, cloneAndModify, reorderChildren

@@ -3,38 +3,11 @@
 // Handlers take a single params object; positional-arg command functions are
 // wrapped here (including the params-presence validation main.js used to inline).
 
-import {
-  getDocumentInfo,
-  getSelection,
-  getNodeInfo,
-  getNodesInfo,
-  readMyDesign,
-  getReactions,
-  exportNodeAsImage,
-  getNodeTree,
-} from "../commands/document.js";
+import { getDocumentInfo, getSelection, getReactions, exportNodeAsImage, getNodeTree } from "../commands/document.js";
 
 export const COMMANDS = {
   get_document_info: { lock: "read", handler: () => getDocumentInfo() },
   get_selection: { lock: "read", handler: () => getSelection() },
-  get_node_info: {
-    lock: "read",
-    handler: (params) => {
-      if (!params || !params.nodeId) {
-        throw new Error("Missing nodeId parameter");
-      }
-      return getNodeInfo(params.nodeId);
-    },
-  },
-  get_nodes_info: {
-    lock: "read",
-    handler: (params) => {
-      if (!params || !params.nodeIds || !Array.isArray(params.nodeIds)) {
-        throw new Error("Missing or invalid nodeIds parameter");
-      }
-      return getNodesInfo(params.nodeIds);
-    },
-  },
   get_node_tree: {
     lock: "read",
     handler: (params) => {
@@ -44,7 +17,6 @@ export const COMMANDS = {
       return getNodeTree(params);
     },
   },
-  read_my_design: { lock: "read", handler: () => readMyDesign() },
   get_reactions: {
     lock: "read",
     handler: (params) => {

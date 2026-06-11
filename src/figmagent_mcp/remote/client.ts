@@ -86,25 +86,14 @@ export class RemoteMcpClient {
   }
 
   /**
-   * Execute a Plugin API script in the target file via use_figma.
-   * Returns the parsed JSON when the script returned JSON.stringify(...),
-   * otherwise the raw text.
+   * Call any tool on the official server. Returns the parsed JSON when the
+   * tool returned JSON text, otherwise the raw text. Tool errors surface as
+   * thrown Errors carrying Figma's message verbatim.
    */
-  async runScript(params: UseFigmaParams, timeoutMs: number = 120000): Promise<unknown> {
+  async callOfficialTool(name: string, args: Record<string, unknown>, timeoutMs: number = 120000): Promise<unknown> {
     const client = await this.connect();
 
-    const result = await client.callTool(
-      {
-        name: "use_figma",
-        arguments: {
-          fileKey: params.fileKey,
-          code: params.code,
-          description: params.description,
-        },
-      },
-      undefined,
-      { timeout: timeoutMs },
-    );
+    const result = await client.callTool({ name, arguments: args }, undefined, { timeout: timeoutMs });
 
     const content = (result.content || []) as ToolResultContent[];
     const text = content
@@ -114,7 +103,7 @@ export class RemoteMcpClient {
 
     if (result.isError) {
       // Figma's error messages already state fixes — pass them through verbatim.
-      throw new Error(text || "use_figma returned an error with no message");
+      throw new Error(text || `${name} returned an error with no message`);
     }
 
     if (!text) return null;
@@ -123,6 +112,19 @@ export class RemoteMcpClient {
     } catch {
       return text;
     }
+  }
+
+  /**
+   * Execute a Plugin API script in the target file via use_figma.
+   * Returns the parsed JSON when the script returned JSON.stringify(...),
+   * otherwise the raw text.
+   */
+  async runScript(params: UseFigmaParams, timeoutMs: number = 120000): Promise<unknown> {
+    return this.callOfficialTool(
+      "use_figma",
+      { fileKey: params.fileKey, code: params.code, description: params.description },
+      timeoutMs,
+    );
   }
 
   async close(): Promise<void> {

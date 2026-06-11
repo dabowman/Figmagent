@@ -34,7 +34,7 @@ const instructions = `Figmagent bridges AI agents with Figma via a WebSocket rel
 All 50 tools provided by this server, grouped by domain:
 
 **Reading & Navigation:** get_document_info, get_selection, get, find, scan_text_nodes, scan_nodes_by_types, export_node_as_image
-**Creating:** create
+**Creating:** create, create_new_file (remote transport)
 **Modifying:** apply, move_node, resize_node, rename_node, delete_node, delete_multiple_nodes, clone_node, clone_and_modify, reorder_children
 **Text:** set_text_content, set_multiple_text_contents
 **Components:** get_local_components, combine_as_variants, component_properties, get_instance_overrides, set_instance_overrides

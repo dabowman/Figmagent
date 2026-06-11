@@ -265,7 +265,7 @@ describe("sendCommandToFigma", () => {
       }
     };
 
-    const result = sendCommandToFigma("get_node_info", { nodeId: "bad-id" }, 5000);
+    const result = sendCommandToFigma("get_node_tree", { nodeId: "bad-id" }, 5000);
     await expect(result).rejects.toThrow("Node not found");
 
     spy.close();
