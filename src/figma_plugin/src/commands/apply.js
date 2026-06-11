@@ -1,8 +1,10 @@
 // Apply command: unified property application for existing nodes.
-// Handles direct values, layout properties, variable bindings, text styles,
-// and effect styles in a single call. Accepts a flat list or nested tree of node references.
+// Handles direct values, layout properties, rename/move/reorder, text content,
+// variable bindings, text styles, effect styles, and deletion in a single call.
+// Accepts a flat list or nested tree of node references.
 
-import { toNumber, sendProgressUpdate } from "../helpers.js";
+import { toNumber, sendProgressUpdate, findNodeByIdInTree } from "../helpers.js";
+import { setCharacters } from "../setcharacters.js";
 import { FIELD_MAP } from "./styles.js";
 
 // Flatten a potentially nested node list into a flat array of operations
@@ -102,7 +104,12 @@ async function applyEffectStyle(node, styleId, styleCache) {
 }
 
 async function processNode(op, styleCache) {
-  const node = await figma.getNodeByIdAsync(op.nodeId);
+  let node = await figma.getNodeByIdAsync(op.nodeId);
+  if (!node) {
+    // Fallback for instance-internal paths (I<instance>;<node>) — same
+    // resolution chain commands/text.js uses for text overrides.
+    node = findNodeByIdInTree(op.nodeId);
+  }
   if (!node) throw new Error("Node not found: " + op.nodeId);
 
   // Phase 0: Component operations (swap variant, set exposed instance)
@@ -123,6 +130,24 @@ async function processNode(op, styleCache) {
   if (op.layoutMode !== undefined && "layoutMode" in node) {
     node.layoutMode = op.layoutMode;
     if (op.layoutWrap !== undefined) node.layoutWrap = op.layoutWrap;
+  }
+
+  // Phase 1.5: Rename / move / reorder
+  if (op.name !== undefined) {
+    node.name = op.name;
+  }
+  if (op.x !== undefined && "x" in node) node.x = toNumber(op.x, 0);
+  if (op.y !== undefined && "y" in node) node.y = toNumber(op.y, 0);
+  if (op.index !== undefined) {
+    const parent = node.parent;
+    if (!parent || !("insertChild" in parent)) {
+      throw new Error("Cannot reorder node " + op.nodeId + ": parent does not support children");
+    }
+    let targetIndex = toNumber(op.index, 0);
+    if (targetIndex < 0) targetIndex = 0;
+    const maxIndex = parent.children.length - 1;
+    if (targetIndex > maxIndex) targetIndex = maxIndex;
+    parent.insertChild(targetIndex, node);
   }
 
   // Phase 2: Direct values
@@ -251,6 +276,15 @@ async function processNode(op, styleCache) {
     node.layoutSizingVertical = op.layoutSizingVertical;
   }
 
+  // Phase 2.8: Text content (font-safe replacement via setcharacters.js —
+  // handles mixed fonts, same path as the set_text_content command)
+  if (op.characters !== undefined) {
+    if (node.type !== "TEXT") {
+      throw new Error("characters requires a TEXT node: " + op.nodeId + " (type: " + node.type + ")");
+    }
+    await setCharacters(node, op.characters);
+  }
+
   // Phase 3: Variable bindings (override direct values with token refs)
   if (op.variables && typeof op.variables === "object") {
     const fields = Object.keys(op.variables);
@@ -267,6 +301,13 @@ async function processNode(op, styleCache) {
   // Phase 5: Effect style (drop shadows, inner shadows, blurs)
   if (op.effectStyleId) {
     await applyEffectStyle(node, op.effectStyleId, styleCache);
+  }
+
+  // Phase 6: Delete — always runs LAST so any other ops on this node complete first
+  if (op.delete === true) {
+    const deletedName = node.name;
+    node.remove();
+    return { success: true, nodeId: op.nodeId, nodeName: deletedName, deleted: true };
   }
 
   return { success: true, nodeId: op.nodeId, nodeName: node.name };

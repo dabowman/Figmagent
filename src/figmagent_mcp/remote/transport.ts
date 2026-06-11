@@ -15,10 +15,10 @@ export class RemoteTransport {
   async sendCommand(command: FigmaCommand, params: unknown = {}, timeoutMs: number = 30000): Promise<unknown> {
     if (command === "join") {
       // Channels don't exist remotely; file selection goes through
-      // join_channel (tools/scan.ts), which stores a fileKey instead.
+      // use_file (tools/scan.ts), which stores a fileKey instead.
       throw new Error(
         "Channels are a plugin-transport concept. On the remote transport, pass a Figma file URL " +
-          "to join_channel (e.g. https://www.figma.com/design/<fileKey>/...) or set FIGMA_FILE_KEY.",
+          "to use_file (e.g. https://www.figma.com/design/<fileKey>/...) or set FIGMA_FILE_KEY.",
       );
     }
 

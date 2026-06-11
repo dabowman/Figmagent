@@ -351,7 +351,7 @@ Wire protocol unchanged.
     design.)
   - Tests: n/a (analysis).
 
-- [ ] **Task 3.2: Implement folds (`edit` ops, `write` clone source)**
+- [x] **Task 3.2: Implement folds (`edit` ops, `write` clone source)**
   - Files: `src/figmagent_mcp/tools/apply.ts`, `create.ts`, `text.ts`, `modify.ts`
     (edit/delete); `src/figma_plugin/src/commands/apply.js`, `create.js` (edit)
   - Depends on: 3.1
@@ -368,7 +368,7 @@ Wire protocol unchanged.
   - Tests: each folded op via `edit`/`write` on both transports; old tools removed
     from registry key-set test.
 
-- [ ] **Task 3.3: Renames + param alignment**
+- [x] **Task 3.3: Renames + param alignment**
   - Files: all `src/figmagent_mcp/tools/*.ts`; `src/figmagent_mcp/prompts/*`;
     `CLAUDE.md`; `.claude/agents/figma-discovery.md`; `.claude/skills/` (figma
     skills that name tools); `README.md`
@@ -389,6 +389,18 @@ Wire protocol unchanged.
 
 **Phase 3 acceptance:** ≤15 core tools registered + domain tier; all renames atomic;
 both transports green; CLAUDE.md/skills/agents reference only new names.
+
+> **Execution log (2026-06-11):** Tasks 3.2 + 3.3 landed in one commit. Final
+> surface: **38 registrations** — 7 core renames (read [absorbs
+> get_document_info], grep, edit [+8 folded modify/text ops], write [+clone via
+> fromNodeId], lint, screenshot, use_file) + get_design_system + domain tier +
+> the Phase-4 demotion candidates (still registered until run_script/stdlib
+> exist). scan_text_nodes / scan_nodes_by_types retired; get_styles /
+> get_local_variables were already wire-only. edit op order: component ops →
+> layout → rename/move/reorder → values → fonts → characters → variables →
+> styles → delete last. Wire protocol untouched (registry key-set test passes
+> unchanged). 146 tests green; stale-name sweep clean outside wire code +
+> historical docs.
 
 ---
 

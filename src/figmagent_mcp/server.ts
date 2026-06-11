@@ -12,8 +12,6 @@ export { server };
 // Register all tools and prompts (side-effect imports)
 import "./tools/document.js";
 import "./tools/create.js";
-import "./tools/modify.js";
-import "./tools/text.js";
 import "./tools/apply.js";
 import "./tools/components.js";
 import "./tools/tokens.js";

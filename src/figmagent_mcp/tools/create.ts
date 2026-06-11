@@ -102,10 +102,10 @@ async function createOne(parentId: string | undefined, nodeSpec: any) {
   };
 }
 
-// Create Tool — the single entry point for creating any nodes in Figma
+// Write Tool — the single entry point for creating any nodes in Figma
 server.tool(
-  "create",
-  `Create one or more nodes in Figma. Accepts a single node spec, a nested tree, or multiple root nodes.
+  "write",
+  `Create one or more Figma nodes. Accepts a single node spec, a nested tree, multiple root nodes, or an existing node to clone (fromNodeId).
 
 Node types: FRAME (default), TEXT, RECTANGLE, COMPONENT, INSTANCE, SVG.
 
@@ -126,6 +126,13 @@ For multiple root nodes (e.g. variant components), use the nodes array:
   ]}
 Each node spec in the array is created in parallel. Use this when building multiple sibling components (e.g. variants before combine_as_variants).
 
+To clone an existing node instead of creating from a spec, pass fromNodeId:
+  { fromNodeId: "123:4" }                              — clone next to the original
+  { fromNodeId: "123:4", parentId: "567:8" }           — clone INTO a different parent
+  { fromNodeId: "123:4", node: { name: "Copy", x: 100, y: 200 } }  — clone + modify
+With fromNodeId, the optional node spec may set name, x, y, fillColor, and cornerRadius on the clone; other spec fields are ignored. Clones preserve all instance overrides.
+REPARENTING RECIPE (no move-to-parent operation exists; edit's x/y only changes coordinates): write({ fromNodeId: original, parentId: newParent }), then edit({ nodes: [{ nodeId: original, delete: true }] }).
+
 FRAME and COMPONENT nodes support auto-layout (layoutMode, padding, alignment, spacing, sizing), fill/stroke colors, and cornerRadius.
 TEXT nodes support text, fontSize, fontWeight, fontFamily, fontStyle, fontColor, textAutoResize, textTruncation, and maxLines.
 RECTANGLE nodes support fillColor, strokeColor, strokeWeight, and cornerRadius. IMPORTANT: RECTANGLE cannot use FILL sizing — use a FRAME with fillColor instead when you need a shape that stretches.
@@ -137,19 +144,53 @@ FILL sizing is applied in a second pass after children exist, so it works correc
 Use parentId to append the created node(s) inside an existing frame.
 Colors use RGBA 0-1 range (e.g. { r: 0.2, g: 0.4, b: 1.0 }), not 0-255.`,
   {
-    parentId: z.string().optional().describe("Parent node ID to append the created node(s) to"),
+    parentId: z.string().optional().describe("Parent node ID to append the created node(s) or clone to"),
+    fromNodeId: z
+      .string()
+      .optional()
+      .describe(
+        "Clone this existing node instead of creating from a spec. Combine with parentId to clone into a different parent (the reparent recipe). Mutually exclusive with 'nodes'.",
+      ),
     node: nodeSpecSchema
       .optional()
-      .describe("Single node spec — a node or nested tree with children. Mutually exclusive with 'nodes'."),
+      .describe(
+        "Single node spec — a node or nested tree with children. With fromNodeId, only name/x/y/fillColor/cornerRadius are applied to the clone. Mutually exclusive with 'nodes'.",
+      ),
     nodes: z
       .array(nodeSpecSchema)
       .optional()
       .describe(
-        "Array of node specs to create in parallel. Each spec is a root node (with optional children). Mutually exclusive with 'node'.",
+        "Array of node specs to create in parallel. Each spec is a root node (with optional children). Mutually exclusive with 'node' and 'fromNodeId'.",
       ),
   },
-  async ({ parentId, node, nodes }: any) => {
+  async ({ parentId, fromNodeId, node, nodes }: any) => {
     try {
+      // Clone path — routes to the clone_and_modify wire command
+      if (fromNodeId) {
+        if (nodes) {
+          return {
+            content: [{ type: "text" as const, text: "Error: 'fromNodeId' cannot be combined with 'nodes'." }],
+          };
+        }
+        const mods = node || {};
+        const result = await sendCommandToFigma(
+          "clone_and_modify",
+          {
+            nodeId: fromNodeId,
+            parentId,
+            name: mods.name,
+            x: mods.x,
+            y: mods.y,
+            fillColor: mods.fillColor,
+            cornerRadius: mods.cornerRadius,
+          },
+          60000,
+        );
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(result) }],
+        };
+      }
+
       // Validate mutual exclusivity
       if (node && nodes) {
         return {
@@ -158,7 +199,12 @@ Colors use RGBA 0-1 range (e.g. { r: 0.2, g: 0.4, b: 1.0 }), not 0-255.`,
       }
       if (!node && !nodes) {
         return {
-          content: [{ type: "text" as const, text: "Error: provide either 'node' (single) or 'nodes' (array)." }],
+          content: [
+            {
+              type: "text" as const,
+              text: "Error: provide either 'node' (single), 'nodes' (array), or 'fromNodeId' (clone).",
+            },
+          ],
         };
       }
 

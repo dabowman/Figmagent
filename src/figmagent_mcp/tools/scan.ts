@@ -4,100 +4,6 @@ import { sendCommandToFigma } from "../connection.js";
 import { joinChannel, discoverChannels } from "../connection.js";
 import { getTransport } from "../transport.js";
 import { setFileKey } from "../remote/filecontext.js";
-import { guardOutput, extractJsonSummary } from "../utils.js";
-
-// Node Type Scanning Tool
-server.tool(
-  "scan_nodes_by_types",
-  "DEPRECATED — use find() instead, which supports type, name, componentId, and other criteria with output budget control. This tool can return very large responses that overflow context. find() groups results by ancestor and enforces a 30K char budget.",
-  {
-    nodeId: z.string().describe("ID of the node to scan"),
-    types: z
-      .array(z.string())
-      .min(1)
-      .describe("Array of node types to find in the child nodes (e.g. ['COMPONENT', 'FRAME'])"),
-  },
-  async ({ nodeId, types }: any) => {
-    try {
-      // Initial response to indicate we're starting the process
-      const initialStatus = {
-        type: "text" as const,
-        text: `Starting node type scanning for types: ${types.join(", ")}...`,
-      };
-
-      // Use the plugin's scan_nodes_by_types function
-      const result = await sendCommandToFigma("scan_nodes_by_types", {
-        nodeId,
-        types,
-      });
-
-      // Format the response
-      if (result && typeof result === "object" && "matchingNodes" in result) {
-        const typedResult = result as {
-          success: boolean;
-          count: number;
-          matchingNodes: Array<{
-            id: string;
-            name: string;
-            type: string;
-            bbox: {
-              x: number;
-              y: number;
-              width: number;
-              height: number;
-            };
-          }>;
-          searchedTypes: Array<string>;
-        };
-
-        const summaryText = `Scan completed: Found ${typedResult.count} nodes matching types: ${typedResult.searchedTypes.join(", ")}`;
-        const nodesJson = JSON.stringify(typedResult.matchingNodes, null, 2);
-        const guarded = guardOutput(nodesJson, {
-          metaExtractor: extractJsonSummary,
-          toolName: "scan_nodes_by_types",
-          narrowingHints: [
-            "  • Use find() instead — it supports more criteria and groups results",
-            "  • Search a specific subtree instead of a large parent",
-          ],
-        });
-
-        return {
-          content: [
-            initialStatus,
-            {
-              type: "text" as const,
-              text: summaryText,
-            },
-            {
-              type: "text" as const,
-              text: guarded.text,
-            },
-          ],
-        };
-      }
-
-      // If the result is in an unexpected format, return it as is
-      return {
-        content: [
-          initialStatus,
-          {
-            type: "text",
-            text: JSON.stringify(result, null, 2),
-          },
-        ],
-      };
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error scanning nodes by types: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ],
-      };
-    }
-  },
-);
 
 // Get Reactions Tool
 server.tool(
@@ -290,9 +196,9 @@ server.tool(
   },
 );
 
-// Join Channel Tool
+// Use File Tool — select the Figma file to work in
 server.tool(
-  "join_channel",
+  "use_file",
   "Select the Figma file to work in. On the plugin transport this joins a relay channel: with no argument it auto-discovers active channels and joins if exactly one is found; you usually don't need to call it — the server auto-joins on first command and auto-recovers on timeout. Call it explicitly when (1) auto-recovery fails after repeated timeouts, or (2) you need to switch between multiple open Figma files; named channels are validated against the relay and nonexistent ones return the available options. On the remote transport (FIGMA_TRANSPORT=remote) there are no channels — pass a Figma file URL (https://www.figma.com/design/<fileKey>/...) or a bare fileKey to select the target file.",
   {
     channel: z

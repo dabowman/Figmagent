@@ -45,10 +45,33 @@ const variableFieldEnum = z.enum([
   "paragraphIndent",
 ]);
 
-// Recursive node operation schema
-const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
+// Recursive node operation schema (exported for tests)
+export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
   z.object({
     nodeId: z.string().describe("ID of the existing node to modify"),
+
+    // Structural operations
+    x: z.number().optional().describe("New X position (moves the node; does NOT change parent)"),
+    y: z.number().optional().describe("New Y position (moves the node; does NOT change parent)"),
+    name: z.string().optional().describe("Rename the node (e.g. variant names like 'Size=MD, State=Default')"),
+    index: z
+      .number()
+      .int()
+      .min(0)
+      .optional()
+      .describe("Reorder the node to this index within its current parent (0 = bottom-most layer; clamped to range)"),
+    characters: z
+      .string()
+      .optional()
+      .describe(
+        "Set text content (TEXT nodes only). Font-safe — handles mixed fonts. For text inside instances use the path format I<instanceId>;<textNodeId>.",
+      ),
+    delete: z
+      .boolean()
+      .optional()
+      .describe(
+        "true = delete the node. Always runs LAST after all other ops on this node. Do not combine with ops on the node's children in the same call.",
+      ),
 
     // Visual properties (direct values)
     fillColor: colorSchema.describe("Fill color (also sets font color on TEXT nodes)"),
@@ -122,7 +145,10 @@ const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
       ),
 
     // Style references
-    textStyleId: z.string().optional().describe("Text style ID to apply (from get_styles). Loads fonts automatically."),
+    textStyleId: z
+      .string()
+      .optional()
+      .describe("Text style ID to apply (from get_design_system). Loads fonts automatically."),
     effectStyleId: z
       .string()
       .optional()
@@ -136,12 +162,12 @@ const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
   }),
 );
 
-// Apply Tool — unified property application for existing nodes
+// Edit Tool — unified modification of existing nodes
 server.tool(
-  "apply",
-  `Apply visual properties, font properties, layout settings, design token variables, text styles, and component operations to one or more existing nodes.
+  "edit",
+  `Edit one or more existing Figma nodes: visual properties, font properties, text content, layout, position, name, stacking order, design token variables, styles, component operations, and deletion.
 
-Handles fill color, stroke, corner radius, opacity, width, height, font family/weight/size/color, layout mode, padding, alignment, sizing, spacing, variable bindings, text style application, variant swapping (swapVariantId), and exposed instances (isExposedInstance).
+Handles fill color, stroke, corner radius, opacity, width, height, x/y position, rename, reorder (index), text content (characters), font family/weight/size/color, layout mode, padding, alignment, sizing, spacing, variable bindings, text style application, variant swapping (swapVariantId), exposed instances (isExposedInstance), and deletion (delete: true).
 
 For a single node:
   { nodes: [{ nodeId: "123", fillColor: { r: 1, g: 0, b: 0 } }] }
@@ -152,13 +178,25 @@ For multiple nodes:
     { nodeId: "456", textStyleId: "S:style123," }
   ]}
 
+Move, rename, reorder, set text, delete:
+  { nodes: [
+    { nodeId: "a", x: 100, y: 200 },
+    { nodeId: "b", name: "Size=MD, State=Hover" },
+    { nodeId: "c", index: 0 },
+    { nodeId: "d", characters: "New label text" },
+    { nodeId: "e", delete: true }
+  ]}
+
+Set text inside an instance (instance text override path format):
+  { nodes: [{ nodeId: "I123:4;56:7", characters: "Override text" }] }
+
 Change fonts on existing TEXT nodes (never delete and recreate text just to change font):
   { nodes: [
     { nodeId: "title", fontFamily: "Space Grotesk", fontWeight: 700, fontSize: 32, textAutoResize: "HEIGHT" },
     { nodeId: "body", fontFamily: "Inter", fontWeight: 400, fontSize: 15, fontColor: { r: 0.3, g: 0.3, b: 0.3 }, textTruncation: "ENDING", maxLines: 3 }
   ]}
 
-For nested structures (mirrors create tool pattern):
+For nested structures (mirrors write tool pattern):
   { nodes: [{ nodeId: "parent", layoutMode: "VERTICAL", paddingTop: 16, children: [
     { nodeId: "child1", variables: { fill: "VariableID:abc" } },
     { nodeId: "child2", textStyleId: "S:style123," }
@@ -170,8 +208,9 @@ Swap an instance to a different variant (keeps position and compatible overrides
 Expose a nested instance's properties at the parent component level:
   { nodes: [{ nodeId: "nestedInstance", isExposedInstance: true }] }
 
-Execution order per node: component ops → layout mode → direct values → font properties → variable bindings → text style → effect style.
+Execution order per node: component ops (swapVariantId/isExposedInstance) → layout mode → rename/move/reorder → direct values → font properties → characters → variable bindings → text style → effect style → delete last.
 Variable bindings override direct values (set both to get a fallback + token).
+x/y move the node but do NOT change its parent. To reparent: write({ fromNodeId, parentId: newParent }) then edit with delete: true on the original.
 Width and height resize the node. Use variables.width/height to bind dimension tokens.
 Font properties load fonts automatically. fontColor is a convenience alias for fillColor on TEXT nodes.
 Effect styles apply drop shadows, inner shadows, and blurs from the design system.
@@ -198,7 +237,7 @@ IMPORTANT: Bind variables and text styles on COMPONENT nodes, not instances — 
       const failed = typedResult.results.filter((r) => !r.success);
       const summary: any = {
         success: typedResult.success,
-        nodesApplied: typedResult.successCount,
+        nodesEdited: typedResult.successCount,
         totalNodes: typedResult.totalNodes,
       };
       if (failed.length > 0) {
@@ -218,7 +257,7 @@ IMPORTANT: Bind variables and text styles on COMPONENT nodes, not instances — 
         content: [
           {
             type: "text",
-            text: `Error applying properties: ${error instanceof Error ? error.message : String(error)}`,
+            text: `Error editing nodes: ${error instanceof Error ? error.message : String(error)}`,
           },
         ],
       };

@@ -361,12 +361,12 @@ server.tool(
 
 server.tool(
   "get_component_variants",
-  "Get the available variants for one or more component sets in a **published library** file (requires fileKey from a Figma URL). Returns variant property names, possible values, and the individual published component keys for each variant combination. Accepts a single componentSetNodeId or an array of componentSetNodeIds for batch lookup (saves repeated calls). Use after finding component sets with get_library_components. NOTE: For local (unpublished) component sets in the current file, use `get(nodeId)` on the component set instead — it returns componentPropertyDefinitions and child variant IDs without needing a fileKey.",
+  "Get the available variants for one or more component sets in a **published library** file (requires fileKey from a Figma URL). Returns variant property names, possible values, and the individual published component keys for each variant combination. Accepts a single componentSetNodeId or an array of componentSetNodeIds for batch lookup (saves repeated calls). Use after finding component sets with get_library_components. NOTE: For local (unpublished) component sets in the current file, use `read(nodeId)` on the component set instead — it returns componentPropertyDefinitions and child variant IDs without needing a fileKey.",
   {
     fileKey: z
       .string()
       .describe(
-        "The Figma file key of the published library (from URL: figma.com/design/<fileKey>/...). This is NOT for local components — use `get(nodeId)` for those.",
+        "The Figma file key of the published library (from URL: figma.com/design/<fileKey>/...). This is NOT for local components — use `read(nodeId)` for those.",
       ),
     componentSetNodeId: z
       .string()

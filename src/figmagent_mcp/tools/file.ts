@@ -90,7 +90,7 @@ server.tool(
         content: [
           {
             type: "text",
-            text: `File created but no fileKey found in the response — pass its URL to join_channel to target it.\n${resultText}`,
+            text: `File created but no fileKey found in the response — pass its URL to use_file to target it.\n${resultText}`,
           },
         ],
       };

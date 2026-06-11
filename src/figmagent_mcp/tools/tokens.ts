@@ -12,7 +12,7 @@ Returns:
 - styles: { colors (paint styles), texts (text styles with font info), effects, grids }
 - variables: array of collections, each with modes and variables (id, name, type, values per mode)
 
-Use this to discover the design system before applying styles/tokens with the apply tool.
+Use this to discover the design system before applying styles/tokens with the edit tool.
 Works on any Figma plan — no Enterprise required.
 
 For large design systems, use filtering params to reduce output:
@@ -74,7 +74,7 @@ For large design systems, use filtering params to reduce output:
           "  • Use `collection` param to filter variables to specific collection(s)",
           "  • Use `styleType` param to filter styles to specific type(s)",
           "  • Use `includeVariables: false` or `includeStyles: false` to skip sections",
-          "  • Use find() to locate specific tokens by name or usage",
+          "  • Use grep() to locate specific tokens by name or usage",
         ],
       });
       return {

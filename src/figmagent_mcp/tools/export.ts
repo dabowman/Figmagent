@@ -2,10 +2,10 @@ import { z } from "zod";
 import { server } from "../instance.js";
 import { sendCommandToFigma } from "../connection.js";
 
-// Export Node as Image Tool
+// Screenshot Tool — export a node as an image
 server.tool(
-  "export_node_as_image",
-  "Export a node as an image from Figma",
+  "screenshot",
+  "Export a Figma node as an image (PNG/JPG/SVG/PDF). Use for visual spot-checks after building or modifying a design.",
   {
     nodeId: z.string().describe("The ID of the node to export"),
     format: z.enum(["PNG", "JPG", "SVG", "PDF"]).optional().describe("Export format"),

@@ -41,7 +41,7 @@ describe("fileKey resolution order", () => {
   test("no source set → null, and resolveFileKey states the fix", () => {
     expect(getFileKey()).toBeNull();
     expect(() => resolveFileKey()).toThrow(
-      "No Figma file selected. Pass a file URL to join_channel " +
+      "No Figma file selected. Pass a file URL to use_file " +
         "(e.g. https://www.figma.com/design/<fileKey>/...) or set FIGMA_FILE_KEY.",
     );
   });
@@ -51,7 +51,7 @@ describe("fileKey resolution order", () => {
     expect(resolveFileKey()).toBe("envKey1234567");
   });
 
-  test("join_channel-set value wins over the env var", () => {
+  test("use_file-set value wins over the env var", () => {
     process.env.FIGMA_FILE_KEY = "envKey1234567";
     setFileKey("https://www.figma.com/design/toolKey123456/ToolFile");
     expect(resolveFileKey()).toBe("toolKey123456");

@@ -41,16 +41,18 @@ When an AI agent calls a tool:
 ### Step 1: Define the tool in the appropriate tools/ module
 
 Add the tool in the relevant domain file under `src/figmagent_mcp/tools/`:
-- `document.ts` — get_document_info, get_selection, get (unified node reading with FSGN output)
-- `create.ts` — create (single nodes and nested trees, including COMPONENT and INSTANCE types)
-- `apply.ts` — apply (unified property application: fill, stroke, corner radius, opacity, layout, variables, text styles, variant swapping, exposed instances)
-- `modify.ts` — move_node, resize_node, rename_node, delete_node, delete_multiple_nodes, reorder_children, clone_node, clone_and_modify
-- `text.ts` — set_text_content, set_multiple_text_contents
+- `document.ts` — get_selection, read (unified node reading with FSGN output; no nodeId = document overview)
+- `create.ts` — write (single nodes and nested trees, COMPONENT and INSTANCE types, clone via fromNodeId)
+- `apply.ts` — edit (unified node modification: fill, stroke, corner radius, opacity, layout, move/rename/reorder, text content, variables, text styles, variant swapping, exposed instances, delete)
 - `components.ts` — get_local_components, combine_as_variants, component_properties (batch add/edit/delete), get/set_instance_overrides
-- `scan.ts` — scan_text_nodes, scan_nodes_by_types, get_annotations, set_annotation
-- `export.ts` — export_node_as_image
+- `scan.ts` — use_file, get_reactions, connector tools, set_focus, set_selections
+- `find.ts` — grep (unified node search)
+- `export.ts` — screenshot
+- `lint.ts` — lint
 - `libraries.ts` — remote library tools (REST API based)
-- `comments.ts` — get_comments, post_comment, delete_comment (REST API based, requires FIGMA_API_TOKEN)
+- `comments.ts` — get_comments, post_comment, delete_comment (REST API based, requires FIGMA_API_TOKEN), annotations
+
+Note: MCP tool names (first arg of `server.tool`) are decoupled from wire command names — e.g. the `edit` tool sends the `apply` wire command. New tools should pick an agent-facing name and a stable wire command name; only the wire name goes in `types.ts`.
 
 Also add the command name to the `FigmaCommand` union type in `src/figmagent_mcp/types.ts`.
 

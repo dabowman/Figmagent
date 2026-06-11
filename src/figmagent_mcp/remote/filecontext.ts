@@ -2,7 +2,7 @@
  * File context for the remote transport.
  *
  * The remote MCP has no channels — it addresses files by fileKey. Resolution
- * order: (1) value set via the join_channel tool (URL or bare fileKey),
+ * order: (1) value set via the use_file tool (URL or bare fileKey),
  * (2) FIGMA_FILE_KEY env var.
  */
 
@@ -47,7 +47,7 @@ export function resolveFileKey(): string {
   const key = getFileKey();
   if (!key) {
     throw new Error(
-      "No Figma file selected. Pass a file URL to join_channel " +
+      "No Figma file selected. Pass a file URL to use_file " +
         "(e.g. https://www.figma.com/design/<fileKey>/...) or set FIGMA_FILE_KEY.",
     );
   }
