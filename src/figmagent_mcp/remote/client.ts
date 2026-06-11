@@ -144,3 +144,8 @@ export function getRemoteClient(): RemoteMcpClient {
   }
   return sharedClient;
 }
+
+/** Inject a mock client (tests only). Pass null to restore the real one. */
+export function setRemoteClientForTests(client: RemoteMcpClient | null): void {
+  sharedClient = client;
+}

@@ -52,17 +52,37 @@ export async function getDomainBundle(domain: string): Promise<string> {
   }
 
   const entrypoint = join(PLUGIN_SRC, "remote_entries", `${domain}.js`);
-  const result = await Bun.build({
-    entrypoints: [entrypoint],
-    target: "browser",
-    format: "iife",
-    minify: true,
-    sourcemap: "none",
-  });
+  const build = () =>
+    Bun.build({
+      entrypoints: [entrypoint],
+      target: "browser",
+      format: "iife",
+      minify: true,
+      sourcemap: "none",
+    });
 
-  if (!result.success) {
-    const logs = result.logs.map((l) => String(l)).join("\n");
-    throw new Error(`Failed to bundle remote domain "${domain}":\n${logs}`);
+  // Bun.build throws (AggregateError) on failure in Bun 1.2+. Inside
+  // `bun test` the first build can transiently fail to resolve relative
+  // imports while the test's module graph is still settling — retry briefly.
+  let result: Awaited<ReturnType<typeof build>> | null = null;
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 3 && !result; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 50 * attempt));
+    try {
+      const r = await build();
+      if (r.success) {
+        result = r;
+      } else {
+        lastError = new Error(r.logs.map((l) => String(l)).join("\n"));
+      }
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  if (!result) {
+    const detail = lastError instanceof Error ? lastError.message : String(lastError);
+    throw new Error(`Failed to bundle remote domain "${domain}":\n${detail}`);
   }
 
   const code = await result.outputs[0].text();

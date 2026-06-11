@@ -184,7 +184,7 @@ relay, no plugin, no open Figma client. Plugin path untouched.
     desktop); remote smoke: `getNodeTree` at `detail: "full"` on a TEXT-bearing tree
     no longer throws (this exact case failed in the spike).
 
-- [ ] **Task 1.7: Wire read commands over remote + parity harness**
+- [x] **Task 1.7: Wire read commands over remote + parity harness**
   - Files: `src/figmagent_mcp/remote/transport.ts` (edit),
     `scripts/parity-check.ts` (new)
   - Depends on: 1.5, 1.6
@@ -213,6 +213,20 @@ relay, no plugin, no open Figma client. Plugin path untouched.
 
 **Phase 1 acceptance:** parity harness green for all reads; plugin suite green;
 first-run OAuth documented; per-command remote latency recorded in the session log.
+
+> **Execution log (2026-06-11):** Tasks 1.1–1.7 landed. Remote side
+> live-validated against the scratch file (`39H3zGBDrKOzYWvBo0kqFG`) by running
+> the executor-assembled scripts through `use_figma`: get_document_info,
+> get_node_tree (`detail:"full"` — the pre-`prop()` failure case), get_selection,
+> find (`scope:"DOCUMENT"`, multi-page loadAsync), get_design_system,
+> lint_design (page scope), export_node_as_image (PNG 8,164 base64 chars) — all
+> 7 pass, zero strict-property errors. Script sizes 6.0–15.8KB, all 11 domain
+> bundles < 40KB. The dual-transport `parity-check.ts` run (plugin side needs a
+> live desktop plugin + relay) remains to be executed on a dev machine —
+> remote-side outputs were verified structurally instead. First-run OAuth flow
+> implemented + documented in README but not yet exercised end-to-end against
+> mcp.figma.com (headless container; carry as a checklist item alongside the
+> §9.2 token-lifetime test).
 
 ---
 
