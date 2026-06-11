@@ -603,6 +603,30 @@ section ≥60% smaller); no pattern that merely restates enforced behavior.
 
 ## Phase 6 — Measure & switch
 
+> **Status (2026-06-11): pending — requires a dev machine.** Phases 1–5 are
+> implemented and pushed; Phase 6 needs three things this execution
+> environment cannot provide: a running desktop plugin + relay (plugin side
+> of the A/B), a completed first-run OAuth against mcp.figma.com (remote
+> side via Figmagent's own client — the remote *code path* was already
+> live-validated through the official MCP in Phases 1–2), and real
+> `~/.figmagent/sessions/` history for the pre-port baseline.
+>
+> **Runbook:**
+> 1. `bun socket` + connect the plugin to the target scratch file.
+> 2. `FIGMA_TRANSPORT=remote` once to complete first-run OAuth (URL on
+>    stderr); confirms §9.2 token lifetime along the way.
+> 3. `bun scripts/parity-check.ts --file <scratchUrl> --channel <channel>` —
+>    read-suite parity + per-command latency record.
+> 4. Same command with `--battery` — the 2.4 build A/B on both transports.
+> 5. One read-heavy audit + one build-heavy real task per transport;
+>    `bun scripts/extract-sessions.ts` + the analyze-session skill for the
+>    metric report (calls/task, errors/task, wall-clock, escape-hatch share,
+>    warning-acted-on rate) vs. pre-port baselines.
+> 6. Re-run the Task 3.1 frequency analysis on the real history to confirm
+>    the provisional disposition (demotions are cheap to reverse).
+> 7. If acceptance holds, Task 6.2: flip `FIGMA_TRANSPORT` default to
+>    `auto`, move relay/plugin setup to the local-fallback README section.
+
 - [ ] **Task 6.1: A/B battery + metric report**
   - Files: `scripts/parity-check.ts` (extend), analysis via `analyze-session` skill
   - Depends on: Phases 1–5
