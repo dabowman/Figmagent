@@ -1,5 +1,7 @@
 // Component commands: create, combine, instances, swap, main component, instance overrides
 
+import { fail } from "../helpers.js";
+
 export async function createComponent(params) {
   const { x = 0, y = 0, width = 100, height = 100, name = "Component", parentId } = params || {};
 
@@ -39,9 +41,29 @@ export async function combineAsVariants(params) {
   const components = [];
   for (let i = 0; i < componentIds.length; i++) {
     const node = await figma.getNodeByIdAsync(componentIds[i]);
-    if (!node) throw new Error("Component not found: " + componentIds[i]);
-    if (node.type !== "COMPONENT") throw new Error("Node is not a COMPONENT: " + componentIds[i]);
+    if (!node)
+      fail(
+        "Component not found: " + componentIds[i],
+        "verify the ID with read or search with grep ({ type: ['COMPONENT'] })",
+      );
+    if (node.type !== "COMPONENT")
+      fail(
+        "Node is not a COMPONENT: " + componentIds[i] + " (type: " + node.type + ")",
+        "create the variants with write ({ type: 'COMPONENT' }) before combining",
+      );
     components.push(node);
+  }
+
+  // Variant naming convention: Figma parses "Property=Value" names into
+  // variant properties. Components without that format produce a broken set
+  // (a default "Property 1" axis) — reject before combining.
+  for (let i = 0; i < components.length; i++) {
+    if (components[i].name.indexOf("=") === -1) {
+      fail(
+        "Component '" + components[i].name + "' (" + components[i].id + ") is not named in variant format",
+        "rename every component to 'Property=Value' (e.g. 'Size=MD, State=Default') with edit, then combine — Figma parses these names into variant properties",
+      );
+    }
   }
 
   let parent = figma.currentPage;

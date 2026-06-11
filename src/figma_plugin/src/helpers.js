@@ -50,6 +50,12 @@ export function prop(node, name) {
   return name in node ? node[name] : undefined;
 }
 
+// Error helper: every user-facing error states its fix.
+// Rule (CLAUDE.md Agent Notes): no user-facing error without a stated fix.
+export function fail(message, fix) {
+  throw new Error(message + ". Fix: " + fix);
+}
+
 // Coerce value to number with fallback (handles string "4" → 4)
 export function toNumber(val, fallback) {
   if (val === undefined || val === null) return fallback;

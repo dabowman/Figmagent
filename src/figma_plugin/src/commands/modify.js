@@ -1,7 +1,14 @@
 // Modify commands: fill, stroke, move, resize, corner radius, rename,
 // delete, delete multiple, multiple properties, reorder, clone, clone and modify
 
-import { toNumber, sendProgressUpdate, generateCommandId, delay } from "../helpers.js";
+import { toNumber, sendProgressUpdate, generateCommandId, delay, fail } from "../helpers.js";
+
+function failNodeNotFound(nodeId) {
+  fail(
+    "Node not found with ID: " + nodeId,
+    "verify the ID with read or search with grep — it may have been deleted or belong to another page",
+  );
+}
 
 export async function setFillColor(params) {
   console.log("setFillColor", params);
@@ -16,7 +23,7 @@ export async function setFillColor(params) {
 
   const node = await figma.getNodeByIdAsync(nodeId);
   if (!node) {
-    throw new Error(`Node not found with ID: ${nodeId}`);
+    failNodeNotFound(nodeId);
   }
 
   if (!("fills" in node)) {
@@ -64,7 +71,7 @@ export async function setStrokeColor(params) {
 
   const node = await figma.getNodeByIdAsync(nodeId);
   if (!node) {
-    throw new Error(`Node not found with ID: ${nodeId}`);
+    failNodeNotFound(nodeId);
   }
 
   if (!("strokes" in node)) {
@@ -105,7 +112,7 @@ export async function moveNode(params) {
   if (x === undefined || y === undefined) throw new Error("Missing x or y parameters");
 
   const node = await figma.getNodeByIdAsync(nodeId);
-  if (!node) throw new Error(`Node not found with ID: ${nodeId}`);
+  if (!node) failNodeNotFound(nodeId);
   if (!("x" in node) || !("y" in node)) throw new Error(`Node does not support position: ${nodeId}`);
 
   node.x = x;
@@ -121,7 +128,7 @@ export async function resizeNode(params) {
   if (width === undefined || height === undefined) throw new Error("Missing width or height parameters");
 
   const node = await figma.getNodeByIdAsync(nodeId);
-  if (!node) throw new Error(`Node not found with ID: ${nodeId}`);
+  if (!node) failNodeNotFound(nodeId);
   if (!("resize" in node)) throw new Error(`Node does not support resizing: ${nodeId}`);
 
   node.resize(width, height);
@@ -136,7 +143,7 @@ export async function setCornerRadius(params) {
   if (radius === undefined) throw new Error("Missing radius parameter");
 
   const node = await figma.getNodeByIdAsync(nodeId);
-  if (!node) throw new Error(`Node not found with ID: ${nodeId}`);
+  if (!node) failNodeNotFound(nodeId);
   if (!("cornerRadius" in node)) throw new Error(`Node does not support corner radius: ${nodeId}`);
 
   var numRadius = toNumber(radius, 0);
@@ -172,7 +179,7 @@ export async function renameNode(params) {
   if (name === undefined) throw new Error("Missing name parameter");
 
   const node = await figma.getNodeByIdAsync(nodeId);
-  if (!node) throw new Error("Node not found: " + nodeId);
+  if (!node) failNodeNotFound(nodeId);
 
   const oldName = node.name;
   node.name = name;
@@ -186,7 +193,7 @@ export async function deleteNode(params) {
   if (!nodeId) throw new Error("Missing nodeId parameter");
 
   const node = await figma.getNodeByIdAsync(nodeId);
-  if (!node) throw new Error(`Node not found with ID: ${nodeId}`);
+  if (!node) failNodeNotFound(nodeId);
 
   const nodeInfo = { id: node.id, name: node.name, type: node.type };
   node.remove();
@@ -346,7 +353,7 @@ export async function setMultipleProperties(params) {
       (async (op) => {
         try {
           const node = await figma.getNodeByIdAsync(op.nodeId);
-          if (!node) throw new Error("Node not found: " + op.nodeId);
+          if (!node) failNodeNotFound(op.nodeId);
 
           if (op.fillColor && "fills" in node) {
             const fc = op.fillColor;
@@ -467,7 +474,7 @@ export async function cloneNode(params) {
   if (!nodeId) throw new Error("Missing nodeId parameter");
 
   const node = await figma.getNodeByIdAsync(nodeId);
-  if (!node) throw new Error(`Node not found with ID: ${nodeId}`);
+  if (!node) failNodeNotFound(nodeId);
 
   const clone = node.clone();
 
@@ -501,7 +508,7 @@ export async function cloneAndModify(params) {
   if (!nodeId) throw new Error("Missing nodeId parameter");
 
   const node = await figma.getNodeByIdAsync(nodeId);
-  if (!node) throw new Error("Node not found: " + nodeId);
+  if (!node) failNodeNotFound(nodeId);
 
   const clone = node.clone();
 

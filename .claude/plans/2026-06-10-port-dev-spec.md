@@ -409,7 +409,7 @@ both transports green; CLAUDE.md/skills/agents reference only new names.
 Goal: write responses carry the verdict (D5); escape hatch with stdlib (D4); errors
 state fixes.
 
-- [ ] **Task 4.1: Post-write structural assertions**
+- [x] **Task 4.1: Post-write structural assertions**
   - Files: `src/figma_plugin/src/assertions.js` (new), `commands/create.js`,
     `apply.js` (edit), `src/figmagent_mcp/utils.ts` (edit — warnings formatting)
   - Depends on: Phase 3 (final response shapes)
@@ -433,7 +433,7 @@ state fixes.
   - Tests: one fixture per check on the plugin path (deterministic); remote smoke
     for the same fixtures.
 
-- [ ] **Task 4.2: Inline mini-lint at write time**
+- [x] **Task 4.2: Inline mini-lint at write time**
   - Files: `src/figma_plugin/src/commands/lint.js` (export matcher),
     `create.js`/`apply.js` (edit)
   - Depends on: 4.1
@@ -448,7 +448,7 @@ state fixes.
   - Tests: write a raw value that exactly matches a seeded variable → warning
     present; bound write → no warning.
 
-- [ ] **Task 4.3: Boundary validation (Edit semantics)**
+- [x] **Task 4.3: Boundary validation (Edit semantics)**
   - Files: `src/figmagent_mcp/tools/apply.ts` (Zod refinements), `apply.js` (edit)
   - Depends on: Phase 3
   - Parallelizable: yes
@@ -495,7 +495,7 @@ state fixes.
   - Tests: read-mode guard blocks `createRectangle`; write-mode round trip;
     stdlib functions callable; script text appears in session log.
 
-- [ ] **Task 4.5: Error-message audit**
+- [x] **Task 4.5: Error-message audit**
   - Files: `src/figma_plugin/src/helpers.js` (error helper), all `commands/*.js`
     (touch error paths), `src/figmagent_mcp/utils.ts`
   - Depends on: none (can start any time)
@@ -515,6 +515,32 @@ state fixes.
 **Phase 4 acceptance:** the five assertion classes are caught in tests; mini-lint
 fires on exact matches; `run_script` works with stdlib + logging; audited errors
 all state fixes.
+
+> **Execution log (2026-06-11):** Tasks 4.1, 4.2, 4.3, 4.5 landed (4.4
+> `run_script` is a follow-up). `assertions.js` exports pure predicates
+> (aabbOverlap, isNearZeroWidthText, isBalloonFrame, checkFillRequested,
+> checkFontFallback) plus thin figma-touching wrappers `checkNodes`/
+> `runPostWriteAssertions`, wired into the end of the create and apply
+> handlers — same execution, warnings on the command result, deleted nodes
+> skipped. Mini-lint: lint.js's matcher extracted as `matchVariable(value,
+> property, nodeContext, variables)` (lintDesign's check*Property functions
+> now route through it) + `miniLint(rawSets)` runs at write time, one
+> variable fetch per command, skipped when the op binds the field. Boundary
+> validation: Zod superRefines (text props on known non-TEXT spec in write;
+> delete+children conflict in edit) + plugin-side pre-checks in apply.js
+> (text props/clipsContent → warnings, FILL-under-no-auto-layout → warn+skip
+> naming the parent, scope-mismatched bind → warn+skip, non-sibling
+> swapVariantId and instance-child delete/reorder → per-op errors; batch
+> always continues). Error audit: `fail(message, fix)` in helpers.js;
+> converted unknown-node-id (apply/modify/text/lint/create/components),
+> font-load (styles.js text styles), variant-name format
+> (combine_as_variants pre-check), scope-invalid binding, instance-child
+> mutation, mixed-value enrichment in apply's per-op catch. Server side:
+> `formatWarningsBlock` in utils.ts appends a "warnings:" block to write/edit
+> responses (omitted when empty). 196 tests green (50 new), build:plugin +
+> biome clean. The "100px-balloon defaulted height" detection uses the pure
+> heuristic (layoutMode active, height-axis sizing FIXED, height === 100)
+> with ops that explicitly set height exempted via op context.
 
 ---
 

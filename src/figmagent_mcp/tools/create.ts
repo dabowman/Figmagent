@@ -1,6 +1,21 @@
 import { z } from "zod";
 import { server } from "../instance.js";
 import { sendCommandToFigma } from "../connection.js";
+import { formatWarningsBlock } from "../utils.js";
+
+// Text-only spec properties — rejected at schema level when the spec's type
+// is known to be non-TEXT (boundary validation, Phase 4.3).
+const TEXT_ONLY_SPEC_PROPS = [
+  "text",
+  "fontSize",
+  "fontWeight",
+  "fontFamily",
+  "fontStyle",
+  "fontColor",
+  "textAutoResize",
+  "textTruncation",
+  "maxLines",
+] as const;
 
 // Shared color schema
 const colorSchema = z
@@ -12,78 +27,92 @@ const colorSchema = z
   })
   .optional();
 
-// Recursive node spec schema
-const nodeSpecSchema: z.ZodType<any> = z.lazy(() =>
-  z.object({
-    type: z
-      .enum(["FRAME", "TEXT", "RECTANGLE", "COMPONENT", "INSTANCE", "SVG"])
-      .optional()
-      .describe(
-        "Node type (default: FRAME). COMPONENT works like FRAME but creates a component. INSTANCE requires componentId or componentKey. SVG requires the svg property with an SVG string.",
-      ),
-    name: z.string().optional().describe("Node name"),
-    x: z.number().optional().describe("X position"),
-    y: z.number().optional().describe("Y position"),
-    width: z.number().optional().describe("Width"),
-    height: z.number().optional().describe("Height"),
-    // Frame layout
-    layoutMode: z.enum(["NONE", "HORIZONTAL", "VERTICAL"]).optional(),
-    layoutWrap: z.enum(["NO_WRAP", "WRAP"]).optional(),
-    paddingTop: z.number().optional(),
-    paddingRight: z.number().optional(),
-    paddingBottom: z.number().optional(),
-    paddingLeft: z.number().optional(),
-    primaryAxisAlignItems: z.enum(["MIN", "MAX", "CENTER", "SPACE_BETWEEN"]).optional(),
-    counterAxisAlignItems: z.enum(["MIN", "MAX", "CENTER", "BASELINE"]).optional(),
-    layoutSizingHorizontal: z.enum(["FIXED", "HUG", "FILL"]).optional(),
-    layoutSizingVertical: z.enum(["FIXED", "HUG", "FILL"]).optional(),
-    itemSpacing: z.number().optional(),
-    cornerRadius: z.number().min(0).optional(),
-    // Colors
-    fillColor: colorSchema,
-    strokeColor: colorSchema,
-    strokeWeight: z.number().optional(),
-    // Text-specific
-    text: z.string().optional().describe("Text content (for TEXT nodes)"),
-    fontSize: z.number().optional(),
-    fontWeight: z.number().optional(),
-    fontFamily: z.string().optional().describe("Font family (default: Inter)"),
-    fontStyle: z.string().optional().describe("Font style (default: Regular)"),
-    fontColor: colorSchema,
-    textAutoResize: z
-      .enum(["NONE", "WIDTH_AND_HEIGHT", "HEIGHT", "TRUNCATE"])
-      .optional()
-      .describe(
-        "How the text box adjusts to fit content. HEIGHT is required for FILL sizing. Defaults to WIDTH_AND_HEIGHT.",
-      ),
-    textTruncation: z
-      .enum(["DISABLED", "ENDING"])
-      .optional()
-      .describe("Ellipsis truncation when text overflows. ENDING adds '...' at the end."),
-    maxLines: z
-      .number()
-      .positive()
-      .optional()
-      .describe("Max lines before truncation. Requires textTruncation: ENDING."),
-    // SVG-specific (type: SVG)
-    svg: z
-      .string()
-      .optional()
-      .describe(
-        'SVG string for SVG type. Figma parses it into vector nodes. Example: \'<svg width="24" height="24" viewBox="0 0 24 24"><path d="M12 2L2 22h20L12 2z"/></svg>\'',
-      ),
-    // Instance-specific (type: INSTANCE)
-    componentId: z.string().optional().describe("Node ID of a local COMPONENT to instantiate (for INSTANCE type)"),
-    componentKey: z
-      .string()
-      .optional()
-      .describe("Key of a published library component to instantiate (for INSTANCE type)"),
-    // Children
-    children: z
-      .array(z.lazy(() => nodeSpecSchema))
-      .optional()
-      .describe("Child nodes"),
-  }),
+// Recursive node spec schema (exported for tests)
+export const nodeSpecSchema: z.ZodType<any> = z.lazy(() =>
+  z
+    .object({
+      type: z
+        .enum(["FRAME", "TEXT", "RECTANGLE", "COMPONENT", "INSTANCE", "SVG"])
+        .optional()
+        .describe(
+          "Node type (default: FRAME). COMPONENT works like FRAME but creates a component. INSTANCE requires componentId or componentKey. SVG requires the svg property with an SVG string.",
+        ),
+      name: z.string().optional().describe("Node name"),
+      x: z.number().optional().describe("X position"),
+      y: z.number().optional().describe("Y position"),
+      width: z.number().optional().describe("Width"),
+      height: z.number().optional().describe("Height"),
+      // Frame layout
+      layoutMode: z.enum(["NONE", "HORIZONTAL", "VERTICAL"]).optional(),
+      layoutWrap: z.enum(["NO_WRAP", "WRAP"]).optional(),
+      paddingTop: z.number().optional(),
+      paddingRight: z.number().optional(),
+      paddingBottom: z.number().optional(),
+      paddingLeft: z.number().optional(),
+      primaryAxisAlignItems: z.enum(["MIN", "MAX", "CENTER", "SPACE_BETWEEN"]).optional(),
+      counterAxisAlignItems: z.enum(["MIN", "MAX", "CENTER", "BASELINE"]).optional(),
+      layoutSizingHorizontal: z.enum(["FIXED", "HUG", "FILL"]).optional(),
+      layoutSizingVertical: z.enum(["FIXED", "HUG", "FILL"]).optional(),
+      itemSpacing: z.number().optional(),
+      cornerRadius: z.number().min(0).optional(),
+      // Colors
+      fillColor: colorSchema,
+      strokeColor: colorSchema,
+      strokeWeight: z.number().optional(),
+      // Text-specific
+      text: z.string().optional().describe("Text content (for TEXT nodes)"),
+      fontSize: z.number().optional(),
+      fontWeight: z.number().optional(),
+      fontFamily: z.string().optional().describe("Font family (default: Inter)"),
+      fontStyle: z.string().optional().describe("Font style (default: Regular)"),
+      fontColor: colorSchema,
+      textAutoResize: z
+        .enum(["NONE", "WIDTH_AND_HEIGHT", "HEIGHT", "TRUNCATE"])
+        .optional()
+        .describe(
+          "How the text box adjusts to fit content. HEIGHT is required for FILL sizing. Defaults to WIDTH_AND_HEIGHT.",
+        ),
+      textTruncation: z
+        .enum(["DISABLED", "ENDING"])
+        .optional()
+        .describe("Ellipsis truncation when text overflows. ENDING adds '...' at the end."),
+      maxLines: z
+        .number()
+        .positive()
+        .optional()
+        .describe("Max lines before truncation. Requires textTruncation: ENDING."),
+      // SVG-specific (type: SVG)
+      svg: z
+        .string()
+        .optional()
+        .describe(
+          'SVG string for SVG type. Figma parses it into vector nodes. Example: \'<svg width="24" height="24" viewBox="0 0 24 24"><path d="M12 2L2 22h20L12 2z"/></svg>\'',
+        ),
+      // Instance-specific (type: INSTANCE)
+      componentId: z.string().optional().describe("Node ID of a local COMPONENT to instantiate (for INSTANCE type)"),
+      componentKey: z
+        .string()
+        .optional()
+        .describe("Key of a published library component to instantiate (for INSTANCE type)"),
+      // Children
+      children: z
+        .array(z.lazy(() => nodeSpecSchema))
+        .optional()
+        .describe("Child nodes"),
+    })
+    .superRefine((spec, ctx) => {
+      // Boundary validation: text props on a known non-TEXT type can never apply.
+      const specType = spec.type ?? "FRAME";
+      if (specType !== "TEXT") {
+        const offending = TEXT_ONLY_SPEC_PROPS.filter((p) => spec[p] !== undefined);
+        if (offending.length > 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `${offending.join(", ")} only apply to TEXT nodes, but this spec's type is ${specType}. Fix: set type: "TEXT" on this spec, or move these properties onto a TEXT child.`,
+          });
+        }
+      }
+    }),
 );
 
 // Helper: send one create command and format the result
@@ -92,6 +121,7 @@ async function createOne(parentId: string | undefined, nodeSpec: any) {
     success: boolean;
     totalNodesCreated: number;
     tree: { id: string; name: string; type: string; children?: any[] };
+    warnings?: unknown[];
   };
   return {
     rootId: result.tree.id,
@@ -99,6 +129,7 @@ async function createOne(parentId: string | undefined, nodeSpec: any) {
     rootType: result.tree.type,
     totalNodesCreated: result.totalNodesCreated,
     nodes: result.tree,
+    warnings: result.warnings,
   };
 }
 
@@ -210,24 +241,27 @@ Colors use RGBA 0-1 range (e.g. { r: 0.2, g: 0.4, b: 1.0 }), not 0-255.`,
 
       // Single node
       if (node) {
-        const result = await createOne(parentId, node);
+        const { warnings, ...summary } = await createOne(parentId, node);
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(result) }],
+          content: [{ type: "text" as const, text: JSON.stringify(summary) + formatWarningsBlock(warnings) }],
         };
       }
 
       // Multiple nodes — create in parallel
       const results = await Promise.all(nodes.map((spec: any) => createOne(parentId, spec)));
       const totalNodes = results.reduce((sum: number, r: any) => sum + r.totalNodesCreated, 0);
+      const allWarnings = results.flatMap((r: any) => (Array.isArray(r.warnings) ? r.warnings : []));
+      const roots = results.map(({ warnings: _w, ...rest }: any) => rest);
       return {
         content: [
           {
             type: "text" as const,
-            text: JSON.stringify({
-              totalRoots: results.length,
-              totalNodesCreated: totalNodes,
-              roots: results,
-            }),
+            text:
+              JSON.stringify({
+                totalRoots: roots.length,
+                totalNodesCreated: totalNodes,
+                roots,
+              }) + formatWarningsBlock(allWarnings),
           },
         ],
       };

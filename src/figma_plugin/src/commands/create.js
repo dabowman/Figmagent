@@ -1,6 +1,8 @@
 // Create command: builds one or more nodes from a recursive spec
 
-import { toNumber, sendProgressUpdate } from "../helpers.js";
+import { toNumber, sendProgressUpdate, fail } from "../helpers.js";
+import { runPostWriteAssertions } from "../assertions.js";
+import { miniLint } from "./lint.js";
 
 export async function create(params) {
   const parentId = params.parentId;
@@ -8,6 +10,16 @@ export async function create(params) {
   const commandId = params.commandId;
 
   if (!tree) throw new Error("Missing tree parameter");
+
+  // Post-write validation context (Phase 4.1/4.2) — collected during the
+  // build, checked at the end of the same command invocation.
+  const assertCtx = {
+    nodeIds: [],
+    explicitHeightIds: [],
+    fillRequests: [],
+    fontRequests: [],
+  };
+  const rawSets = [];
 
   function countNodes(spec) {
     let count = 1;
@@ -118,14 +130,26 @@ export async function create(params) {
       let component;
       if (spec.componentId) {
         const compNode = await figma.getNodeByIdAsync(spec.componentId);
-        if (!compNode) throw new Error("Component node not found: " + spec.componentId);
+        if (!compNode)
+          fail(
+            "Component node not found: " + spec.componentId,
+            "find local component ids with grep ({ type: ['COMPONENT'] }) or get_design_system; for published library components pass componentKey instead",
+          );
         if (compNode.type !== "COMPONENT")
-          throw new Error("Node is not a COMPONENT: " + spec.componentId + " (type: " + compNode.type + ")");
+          fail(
+            "Node is not a COMPONENT: " + spec.componentId + " (type: " + compNode.type + ")",
+            compNode.type === "COMPONENT_SET"
+              ? "pass the id of one variant inside the set (read " + spec.componentId + " to list its variants)"
+              : "pass a COMPONENT node id — find one with grep ({ type: ['COMPONENT'] })",
+          );
         component = compNode;
       } else if (spec.componentKey) {
         component = await figma.importComponentByKeyAsync(spec.componentKey);
       } else {
-        throw new Error("INSTANCE type requires componentId or componentKey");
+        fail(
+          "INSTANCE type requires componentId or componentKey",
+          "pass componentId (local component node id) or componentKey (published library key)",
+        );
       }
       node = component.createInstance();
     } else if (nodeType === "COMPONENT") {
@@ -176,8 +200,16 @@ export async function create(params) {
       parentNode.appendChild(node);
     } else if (parentId) {
       const targetParent = await figma.getNodeByIdAsync(parentId);
-      if (!targetParent) throw new Error("Parent node not found: " + parentId);
-      if (!("appendChild" in targetParent)) throw new Error("Parent node does not support children: " + parentId);
+      if (!targetParent)
+        fail(
+          "Parent node not found: " + parentId,
+          "verify the ID with read or search with grep — or omit parentId to create at the page level",
+        );
+      if (!("appendChild" in targetParent))
+        fail(
+          "Parent node does not support children: " + parentId + " (type: " + targetParent.type + ")",
+          "pass a FRAME, COMPONENT, GROUP, SECTION, or PAGE node as parentId",
+        );
       targetParent.appendChild(node);
     } else {
       figma.currentPage.appendChild(node);
@@ -195,6 +227,66 @@ export async function create(params) {
           node.x = maxRight + 100;
         }
       }
+    }
+
+    // Record post-write validation context for this node
+    assertCtx.nodeIds.push(node.id);
+    if (spec.height !== undefined) assertCtx.explicitHeightIds.push(node.id);
+    if (spec.layoutSizingHorizontal === "FILL" || spec.layoutSizingVertical === "FILL") {
+      assertCtx.fillRequests.push({
+        id: node.id,
+        horizontal: spec.layoutSizingHorizontal === "FILL",
+        vertical: spec.layoutSizingVertical === "FILL",
+      });
+    }
+    if (nodeType === "TEXT" && spec.fontFamily !== undefined) {
+      assertCtx.fontRequests.push({ id: node.id, family: spec.fontFamily });
+    }
+    // Raw values eligible for the write-time mini-lint (Phase 4.2)
+    if (spec.fillColor) {
+      rawSets.push({ nodeId: node.id, property: "fills", field: "fill", value: spec.fillColor, nodeType: node.type });
+    }
+    if (nodeType === "TEXT" && spec.fontColor) {
+      rawSets.push({ nodeId: node.id, property: "fills", field: "fill", value: spec.fontColor, nodeType: node.type });
+    }
+    if (spec.cornerRadius !== undefined) {
+      rawSets.push({
+        nodeId: node.id,
+        property: "cornerRadius",
+        field: "cornerRadius",
+        value: toNumber(spec.cornerRadius, 0),
+        nodeType: node.type,
+      });
+    }
+    if (spec.itemSpacing !== undefined) {
+      rawSets.push({
+        nodeId: node.id,
+        property: "itemSpacing",
+        field: "itemSpacing",
+        value: toNumber(spec.itemSpacing, 0),
+        nodeType: node.type,
+      });
+    }
+    const paddingFields = ["paddingTop", "paddingRight", "paddingBottom", "paddingLeft"];
+    for (let pf = 0; pf < paddingFields.length; pf++) {
+      if (spec[paddingFields[pf]] !== undefined) {
+        rawSets.push({
+          nodeId: node.id,
+          property: paddingFields[pf],
+          field: paddingFields[pf],
+          value: toNumber(spec[paddingFields[pf]], 0),
+          nodeType: node.type,
+        });
+      }
+    }
+    if (nodeType === "TEXT" && spec.fontSize !== undefined) {
+      rawSets.push({
+        nodeId: node.id,
+        property: "fontSize",
+        field: "fontSize",
+        value: toNumber(spec.fontSize, 14),
+        nodeType: node.type,
+      });
     }
 
     createdCount++;
@@ -219,10 +311,20 @@ export async function create(params) {
       }
     }
 
-    // Two-pass: set layout sizing AFTER children exist
+    // Two-pass: set layout sizing AFTER children exist.
+    // Guarded: FILL under a non-auto-layout parent throws in the Figma API —
+    // swallow here and let the post-write fill_not_applied assertion report it.
     if ((nodeType === "FRAME" || nodeType === "COMPONENT") && spec.layoutMode && spec.layoutMode !== "NONE") {
-      if (spec.layoutSizingHorizontal) node.layoutSizingHorizontal = spec.layoutSizingHorizontal;
-      if (spec.layoutSizingVertical) node.layoutSizingVertical = spec.layoutSizingVertical;
+      if (spec.layoutSizingHorizontal) {
+        try {
+          node.layoutSizingHorizontal = spec.layoutSizingHorizontal;
+        } catch (_szErr) {}
+      }
+      if (spec.layoutSizingVertical) {
+        try {
+          node.layoutSizingVertical = spec.layoutSizingVertical;
+        } catch (_szErr) {}
+      }
     }
 
     // For TEXT nodes: coerce textAutoResize and nudge width BEFORE setting FILL.
@@ -246,10 +348,14 @@ export async function create(params) {
         node.textAutoResize = effectiveTextAutoResize;
       }
       if (spec.layoutSizingHorizontal) {
-        node.layoutSizingHorizontal = spec.layoutSizingHorizontal;
+        try {
+          node.layoutSizingHorizontal = spec.layoutSizingHorizontal;
+        } catch (_szErr) {}
       }
       if (spec.layoutSizingVertical) {
-        node.layoutSizingVertical = spec.layoutSizingVertical;
+        try {
+          node.layoutSizingVertical = spec.layoutSizingVertical;
+        } catch (_szErr) {}
       }
     }
 
@@ -273,9 +379,22 @@ export async function create(params) {
     sendProgressUpdate(commandId, "create", "completed", 100, totalNodes, createdCount, "Creation completed");
   }
 
-  return {
+  // Post-write validation: structural assertions + mini-lint, same execution.
+  // Advisory only — never fails the write.
+  let warnings = [];
+  try {
+    warnings = await runPostWriteAssertions(assertCtx);
+    const lintWarnings = await miniLint(rawSets);
+    for (let wi = 0; wi < lintWarnings.length; wi++) warnings.push(lintWarnings[wi]);
+  } catch (_assertErr) {
+    // assertions are best-effort
+  }
+
+  const response = {
     success: true,
     totalNodesCreated: createdCount,
     tree: treeResult,
   };
+  if (warnings.length > 0) response.warnings = warnings;
+  return response;
 }

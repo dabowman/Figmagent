@@ -1,6 +1,6 @@
 // Text commands: setTextContent, setMultipleTextContents
 
-import { sendProgressUpdate, generateCommandId, findNodeByIdInTree, delay } from "../helpers.js";
+import { sendProgressUpdate, generateCommandId, findNodeByIdInTree, delay, fail } from "../helpers.js";
 import { setCharacters } from "../setcharacters.js";
 
 export async function setTextContent(params) {
@@ -13,8 +13,16 @@ export async function setTextContent(params) {
   if (!node) {
     node = findNodeByIdInTree(nodeId);
   }
-  if (!node) throw new Error(`Node not found with ID: ${nodeId}`);
-  if (node.type !== "TEXT") throw new Error(`Node is not a text node: ${nodeId}`);
+  if (!node)
+    fail(
+      "Node not found with ID: " + nodeId,
+      "verify the ID with read or search with grep — for text inside instances use the path format I<instanceId>;<textNodeId>",
+    );
+  if (node.type !== "TEXT")
+    fail(
+      "Node is not a TEXT node: " + nodeId + " (type: " + node.type + ")",
+      "target the TEXT child instead — find it with grep ({ type: ['TEXT'] }) under " + nodeId,
+    );
 
   try {
     await setCharacters(node, text);

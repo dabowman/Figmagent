@@ -7,6 +7,30 @@ export const logger = {
   log: (message: string) => process.stderr.write(`[LOG] ${message}\n`),
 };
 
+// ─── Post-Write Warnings (Phase 4.1) ────────────────────────────────────────
+
+export interface FigmaWarning {
+  nodeId?: string;
+  check?: string;
+  message: string;
+}
+
+/**
+ * Format the `warnings` array a plugin write command returned into a text
+ * block appended after the main JSON response. Returns "" when there are no
+ * warnings (the block is omitted entirely).
+ */
+export function formatWarningsBlock(warnings: unknown): string {
+  if (!Array.isArray(warnings) || warnings.length === 0) return "";
+  const lines = warnings.map((w) => {
+    const warning = w as FigmaWarning;
+    const check = warning.check ? `[${warning.check}] ` : "";
+    const nodeId = warning.nodeId ? `${warning.nodeId}: ` : "";
+    return `- ${check}${nodeId}${warning.message}`;
+  });
+  return `\n\nwarnings:\n${lines.join("\n")}`;
+}
+
 // ─── Output Budget System ────────────────────────────────────────────────────
 
 export const DEFAULT_MAX_OUTPUT_CHARS = 30_000;
