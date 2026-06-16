@@ -133,7 +133,8 @@ export async function getStyles() {
   };
 }
 
-export async function getLocalVariables() {
+export async function getLocalVariables(options) {
+  const includeScopes = !!(options && options.includeScopes);
   const collections = await figma.variables.getLocalVariableCollectionsAsync();
   const result = [];
 
@@ -156,12 +157,16 @@ export async function getLocalVariables() {
         }
       }
 
-      variables.push({
+      const entry = {
         id: variable.id,
         name: variable.name,
         resolvedType: variable.resolvedType,
         values: values,
-      });
+      };
+      if (includeScopes) {
+        entry.scopes = Array.isArray(variable.scopes) ? variable.scopes.slice() : [];
+      }
+      variables.push(entry);
     }
 
     result.push({
@@ -261,9 +266,11 @@ export async function getDesignSystem(params) {
   const includeVariables = !(params && params.includeVariables === false);
   const includeStyles = !(params && params.includeStyles === false);
 
+  const includeScopes = !!(params && params.includeScopes);
+
   const promises = [];
   promises.push(includeStyles ? getStyles() : Promise.resolve(null));
-  promises.push(includeVariables ? getLocalVariables() : Promise.resolve(null));
+  promises.push(includeVariables ? getLocalVariables({ includeScopes: includeScopes }) : Promise.resolve(null));
 
   const [styles, variables] = await Promise.all(promises);
 

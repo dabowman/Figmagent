@@ -13,7 +13,7 @@ import {
 
 export const COMMANDS = {
   get_styles: { lock: "read", handler: () => getStyles() },
-  get_local_variables: { lock: "read", handler: () => getLocalVariables() },
+  get_local_variables: { lock: "read", handler: (params) => getLocalVariables(params) },
   get_local_components: { lock: "read", handler: () => getLocalComponents() },
   get_design_system: { lock: "read", handler: (params) => getDesignSystem(params) },
   create_variables: { lock: "global", handler: (params) => createVariables(params) },

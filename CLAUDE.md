@@ -56,6 +56,7 @@ Runs inside Figma. Source lives in `src/figma_plugin/src/` as ES modules, bundle
 - `src/commands/styles.js` — getStyles, getLocalVariables, getLocalComponents, getDesignSystem, createVariables, updateVariables, createStyles, updateStyles, FIELD_MAP (shared with apply.js)
 - `src/commands/lint.js` — lintDesign: subtree scan for unbound properties, variable matching (CIE76 deltaE for colors), auto-fix, plus the `matchVariable`/`miniLint` matchers reused at write time
 - `src/commands/connections.js` — setDefaultConnector, createConnections, setFocus, setSelections
+- `src/commands/layout.js` — auto-layout helpers shared by create/apply
 
 **Wire protocol stability**: command names in `registry/<domain>.js`, `remote/domains.ts`, `types.ts` (`FigmaCommand`), and `tests/registry.test.ts` never change — renames happen at the MCP tool layer only, so both transports share one implementation with no version skew.
 
@@ -73,7 +74,7 @@ Tool descriptions (`src/figmagent_mcp/tools/*.ts`) are the source of truth for p
 - **Batch over singles**: one `write` call creates whole trees, multiple roots, or clones (`fromNodeId`); one `edit` call modifies many nodes (text via `characters`, deletes via `delete: true`). Note two `write` behaviors: new FRAME/RECTANGLE/COMPONENT nodes get empty fills (pass `fillColor` explicitly or bind a variable), and top-level nodes without x/y auto-place 100px right of existing page content. When no first-class tool covers an operation, `run_script` (remote transport only) is the last-resort escape hatch — recurring scripts become tool roadmap items.
 - **Write responses carry the verdict**: Zod schemas + plugin pre-checks reject or warn on impossible requests before mutating (text props on non-TEXT, FILL under a non-auto-layout parent, scope-mismatched bindings, instance-child structural edits — batches continue with per-op errors). `write`/`edit` responses append a `warnings:` block (balloon frames, width collapse, FILL-not-applied, font fallback, sibling overlaps) plus mini-lint suggestions when a raw value exactly matches a variable. Act on warnings instead of re-reading to verify.
 - **FSGN format**: `read` returns YAML with `meta` (`nodeCount`, `tokenEstimate`) and `defs` deduplicating variables (`v1`…), styles (`s1`…), components (`c1`…). Use the short def IDs in `edit`'s `variables`/`textStyleId`. Multiple nodeIds → one FSGN block per node separated by `---`. Variant property definitions live on the COMPONENT_SET, not its child variants; instances resolve `componentRef` in `defs.components`.
-- **Design tokens workflow**: `get_design_system` to discover (filter with `collection`/`styleType`/`includeVariables`/`includeStyles`) → `edit` with `variables`/`textStyleId`/`effectStyleId` to bind. `prepare_figma_variables` converts DTCG token JSON into `create_variables` payloads entirely server-side. Variable/style CRUD (`create_variables`, `update_variables`, `create_styles`, `update_styles`) is batch-first; invalid scopes and duplicate names fail with the fix stated.
+- **Design tokens workflow**: `get_design_system` to discover (filter with `collection`/`styleType`/`includeVariables`/`includeStyles`; pass `includeScopes: true` to surface each variable's `scopes` array, e.g. to verify scopes set via `update_variables` — omitted by default to keep output compact) → `edit` with `variables`/`textStyleId`/`effectStyleId` to bind. `prepare_figma_variables` converts DTCG token JSON into `create_variables` payloads entirely server-side. Variable/style CRUD (`create_variables`, `update_variables`, `create_styles`, `update_styles`) is batch-first; invalid scopes and duplicate names fail with the fix stated.
 - **Lint after batches**: run `lint` after building or styling (accepts PAGE node IDs to lint a whole page). `autoFix: true` binds exact matches; `ambiguous` issues are never auto-fixed; instance children are linted but not auto-fixed — bind on the main component.
 - **Comments & annotations**: comments are REST-API based (`get_comments`/`post_comment`/`delete_comment`, require `FIGMA_API_TOKEN` with `file_comments:*` scopes; `fileKey` from the Figma URL). Annotations: search with `grep` (`hasAnnotation: true` or `annotation: "regex"`), batch-read with `get_annotations(nodeIds)`, replace by index with `set_annotation`.
 - **Libraries**: `import_library_components` and `get_component_variants` are batch tools for **published library** files (require a fileKey). For local/unpublished component sets, `read(nodeId)` on the set returns property definitions and variant IDs directly.
@@ -100,6 +101,21 @@ For large Figma tasks (8+ variants, 100+ tool calls), use the `/figma-sub-agents
 - **Styler** — applies variable bindings and text styles, can run in parallel (max 3, plugin transport)
 
 Phases must be sequential: Discovery → Build → Style. Within Build or Style, agents can run in parallel on disjoint node subtrees (plugin transport; on remote, run them serially — context isolation still helps, wall-clock parallelism doesn't). All agents share one WebSocket channel — request UUID correlation routes responses.
+
+## Two Figma MCPs
+
+Don't confuse these — they have different tool prefixes and different capabilities:
+- **Figmagent** (`mcp__Figmagent__*`): this project. Talks to the Figma plugin via the WebSocket relay. Full read/write canvas access.
+- **Figma** (`mcp__figma__*`): the official Figma MCP. Uses the Figma REST API directly. Different server, different tools.
+
+## Task Completion Checklist
+
+Run before considering any feature/fix done:
+1. `bun run build:plugin` (if plugin source changed)
+2. `bun run lint`
+3. `bun run test`
+4. Update CLAUDE.md / SKILL.md / prompts if agent-facing behavior changed
+5. Commit with descriptive message
 
 ## Setup
 
