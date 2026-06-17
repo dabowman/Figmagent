@@ -4,13 +4,23 @@ import { sendCommandToFigma } from "../connection.js";
 import type { getInstanceOverridesResult, setInstanceOverridesResult } from "../types.js";
 
 // Component sets with more than this many variants drop the full variants array
-// (key/description per variant). The compact variantIds map is always kept.
+// (id/name/key per variant). The compact variantIds map is kept up to VARIANT_ID_CAP.
 export const VARIANT_THRESHOLD = 10;
 
-// Filter + shape the raw get_local_components payload. Always attaches a compact
-// variantIds map (variant name → nodeId) to every COMPONENT_SET so agents can
-// target variants without a follow-up read; only the verbose variants array is
-// gated behind VARIANT_THRESHOLD / includeVariants.
+// Hard cap on how many entries the compact variantIds map carries. Past this the
+// map itself is dropped — at ~40-60 chars/entry an uncapped map re-introduces the
+// unbounded output the threshold was meant to bound (e.g. a 500-variant icon set).
+// Agents past the cap use read(setId) or get_component_variants for the full map.
+export const VARIANT_ID_CAP = 100;
+
+// Filter + shape the raw get_local_components payload. Attaches a compact
+// variantIds map (variant name → nodeId) to every COMPONENT_SET (up to
+// VARIANT_ID_CAP entries) so agents can target variants without a follow-up
+// read; the verbose variants array is gated behind VARIANT_THRESHOLD /
+// includeVariants. Note: variant names are not guaranteed unique (Figma allows
+// duplicate composite names — e.g. the transient clone-then-rename "add an axis"
+// workflow), so a name collision means the map has fewer entries than there are
+// variants. We surface that via variantIdsTruncated rather than silently lying.
 export function processLocalComponents(
   components: any[],
   opts: { nameFilter?: string; includeVariants?: boolean } = {},
@@ -23,16 +33,44 @@ export function processLocalComponents(
   return list.map((c: any) => {
     if (c.type !== "COMPONENT_SET" || !c.variants) return c;
     const variantIds: Record<string, string> = {};
+    let mapped = 0;
+    let collisions = 0;
+    let capped = false;
     for (const v of c.variants) {
-      if (v?.name && v.id) variantIds[v.name] = v.id;
+      // typeof name === "string" keeps "" (a legal Figma node name); only skip
+      // genuinely missing names. Truthiness here would drop empty-named variants.
+      if (!v || typeof v.name !== "string" || !v.id) continue;
+      if (mapped >= VARIANT_ID_CAP) {
+        capped = true;
+        continue;
+      }
+      if (Object.hasOwn(variantIds, v.name)) collisions++;
+      variantIds[v.name] = v.id;
+      mapped++;
     }
-    const withMap = { ...c, variantIds };
+    const withMap: any = { ...c, variantIds };
+    // Flag when the map can't faithfully represent every variant. Duplicate
+    // composite names collide (last-write-wins), so the entry count can be < the
+    // variant count even when the map carries every distinct name.
+    if (collisions > 0 || capped) {
+      withMap.variantIdsTruncated = true;
+      const reasons: string[] = [];
+      if (collisions > 0) {
+        reasons.push(
+          `${collisions} variant(s) share a name with another and collide in the map (last-write-wins)`,
+        );
+      }
+      if (capped) {
+        reasons.push(`only the first ${VARIANT_ID_CAP} of ${c.variantCount} variants are mapped`);
+      }
+      withMap.variantIdsTruncatedHint = `variantIds is incomplete: ${reasons.join("; ")}. Use read(setId) or get_component_variants for the full variant list.`;
+    }
     if (c.variants.length <= VARIANT_THRESHOLD || opts.includeVariants) return withMap;
     return {
       ...withMap,
       variants: [],
       variantsOmitted: true,
-      variantsOmittedHint: `Full variants array (key/description) omitted for ${c.variantCount} variants; variantIds map is included above. Use includeVariants:true or get_component_variants for the full array.`,
+      variantsOmittedHint: `Full variants array (id/name/key per variant) omitted for ${c.variantCount} variants; the variantIds map (name → nodeId) is still present. Use includeVariants:true for the full array.`,
     };
   });
 }
@@ -40,7 +78,7 @@ export function processLocalComponents(
 // Get Local Components Tool
 server.tool(
   "get_local_components",
-  "Get local components from the Figma document. Returns COMPONENT_SETs (multi-variant) and standalone COMPONENTs. Use nameFilter to search by component name (case-insensitive). COMPONENT_SET results include variantAxes showing the structure (e.g. Type × Size × State) and a compact variantIds map ({ \"Size=MD, State=Default\": nodeId, ... }) so you can target variant nodes without a follow-up read. The full variants array (with key/description) is listed when ≤10; for larger sets it is omitted (variantIds stays present) — use includeVariants to force the full array, or use get_component_variants on the set ID.",
+  "Get local components from the Figma document. Returns COMPONENT_SETs (multi-variant) and standalone COMPONENTs. Use nameFilter to search by component name (case-insensitive). COMPONENT_SET results include variantAxes showing the structure (e.g. Type × Size × State) and a compact variantIds map ({ \"Size=MD, State=Default\": nodeId, ... }) so you can target variant nodes without a follow-up read. The variantIds map carries up to 100 entries; past that (or when variant names collide) it sets variantIdsTruncated — use read(setId) or get_component_variants for the full list. The full variants array (id/name/key per variant) is listed when ≤10; for larger sets it is omitted (variantIds stays present) — use includeVariants to force the full array.",
   {
     nameFilter: z
       .string()

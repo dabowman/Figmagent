@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { VARIANT_THRESHOLD, processLocalComponents } from "../src/figmagent_mcp/tools/components.js";
+import { VARIANT_ID_CAP, VARIANT_THRESHOLD, processLocalComponents } from "../src/figmagent_mcp/tools/components.js";
 
 function makeSet(name: string, count: number) {
   const variants = [];
@@ -40,7 +40,7 @@ describe("processLocalComponents — variantIds map", () => {
     // Verbose array is gated
     expect(set.variants).toEqual([]);
     expect(set.variantsOmitted).toBe(true);
-    expect(set.variantsOmittedHint).toContain("variantIds map is included");
+    expect(set.variantsOmittedHint).toContain("variantIds map (name → nodeId) is still present");
   });
 
   test("includeVariants:true keeps both map and full array for large sets", () => {
@@ -67,11 +67,39 @@ describe("processLocalComponents — variantIds map", () => {
     expect(out[0].variantIds).toBeUndefined();
   });
 
-  test("skips variant entries missing name or id when building the map", () => {
+  test("skips variant entries missing name or id, but keeps empty-string names", () => {
     const set = makeSet("Button", 2);
-    set.variants.push({ id: "", name: "Size=3, State=Default", key: "k" } as any);
-    set.variants.push({ id: "10:9", name: "", key: "k" } as any);
+    set.variants.push({ id: "", name: "Size=3, State=Default", key: "k" } as any); // missing id → skipped
+    set.variants.push({ id: "10:9", name: "", key: "k" } as any); // empty name is legal → kept
     const out = processLocalComponents([set]);
+    // 2 original + the empty-named one (id present); the id-less one is dropped
+    expect(Object.keys(out[0].variantIds).length).toBe(3);
+    expect(out[0].variantIds[""]).toBe("10:9");
+  });
+
+  test("flags duplicate variant names as truncated (last-write-wins collision)", () => {
+    const set = makeSet("Button", 2);
+    // Two children share a composite name — the transient clone-then-rename case.
+    set.variants.push({ id: "10:7", name: "Size=0, State=Default", key: "k" } as any);
+    const out = processLocalComponents([set]);
+    // Collision means one fewer entry than there are variants.
     expect(Object.keys(out[0].variantIds).length).toBe(2);
+    expect(out[0].variantIdsTruncated).toBe(true);
+    expect(out[0].variantIdsTruncatedHint).toContain("collide");
+  });
+
+  test("caps the variantIds map and flags truncation for very large sets", () => {
+    const count = VARIANT_ID_CAP + 50;
+    const out = processLocalComponents([makeSet("Icon", count)]);
+    const set = out[0];
+    expect(Object.keys(set.variantIds).length).toBe(VARIANT_ID_CAP);
+    expect(set.variantIdsTruncated).toBe(true);
+    expect(set.variantIdsTruncatedHint).toContain(String(VARIANT_ID_CAP));
+  });
+
+  test("does not flag truncation when every variant maps cleanly", () => {
+    const out = processLocalComponents([makeSet("Button", 5)]);
+    expect(out[0].variantIdsTruncated).toBeUndefined();
+    expect(out[0].variantIdsTruncatedHint).toBeUndefined();
   });
 });
