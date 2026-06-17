@@ -203,6 +203,40 @@ describe("apply: boundary warnings instead of silent skips", () => {
     // Width-0 recovery nudged width off 0 before FILL was applied (so FILL isn't a no-op).
     expect(fakeNodes["13:163"].width).toBeGreaterThan(0);
     expect(fakeNodes["13:163"].layoutSizingHorizontal).toBe("FILL");
+    // Recovery succeeded → no collapse warning.
+    const collapse = (result.warnings || []).filter((w: any) => w.check === "width_collapse");
+    expect(collapse).toEqual([]);
+  });
+
+  test("FILL on a width-0 TEXT where recovery FAILS to grow it: width_collapse fires (#50 ordering)", async () => {
+    // priorWidth must be snapshotted BEFORE the width-0 recovery resize, else
+    // the post-write assertion would see the recovery's value (not 0) and the
+    // collapse warning — the whole point of #50 — could never fire on the apply
+    // path. Here resize is a no-op (FILL/parent gave the TEXT no room), so the
+    // node stays at width 0 and the warning must still fire.
+    fakeNodes["14:200"] = {
+      id: "14:200",
+      type: "TEXT",
+      name: "stuck",
+      width: 0,
+      height: 16,
+      textAutoResize: "HEIGHT",
+      characters: "Hello",
+      layoutSizingHorizontal: "FIXED",
+      parent: { id: "6:6", name: "Cell", type: "FRAME", layoutMode: "HORIZONTAL" },
+      // Recovery and FILL both fail to give the node any width.
+      resize(_w: number, _h: number) {
+        /* no-op: simulates Figma leaving the collapsed TEXT at 0 */
+      },
+    };
+    const result = await apply({
+      nodes: [{ nodeId: "14:200", textAutoResize: "HEIGHT", layoutSizingHorizontal: "FILL" }],
+    });
+    expect(result.successCount).toBe(1);
+    expect(fakeNodes["14:200"].width).toBe(0);
+    const w = (result.warnings || []).find((w: any) => w.check === "width_collapse");
+    expect(w).toBeDefined();
+    expect(w.message).toContain("Fix:");
   });
 
   test("swapVariantId to a non-sibling variant is rejected with the component set named", async () => {

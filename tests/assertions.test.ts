@@ -188,6 +188,31 @@ describe("checkSizingRequested", () => {
     expect(warnings.length).toBe(1);
     expect(warnings[0].check).toBe("fill_not_applied");
   });
+
+  test("create.js boolean FILL with NO prior + collapsed width: no width_collapse (unknown prior, skip)", () => {
+    // create.js pushes { id, horizontal, vertical } with no priorWidth. A
+    // freshly-created node has no "before the op", so an unknown prior must not
+    // be treated as zero — otherwise every new collapsed FILL node would wrongly
+    // claim it was collapsed before the op.
+    const warnings = checkSizingRequested(
+      { id: "1:1", type: "TEXT", layoutSizingHorizontal: "FILL", width: 0, parent },
+      { horizontal: true, vertical: false },
+    );
+    expect(warnings).toEqual([]);
+  });
+
+  test("FILL recovery FAILED on apply path (prior 0, still 0 after) — width_collapse fires (#50 headline)", () => {
+    // This mirrors the apply.js path: priorWidth is now captured BEFORE the
+    // width-0 TEXT recovery resize, so a width-0 TEXT whose FILL could not
+    // recover the dimension is reported here as 0 (not the recovery's 100).
+    const warnings = checkSizingRequested(
+      { id: "13:163", type: "TEXT", layoutSizingHorizontal: "FILL", width: 0, parent },
+      { horizontal: "FILL", vertical: undefined, priorWidth: 0, priorHeight: 16 },
+    );
+    expect(warnings.length).toBe(1);
+    expect(warnings[0].check).toBe("width_collapse");
+    expect(warnings[0].message).toContain("already collapsed at 0 before the op");
+  });
 });
 
 describe("checkFontFallback", () => {

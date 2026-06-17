@@ -41,12 +41,12 @@ export function isBalloonFrame(node) {
 }
 
 // Resolve a requested layoutSizing value for one axis from either request
-// shape: the legacy boolean flag (FILL-only, from create.js) or the richer
-// string value (FILL/HUG/FIXED, from apply.js). Returns the requested value
-// string, or null when nothing was requested for this axis.
-function requestedSizingValue(flag, value) {
-  if (typeof value === "string") return value;
-  if (flag === true) return "FILL";
+// shape: the legacy boolean flag (FILL-only, from create.js — true means FILL)
+// or the richer string value (FILL/HUG/FIXED, from apply.js). Returns the
+// requested value string, or null when nothing was requested for this axis.
+function requestedSizingValue(v) {
+  if (typeof v === "string") return v;
+  if (v === true) return "FILL";
   return null;
 }
 
@@ -58,8 +58,9 @@ function requestedSizingValue(flag, value) {
 // requested: {
 //   horizontal: boolean | "FILL" | "HUG" | "FIXED",
 //   vertical:   boolean | "FILL" | "HUG" | "FIXED",
-//   priorWidth?:  number | null,   // dimension before the op (collapse check)
-//   priorHeight?: number | null,
+//   priorWidth?:  number | null,   // dimension before the op; collapse check
+//   priorHeight?: number | null,   // only fires when this is exactly 0
+//                                  // (missing/null = unknown, skipped)
 // }
 // Returns an array of warnings (one per failed axis).
 export function checkSizingRequested(node, requested) {
@@ -69,13 +70,13 @@ export function checkSizingRequested(node, requested) {
   const parentLabel = parent ? parent.id + ' ("' + parent.name + '")' : "the parent";
   const axes = [
     {
-      want: requestedSizingValue(requested.horizontal, requested.horizontal),
+      want: requestedSizingValue(requested.horizontal),
       field: "layoutSizingHorizontal",
       dim: "width",
       prior: requested.priorWidth,
     },
     {
-      want: requestedSizingValue(requested.vertical, requested.vertical),
+      want: requestedSizingValue(requested.vertical),
       field: "layoutSizingVertical",
       dim: "height",
       prior: requested.priorHeight,
@@ -86,7 +87,12 @@ export function checkSizingRequested(node, requested) {
     if (!axis.want) continue;
     const actual = prop(node, axis.field);
 
-    // 1. Value didn't stick — parent isn't auto-layout, sizing is a no-op.
+    // 1. Value didn't stick — Figma reports a different sizing mode than asked.
+    // On the apply path the no-auto-layout case is pre-caught (warn + skip,
+    // never pushed here), so when this fires the parent DOES have auto-layout
+    // and Figma normalized/rejected the requested mode for this node. On the
+    // create boolean path a missing-auto-layout parent is also possible. Offer
+    // both fixes without asserting which one applies.
     if (actual !== undefined && actual !== axis.want) {
       warnings.push({
         nodeId: node.id,
@@ -99,9 +105,9 @@ export function checkSizingRequested(node, requested) {
           node.id +
           " did not apply — it reports " +
           actual +
-          " because parent " +
+          ". Fix: ensure parent " +
           parentLabel +
-          " has no auto-layout. Fix: set layoutMode: 'HORIZONTAL' or 'VERTICAL' on the parent, or give " +
+          " has layoutMode: 'HORIZONTAL' or 'VERTICAL', or give " +
           node.id +
           " an explicit " +
           axis.dim +
@@ -110,13 +116,15 @@ export function checkSizingRequested(node, requested) {
       continue;
     }
 
-    // 2. FILL stuck (or value unreadable) but the dimension is still collapsed
-    // at ~0 — the FILL was a no-op because the node was already broken and the
-    // parent gave it no room to expand into.
-    if (axis.want === "FILL") {
+    // 2. FILL stuck but the dimension is still collapsed at ~0 — the FILL was a
+    // no-op because the node was already collapsed at 0 before the op and the
+    // parent gave it no room to expand into (issue #50). Only fires when a
+    // numeric prior of 0 was explicitly provided: a missing prior (e.g. the
+    // create.js boolean path, which has no "before" — it just made the node) is
+    // "unknown", so skip rather than fabricate a pre-op collapse.
+    if (axis.want === "FILL" && axis.prior === 0) {
       const dimValue = prop(node, axis.dim);
-      const wasZero = axis.prior === 0 || axis.prior === null || axis.prior === undefined;
-      if (typeof dimValue === "number" && dimValue < 2 && wasZero) {
+      if (typeof dimValue === "number" && dimValue < 2) {
         warnings.push({
           nodeId: node.id,
           check: "width_collapse",
@@ -128,7 +136,7 @@ export function checkSizingRequested(node, requested) {
             axis.dim +
             " at " +
             dimValue +
-            "px — the FILL was a no-op (the node was collapsed before the op and got no room). Fix: set " +
+            "px — the FILL was a no-op (the node was already collapsed at 0 before the op and got no room). Fix: set " +
             axis.dim +
             " explicitly (or textAutoResize: 'HEIGHT' on TEXT) in the same apply, then FILL — combine both in one call.",
         });

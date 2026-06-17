@@ -400,6 +400,15 @@ async function processNode(op, styleCache, ctx) {
     }
   }
 
+  // Snapshot dimensions BEFORE the width-0 TEXT recovery (below) or any sizing
+  // mutation runs, so a post-write assertion can tell whether a FILL request
+  // actually changed the dimension (vs. a no-op that left an already-collapsed
+  // width-0 TEXT at 0 — issue #50). Captured here, not just before
+  // layoutSizing*, because the recovery resizes 0→100 and would mask the
+  // collapse the assertion exists to catch.
+  const priorWidth = prop(node, "width");
+  const priorHeight = prop(node, "height");
+
   // Text layout/resize properties (applies to any TEXT node — not gated on font props).
   // Ordered BEFORE layoutSizingHorizontal so coercion and width-recovery happen before
   // FILL is applied: setting FILL on a TEXT node with WIDTH_AND_HEIGHT collapses width to 0,
@@ -480,11 +489,6 @@ async function processNode(op, styleCache, ctx) {
         " an explicit width/height.",
     });
   }
-  // Snapshot dimensions before applying sizing so a post-write assertion can
-  // tell whether a FILL request actually changed the dimension (vs. a no-op
-  // that left an already-collapsed width-0 TEXT node at 0 — issue #50).
-  const priorWidth = prop(node, "width");
-  const priorHeight = prop(node, "height");
   if (op.layoutSizingHorizontal !== undefined && "layoutSizingHorizontal" in node && !sizingContextMissing) {
     node.layoutSizingHorizontal = op.layoutSizingHorizontal;
   }
