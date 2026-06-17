@@ -70,7 +70,7 @@ export const nodeSpecSchema: z.ZodType<any> = z.lazy(() =>
         .enum(["NONE", "WIDTH_AND_HEIGHT", "HEIGHT", "TRUNCATE"])
         .optional()
         .describe(
-          "How the text box adjusts to fit content. HEIGHT is required for FILL sizing. Defaults to WIDTH_AND_HEIGHT.",
+          "How the text box adjusts to fit content. HEIGHT is required for FILL sizing. Defaults to WIDTH_AND_HEIGHT for a standalone TEXT node — but a TEXT node created inside an auto-layout parent defaults to layoutSizingHorizontal: FILL + textAutoResize: HEIGHT (matching Figma UI), unless you set either property explicitly.",
         ),
       textTruncation: z
         .enum(["DISABLED", "ENDING"])
@@ -165,7 +165,7 @@ With fromNodeId, the optional node spec may set name, x, y, fillColor, and corne
 REPARENTING RECIPE (no move-to-parent operation exists; edit's x/y only changes coordinates): write({ fromNodeId: original, parentId: newParent }), then edit({ nodes: [{ nodeId: original, delete: true }] }).
 
 FRAME and COMPONENT nodes support auto-layout (layoutMode, padding, alignment, spacing, sizing), fill/stroke colors, and cornerRadius.
-TEXT nodes support text, fontSize, fontWeight, fontFamily, fontStyle, fontColor, textAutoResize, textTruncation, and maxLines.
+TEXT nodes support text, fontSize, fontWeight, fontFamily, fontStyle, fontColor, textAutoResize, textTruncation, and maxLines. A TEXT node created inside an auto-layout parent defaults to layoutSizingHorizontal: FILL + textAutoResize: HEIGHT (matching Figma UI) so it wraps instead of truncating; pass either property explicitly to override (e.g. layoutSizingHorizontal: "FIXED" or layoutSizingHorizontal: "HUG").
 RECTANGLE nodes support fillColor, strokeColor, strokeWeight, and cornerRadius. IMPORTANT: RECTANGLE cannot use FILL sizing — use a FRAME with fillColor instead when you need a shape that stretches.
 INSTANCE nodes require componentId or componentKey. Position and parentId work as usual.
 SVG nodes require an svg property with a valid SVG string. Figma parses it into vector nodes inside a frame. Use for icons, illustrations, dividers, arrows, or any shape that needs paths.

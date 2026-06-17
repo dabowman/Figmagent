@@ -320,25 +320,35 @@ export async function create(params) {
     // Setting FILL with WIDTH_AND_HEIGHT collapses width; setting textAutoResize to HEIGHT
     // on a width-0 node freezes 0. Handle both preemptively.
     if (nodeType === "TEXT") {
+      // Default TEXT in an auto-layout parent to FILL + HEIGHT (matches Figma UI).
+      // Only when the parent has active auto-layout and the spec sets neither
+      // layoutSizingHorizontal nor textAutoResize — explicit specs are respected.
+      const parentIsAutoLayout =
+        parentNode && "layoutMode" in parentNode && parentNode.layoutMode !== "NONE";
+      let effectiveLayoutSizingHorizontal = spec.layoutSizingHorizontal;
       let effectiveTextAutoResize = spec.textAutoResize;
+      if (parentIsAutoLayout && effectiveLayoutSizingHorizontal === undefined && effectiveTextAutoResize === undefined) {
+        effectiveLayoutSizingHorizontal = "FILL";
+        effectiveTextAutoResize = "HEIGHT";
+      }
       if (
         effectiveTextAutoResize === undefined &&
-        spec.layoutSizingHorizontal === "FILL" &&
+        effectiveLayoutSizingHorizontal === "FILL" &&
         node.textAutoResize === "WIDTH_AND_HEIGHT"
       ) {
         effectiveTextAutoResize = "HEIGHT";
       }
       const willLockWidth = effectiveTextAutoResize !== undefined && effectiveTextAutoResize !== "WIDTH_AND_HEIGHT";
-      const willSetFill = spec.layoutSizingHorizontal === "FILL";
+      const willSetFill = effectiveLayoutSizingHorizontal === "FILL";
       if ((willLockWidth || willSetFill) && node.width === 0) {
         node.resize(100, Math.max(node.height, 1));
       }
       if (effectiveTextAutoResize !== undefined && effectiveTextAutoResize !== node.textAutoResize) {
         node.textAutoResize = effectiveTextAutoResize;
       }
-      if (spec.layoutSizingHorizontal) {
+      if (effectiveLayoutSizingHorizontal) {
         try {
-          node.layoutSizingHorizontal = spec.layoutSizingHorizontal;
+          node.layoutSizingHorizontal = effectiveLayoutSizingHorizontal;
         } catch (_szErr) {}
       }
       if (spec.layoutSizingVertical) {
