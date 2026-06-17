@@ -2,7 +2,7 @@ import { z } from "zod";
 import { server } from "../instance.js";
 import { sendCommandToFigma } from "../connection.js";
 import { serializeYaml } from "../yaml.js";
-import { guardOutput, extractYamlMeta } from "../utils.js";
+import { guardOutput, extractYamlMeta, paginateGroups, DEFAULT_MAX_OUTPUT_CHARS } from "../utils.js";
 
 server.tool(
   "grep",
@@ -23,7 +23,9 @@ Search criteria (at least one required):
 - hasAnnotation: find all nodes that have any annotation (boolean)
 
 Combine type: ["TEXT"] with a text pattern to enumerate text nodes (replaces the old scan_text_nodes/scan_nodes_by_types flows).
-Use \`grep\` to locate nodes, then \`read\` for details on specific matches.`,
+Use \`grep\` to locate nodes, then \`read\` for details on specific matches.
+
+Large text extractions (e.g. enumerating every TEXT node in a multi-slide deck) can exceed the output budget. When that happens the result is split into budget-sized pages of whole groups — the \`meta.pagination\` block reports \`page\`, \`pageCount\`, and how to fetch the next page. Pass \`page: 2\`, \`page: 3\`, … to walk through all matches without manual chunking; the grouping (by nearest ancestor) is preserved across pages.`,
   {
     scope: z
       .string()
@@ -62,6 +64,14 @@ Use \`grep\` to locate nodes, then \`read\` for details on specific matches.`,
       .min(1000)
       .optional()
       .describe("Max response size in characters. Default: 30000. Raise when you need full unfiltered data."),
+    page: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .optional()
+      .describe(
+        "1-based page to return when matches exceed the output budget. Results are split into pages of whole groups; see meta.pagination for pageCount. Default: 1.",
+      ),
   },
   async ({
     scope,
@@ -76,6 +86,7 @@ Use \`grep\` to locate nodes, then \`read\` for details on specific matches.`,
     excludeDefinitions,
     maxResults,
     maxOutputChars,
+    page,
   }: {
     scope?: string;
     componentId?: string[];
@@ -89,6 +100,7 @@ Use \`grep\` to locate nodes, then \`read\` for details on specific matches.`,
     excludeDefinitions?: boolean;
     maxResults?: number;
     maxOutputChars?: number;
+    page?: number;
   }) => {
     // Validate at least one search criterion
     const hasCriteria =
@@ -163,25 +175,63 @@ Use \`grep\` to locate nodes, then \`read\` for details on specific matches.`,
       if (annotation) criteria.annotation = annotation;
       if (hasAnnotation) criteria.hasAnnotation = hasAnnotation;
 
-      // Build YAML output
-      const output = {
-        meta: {
-          scope: typedResult.scope,
-          matchCount: typedResult.matchCount,
-          groupCount: typedResult.groupCount,
-          nodesSearched: typedResult.nodesSearched,
-          truncated: typedResult.truncated || undefined,
-          criteria,
-        },
-        groups: typedResult.groups,
+      const baseMeta: Record<string, unknown> = {
+        scope: typedResult.scope,
+        matchCount: typedResult.matchCount,
+        groupCount: typedResult.groupCount,
+        nodesSearched: typedResult.nodesSearched,
+        truncated: typedResult.truncated || undefined,
+        criteria,
       };
 
-      const yamlText = serializeYaml(output);
-      const guarded = guardOutput(yamlText, {
+      // Serialize the full result first. If it fits the budget, return it as-is
+      // (single-page behavior — unchanged from before).
+      const fullYaml = serializeYaml({ meta: baseMeta, groups: typedResult.groups });
+      const budget = maxOutputChars ?? DEFAULT_MAX_OUTPUT_CHARS;
+
+      if (fullYaml.length <= budget && (page === undefined || page <= 1)) {
+        return { content: [{ type: "text" as const, text: fullYaml }] };
+      }
+
+      // Over budget (or an explicit page was requested): split groups into
+      // budget-sized pages of whole groups, preserving the ancestor grouping.
+      // Reserve a slice of the budget for the meta header (with a pagination
+      // block) plus margin so each rendered page stays under budget.
+      const metaSample = Object.assign({}, baseMeta, {
+        pagination: { page: 999, pageCount: 999, totalGroups: 99999, groupsOnPage: 999, next: "last page" },
+      });
+      const metaReserve = serializeYaml({ meta: metaSample, groups: [] }).length + 200;
+      const groupBudget = Math.max(1, budget - metaReserve);
+      // Measure each group as it renders nested under `groups:` (indent level 1),
+      // not standalone, so the packed page reflects the real output size.
+      const measure = (group: (typeof typedResult.groups)[number]) =>
+        serializeYaml({ groups: [group] }).length;
+      const paged = paginateGroups(typedResult.groups, measure, { maxChars: groupBudget, page });
+
+      const pagedMeta = Object.assign({}, baseMeta, {
+        pagination: {
+          page: paged.page,
+          pageCount: paged.pageCount,
+          totalGroups: paged.totalGroups,
+          groupsOnPage: paged.items.length,
+          next:
+            paged.page < paged.pageCount
+              ? `call grep again with page: ${paged.page + 1} for the next page`
+              : "last page",
+        },
+      });
+
+      const pagedYaml = serializeYaml({ meta: pagedMeta, groups: paged.items });
+
+      // Safety net: a single group can exceed the budget on its own (can't be
+      // split further here). Guard the rendered page so a runaway group still
+      // returns a narrowing message instead of an oversized blob.
+      const guarded = guardOutput(pagedYaml, {
         maxChars: maxOutputChars,
         metaExtractor: extractYamlMeta,
         toolName: "grep",
         narrowingHints: [
+          "  • A single group exceeds the budget — narrow further:",
           "  • Lower maxResults",
           "  • Add more criteria to narrow matches",
           "  • Search a specific subtree instead of the whole page",
