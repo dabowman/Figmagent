@@ -2,9 +2,11 @@ import WebSocket from "ws";
 import { v4 as uuidv4 } from "uuid";
 import { logger } from "./utils.js";
 import { getTransport } from "./transport.js";
+import { timeoutMessage } from "./remote/domains.js";
 import type { FigmaCommand, FigmaResponse, CommandProgressUpdate } from "./types.js";
 
-// WebSocket connection and request tracking
+// WebSocket connection and request tracking. The command/params/timeoutMs are
+// carried so timeout rejections can name the operation (issue #46).
 let ws: WebSocket | null = null;
 export const pendingRequests = new Map<
   string,
@@ -13,6 +15,9 @@ export const pendingRequests = new Map<
     reject: (reason: unknown) => void;
     timeout: ReturnType<typeof setTimeout>;
     lastActivity: number;
+    command: FigmaCommand;
+    params: unknown;
+    timeoutMs: number;
   }
 >();
 
@@ -79,7 +84,7 @@ export function connectToFigma(port: number = 3055) {
             if (pendingRequests.has(requestId)) {
               logger.error(`Request ${requestId} timed out after extended period of inactivity`);
               pendingRequests.delete(requestId);
-              request.reject(new Error("Request to Figma timed out"));
+              request.reject(new Error(timeoutMessage(request.command, 60000, request.params)));
             }
           }, 60000); // 60 second timeout for inactivity
 
@@ -253,7 +258,7 @@ export function pluginSendCommand(
               logger.info(`Invalidating stale channel "${currentChannel}" after timeout`);
               currentChannel = null;
             }
-            reject(new Error("Request to Figma timed out"));
+            reject(new Error(timeoutMessage(command, timeoutMs, params)));
           }
         }, timeoutMs);
 
@@ -262,6 +267,9 @@ export function pluginSendCommand(
           reject,
           timeout,
           lastActivity: Date.now(),
+          command,
+          params,
+          timeoutMs,
         });
 
         logger.info(`Sending command to Figma: ${command}`);

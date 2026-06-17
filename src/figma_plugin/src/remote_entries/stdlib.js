@@ -6,7 +6,7 @@
 // No optional chaining (?.), nullish coalescing (??), or object spread — this
 // code runs in the remote Figma VM.
 
-import { prop, sanitizeSymbols, loadFontWithFallback } from "../helpers.js";
+import { prop, sanitizeSymbols, loadFontWithFallback, fail } from "../helpers.js";
 import { setCharacters } from "../setcharacters.js";
 import { checkNodes } from "../assertions.js";
 import { getNodeTree } from "../commands/document.js";
@@ -30,9 +30,26 @@ globalThis.fig = {
     return getNodeTree({ nodeId: nodeId, detail: detail || "layout" }).then(sanitizeSymbols);
   },
 
-  // Scope-validated design-token binding (FIELD_MAP fields). Returns a
-  // warning object when the variable's scopes don't cover the field, else null.
-  bindVariable: bindVariableToNode,
+  // Scope-validated design-token binding (FIELD_MAP fields). Binds fill AND
+  // stroke paints via setBoundVariableForPaint (see bindVariableToNode). Unlike
+  // the edit/apply batch path — which collects scope-mismatch warnings and
+  // continues — a run_script caller has no warnings channel: a returned warning
+  // would be silently discarded and a no-op (e.g. an unscoped variable on a
+  // stroke) would masquerade as success. So throw with the stated fix instead.
+  //
+  // MUST be awaited: this returns a Promise and the scope-mismatch guard throws
+  // *inside* it. A script that calls it without `await` swallows the rejection
+  // and the skipped-bind no-op silently masquerades as success again (issue #63).
+  // bindVariableToNode returns structured { message, fix }, so the throw path
+  // forwards both fields to fail() directly — no string round-tripping.
+  bindVariable: (node, field, variableId) => {
+    return bindVariableToNode(node, field, variableId).then((warning) => {
+      if (warning) {
+        fail(warning.message, warning.fix || "adjust the variable or field so the bind applies");
+      }
+      return null;
+    });
+  },
 
   // Post-write structural assertions over node ids → warnings[].
   check: (nodeIds) => checkNodes(nodeIds, {}),

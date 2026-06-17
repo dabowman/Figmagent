@@ -46,4 +46,17 @@ describe("edit node-op schema (folded ops)", () => {
     expect(() => nodeOpSchema.parse({ nodeId: "1:2", index: -1 })).toThrow();
     expect(() => nodeOpSchema.parse({ nodeId: "1:2", characters: 42 })).toThrow();
   });
+
+  test("accepts componentProperties with boolean and string values", () => {
+    const parsed = nodeOpSchema.parse({
+      nodeId: "i1",
+      componentProperties: { "Actions?": false, Size: "Small", "Label#1:2": "Hi" },
+    });
+    expect(parsed.componentProperties["Actions?"]).toBe(false);
+    expect(parsed.componentProperties.Size).toBe("Small");
+  });
+
+  test("rejects componentProperties with a non-boolean/string value", () => {
+    expect(() => nodeOpSchema.parse({ nodeId: "i1", componentProperties: { Size: 42 } })).toThrow();
+  });
 });

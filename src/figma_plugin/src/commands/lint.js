@@ -393,15 +393,22 @@ export function matchVariable(value, property, nodeContext, variables) {
   };
 }
 
-function checkColorProperty(node, propName, spec, indexes, nodeContext) {
+export function checkColorProperty(node, propName, spec, indexes, nodeContext) {
   const fieldName = spec.field;
-  if (!(fieldName in node)) return null;
-
-  const paints = node[fieldName];
-  if (!paints || paints.length === 0) return null;
+  const paints = prop(node, fieldName);
+  // Guard: a node may have no paints, or paints may be figma.mixed (a Symbol —
+  // common on root frames / sections / mixed-fill nodes). Indexing a Symbol
+  // yields undefined, which then crashes on `paint.type` ("cannot read property
+  // 'type' of undefined"). `!Array.isArray(paints)` rejects null/undefined and
+  // the figma.mixed Symbol alike (neither is an array), so it covers issue #62.
+  if (!Array.isArray(paints) || paints.length === 0) return null;
 
   const paint = paints[0];
-  if (paint.type !== "SOLID") return null;
+  if (!paint || typeof paint !== "object") return null;
+  // Only SOLID paints carry a single `color` we can match against a variable.
+  // GRADIENT_* / IMAGE / VIDEO paints have no solid `color` (gradients carry
+  // `gradientStops` instead) — skip them rather than dereferencing undefined.
+  if (prop(paint, "type") !== "SOLID") return null;
 
   // Check if already bound
   if (paint.boundVariables && paint.boundVariables.color) {
@@ -409,6 +416,7 @@ function checkColorProperty(node, propName, spec, indexes, nodeContext) {
   }
 
   const color = paint.color;
+  if (!color || typeof color !== "object") return null;
   const m = matchVariable({ r: color.r, g: color.g, b: color.b }, propName, nodeContext, indexes);
   const hexVal = rgbaToHex({ r: color.r, g: color.g, b: color.b, a: paint.opacity !== undefined ? paint.opacity : 1 });
 
@@ -529,23 +537,44 @@ async function autoFixProperty(node, propName, spec, variableId) {
 // ─── Main Lint Function ─────────────────────────────────────────────────────
 
 export async function lintDesign(params) {
-  const nodeId = params.nodeId;
+  // nodeId accepts a single string (backward compat) or an array of root IDs.
+  // Normalize to a de-duplicated, order-preserving array of non-empty strings.
+  const rawNodeId = params.nodeId;
+  const multiRoot = Array.isArray(rawNodeId);
+  const rawList = multiRoot ? rawNodeId : [rawNodeId];
+  const rootIds = [];
+  const seenRootIds = {};
+  for (let i = 0; i < rawList.length; i++) {
+    const rid = rawList[i];
+    if (typeof rid !== "string" || rid.length === 0) continue;
+    if (seenRootIds[rid]) continue;
+    seenRootIds[rid] = true;
+    rootIds.push(rid);
+  }
+  if (rootIds.length === 0) {
+    fail("No root node ID provided to lint", "pass a node ID string or a non-empty array of node ID strings as nodeId");
+  }
+
   const autoFix = params.autoFix || false;
   const properties = params.properties || null; // null = all
   const threshold = params.threshold !== undefined ? params.threshold : 5.0;
   const maxIssues = params.maxIssues || 200;
   const commandId = params.commandId || generateCommandId();
 
-  // Resolve root node
-  const rootNode = await figma.getNodeByIdAsync(nodeId);
-  if (!rootNode) {
-    fail(
-      "Node not found: " + nodeId,
-      "verify the ID with read or search with grep — it may have been deleted or belong to another page",
-    );
+  // Resolve all root nodes up front so a bad ID fails before any scanning work.
+  const rootNodes = [];
+  for (let i = 0; i < rootIds.length; i++) {
+    const rootNode = await figma.getNodeByIdAsync(rootIds[i]);
+    if (!rootNode) {
+      fail(
+        "Node not found: " + rootIds[i],
+        "verify the ID with read or search with grep — it may have been deleted or belong to another page",
+      );
+    }
+    rootNodes.push(rootNode);
   }
 
-  // Phase 1: Build variable lookup tables
+  // Phase 1: Build variable lookup tables (once, shared across all roots)
   sendProgressUpdate(commandId, "lint_design", "started", 5, 0, 0, "Building variable index...");
 
   const indexes = await buildVariableIndexes();
@@ -554,7 +583,7 @@ export async function lintDesign(params) {
 
   if (colorIndex.length === 0 && scalarIndex.FLOAT.length === 0 && scalarIndex.STRING.length === 0) {
     sendProgressUpdate(commandId, "lint_design", "completed", 100, 0, 0, "No local variables found in file");
-    return {
+    const emptyResult = {
       summary: {
         totalNodesScanned: 0,
         totalIssues: 0,
@@ -566,6 +595,16 @@ export async function lintDesign(params) {
       truncated: false,
       message: "No local variables found in this file. Create variables first to enable linting.",
     };
+    if (multiRoot) {
+      emptyResult.roots = rootIds.map((rid, idx) => ({
+        rootNodeId: rid,
+        rootNodeName: prop(rootNodes[idx], "name"),
+        totalNodesScanned: 0,
+        totalIssues: 0,
+        autoFixed: 0,
+      }));
+    }
+    return emptyResult;
   }
 
   sendProgressUpdate(
@@ -578,19 +617,30 @@ export async function lintDesign(params) {
     "Found " + colorIndex.length + " color and " + scalarIndex.FLOAT.length + " scalar variables. Collecting nodes...",
   );
 
-  // Phase 2: Collect nodes
+  // Phase 2: Collect nodes per root. Each entry carries its originating root so
+  // issues can be attributed back to the frame/page they came from.
   const nodeList = [];
-  if (rootNode.type === "DOCUMENT") {
-    // DOCUMENT root: lint every page (load each page first for dynamic-page access)
-    for (let pi = 0; pi < rootNode.children.length; pi++) {
-      const page = rootNode.children[pi];
-      if (typeof page.loadAsync === "function") {
-        await page.loadAsync();
+  for (let ri = 0; ri < rootNodes.length; ri++) {
+    const rootNode = rootNodes[ri];
+    const rootEntries = [];
+    if (rootNode.type === "DOCUMENT") {
+      // DOCUMENT root: lint every page (load each page first for dynamic-page access)
+      for (let pi = 0; pi < rootNode.children.length; pi++) {
+        const page = rootNode.children[pi];
+        if (typeof page.loadAsync === "function") {
+          await page.loadAsync();
+        }
+        collectNodes(page, "", 0, rootEntries);
       }
-      collectNodes(page, "", 0, nodeList);
+    } else {
+      collectNodes(rootNode, "", 0, rootEntries);
     }
-  } else {
-    collectNodes(rootNode, "", 0, nodeList);
+    for (let ei = 0; ei < rootEntries.length; ei++) {
+      // Only rootNodeId is consumed downstream (rootStats lookup + per-issue
+      // attribution). The display name is recomputed independently in rootStats.
+      rootEntries[ei].rootNodeId = rootIds[ri];
+      nodeList.push(rootEntries[ei]);
+    }
   }
 
   sendProgressUpdate(
@@ -614,6 +664,21 @@ export async function lintDesign(params) {
   const bySeverity = { exact_match: 0, near_match: 0, no_match: 0, ambiguous: 0 };
   let autoFixedCount = 0;
 
+  // Per-root tallies (keyed by root node ID), seeded so empty roots still appear.
+  const rootStats = {};
+  for (let i = 0; i < rootIds.length; i++) {
+    rootStats[rootIds[i]] = {
+      rootNodeId: rootIds[i],
+      rootNodeName: prop(rootNodes[i], "name"),
+      totalNodesScanned: 0,
+      totalIssues: 0,
+      autoFixed: 0,
+    };
+  }
+  for (let i = 0; i < nodeList.length; i++) {
+    rootStats[nodeList[i].rootNodeId].totalNodesScanned++;
+  }
+
   const totalChunks = Math.ceil(nodeList.length / CHUNK_SIZE);
 
   for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
@@ -635,6 +700,7 @@ export async function lintDesign(params) {
       const entry = nodeList[ni];
       const node = entry.node;
       const insideInstance = isInsideInstance(node);
+      const entryRootStats = rootStats[entry.rootNodeId];
 
       for (let pi = 0; pi < propsToLint.length; pi++) {
         const propName = propsToLint[pi];
@@ -653,6 +719,7 @@ export async function lintDesign(params) {
         if (!result) continue;
 
         totalIssueCount++;
+        entryRootStats.totalIssues++;
         byProperty[propName] = (byProperty[propName] || 0) + 1;
         bySeverity[result.severity] = bySeverity[result.severity] || 0;
         bySeverity[result.severity]++;
@@ -662,7 +729,10 @@ export async function lintDesign(params) {
         if (autoFix && result.severity === "exact_match" && result.suggestedVariable && !insideInstance) {
           try {
             fixed = await autoFixProperty(node, propName, spec, result.suggestedVariable.id);
-            if (fixed) autoFixedCount++;
+            if (fixed) {
+              autoFixedCount++;
+              entryRootStats.autoFixed++;
+            }
           } catch (err) {
             console.log("Auto-fix failed for " + node.id + "." + propName + ": " + err.message);
           }
@@ -679,6 +749,11 @@ export async function lintDesign(params) {
             suggestedVariable: result.suggestedVariable,
             fixed: fixed,
           };
+          // Attribute every issue to its originating root so multi-root
+          // callers can group results without re-deriving ancestry.
+          if (multiRoot) {
+            issue.rootNodeId = entry.rootNodeId;
+          }
           if (result.alternatives && result.alternatives.length > 0) {
             issue.alternatives = result.alternatives;
           }
@@ -711,7 +786,7 @@ export async function lintDesign(params) {
       (autoFixedCount > 0 ? ", " + autoFixedCount + " auto-fixed" : ""),
   );
 
-  return {
+  const out = {
     summary: {
       totalNodesScanned: nodeList.length,
       totalIssues: totalIssueCount,
@@ -722,6 +797,12 @@ export async function lintDesign(params) {
     issues: issues,
     truncated: totalIssueCount > maxIssues,
   };
+  // Per-root breakdown only when multiple roots were requested — preserves the
+  // single-root response shape exactly for backward compatibility.
+  if (multiRoot) {
+    out.roots = rootIds.map((rid) => rootStats[rid]);
+  }
+  return out;
 }
 
 // ─── Write-time mini-lint (Phase 4.2) ───────────────────────────────────────

@@ -3,7 +3,8 @@ node_modules/
 .env
 dist/
 docs/
-.mcp.json
+# .mcp.json is tracked as the plugin's MCP manifest (uses ${CLAUDE_PLUGIN_ROOT}).
+# .cursor/mcp.json (machine-specific absolute paths from setup.sh) stays ignored via .cursor/ above.
 .claude/transcripts/
 .claude/sessions-json/
 .DS_Store

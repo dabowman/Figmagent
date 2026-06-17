@@ -40,43 +40,116 @@ export function isBalloonFrame(node) {
   return heightSizing === "FIXED";
 }
 
-// FILL-requested-but-not-applied: the op asked for FILL sizing but the node
-// reports something else because the parent lacked auto-layout.
-// requested: { horizontal: boolean, vertical: boolean }
+// Resolve a requested layoutSizing value for one axis from either request
+// shape: the legacy boolean flag (FILL-only, from create.js — true means FILL)
+// or the richer string value (FILL/HUG/FIXED, from apply.js). Returns the
+// requested value string, or null when nothing was requested for this axis.
+function requestedSizingValue(v) {
+  if (typeof v === "string") return v;
+  if (v === true) return "FILL";
+  return null;
+}
+
+// Sizing-requested-but-not-applied / no-op detection. The op asked for a
+// layoutSizing value (FILL/HUG/FIXED) but either the node reports a different
+// value (parent lacked auto-layout — silent no-op, issues #50/#53) or a FILL
+// request left the dimension collapsed at ~0 (already-collapsed width-0 TEXT
+// repair that didn't take — issue #50).
+// requested: {
+//   horizontal: boolean | "FILL" | "HUG" | "FIXED",
+//   vertical:   boolean | "FILL" | "HUG" | "FIXED",
+//   priorWidth?:  number | null,   // dimension before the op; collapse check
+//   priorHeight?: number | null,   // only fires when this is exactly 0
+//                                  // (missing/null = unknown, skipped)
+// }
 // Returns an array of warnings (one per failed axis).
-export function checkFillRequested(node, requested) {
+export function checkSizingRequested(node, requested) {
   const warnings = [];
   if (!requested) return warnings;
   const parent = prop(node, "parent");
   const parentLabel = parent ? parent.id + ' ("' + parent.name + '")' : "the parent";
   const axes = [
-    { flag: requested.horizontal, field: "layoutSizingHorizontal", dim: "width" },
-    { flag: requested.vertical, field: "layoutSizingVertical", dim: "height" },
+    {
+      want: requestedSizingValue(requested.horizontal),
+      field: "layoutSizingHorizontal",
+      dim: "width",
+      prior: requested.priorWidth,
+    },
+    {
+      want: requestedSizingValue(requested.vertical),
+      field: "layoutSizingVertical",
+      dim: "height",
+      prior: requested.priorHeight,
+    },
   ];
   for (let i = 0; i < axes.length; i++) {
     const axis = axes[i];
-    if (!axis.flag) continue;
+    if (!axis.want) continue;
     const actual = prop(node, axis.field);
-    if (actual === "FILL" || actual === undefined) continue;
-    warnings.push({
-      nodeId: node.id,
-      check: "fill_not_applied",
-      message:
-        axis.field +
-        ": 'FILL' on " +
-        node.id +
-        " did not apply — it reports " +
-        actual +
-        " because parent " +
-        parentLabel +
-        " has no auto-layout. Fix: set layoutMode: 'HORIZONTAL' or 'VERTICAL' on the parent, or give " +
-        node.id +
-        " an explicit " +
-        axis.dim +
-        ".",
-    });
+
+    // 1. Value didn't stick — Figma reports a different sizing mode than asked.
+    // On the apply path the no-auto-layout case is pre-caught (warn + skip,
+    // never pushed here), so when this fires the parent DOES have auto-layout
+    // and Figma normalized/rejected the requested mode for this node. On the
+    // create boolean path a missing-auto-layout parent is also possible. Offer
+    // both fixes without asserting which one applies.
+    if (actual !== undefined && actual !== axis.want) {
+      warnings.push({
+        nodeId: node.id,
+        check: "fill_not_applied",
+        message:
+          axis.field +
+          ": '" +
+          axis.want +
+          "' on " +
+          node.id +
+          " did not apply — it reports " +
+          actual +
+          ". Fix: ensure parent " +
+          parentLabel +
+          " has layoutMode: 'HORIZONTAL' or 'VERTICAL', or give " +
+          node.id +
+          " an explicit " +
+          axis.dim +
+          ".",
+      });
+      continue;
+    }
+
+    // 2. FILL stuck but the dimension is still collapsed at ~0 — the FILL was a
+    // no-op because the node was already collapsed at 0 before the op and the
+    // parent gave it no room to expand into (issue #50). Only fires when a
+    // numeric prior of 0 was explicitly provided: a missing prior (e.g. the
+    // create.js boolean path, which has no "before" — it just made the node) is
+    // "unknown", so skip rather than fabricate a pre-op collapse.
+    if (axis.want === "FILL" && axis.prior === 0) {
+      const dimValue = prop(node, axis.dim);
+      if (typeof dimValue === "number" && dimValue < 2) {
+        warnings.push({
+          nodeId: node.id,
+          check: "width_collapse",
+          message:
+            axis.field +
+            ": 'FILL' on " +
+            node.id +
+            " left " +
+            axis.dim +
+            " at " +
+            dimValue +
+            "px — the FILL was a no-op (the node was already collapsed at 0 before the op and got no room). Fix: set " +
+            axis.dim +
+            " explicitly (or textAutoResize: 'HEIGHT' on TEXT) in the same apply, then FILL — combine both in one call.",
+        });
+      }
+    }
   }
   return warnings;
+}
+
+// Back-compat alias: callers/tests that pass { horizontal, vertical } boolean
+// flags for FILL-only checks. Delegates to checkSizingRequested.
+export function checkFillRequested(node, requested) {
+  return checkSizingRequested(node, requested);
 }
 
 // Font fallback: the resolved fontName.family differs from what the op asked for.
@@ -234,19 +307,22 @@ export async function checkNodes(nodeIds, opts) {
 // ctx: {
 //   nodeIds:           ids created/modified by the op (deleted ids excluded),
 //   explicitHeightIds: ids where the op explicitly set height,
-//   fillRequests:      [{ id, horizontal, vertical }] — FILL sizing the op asked for,
+//   fillRequests:      [{ id, horizontal, vertical }] — legacy boolean FILL requests (create.js),
+//   sizingRequests:    [{ id, horizontal, vertical, priorWidth, priorHeight }] — layoutSizing requests (apply.js),
 //   fontRequests:      [{ id, family }] — font families the op asked for,
 // }
 export async function runPostWriteAssertions(ctx) {
   const warnings = [];
   if (!ctx) return warnings;
 
-  const fillRequests = ctx.fillRequests || [];
-  for (let i = 0; i < fillRequests.length; i++) {
-    const req = fillRequests[i];
+  // Both request lists feed the same checker — the legacy boolean shape and
+  // the richer { value, prior* } shape are both handled by checkSizingRequested.
+  const sizingRequests = (ctx.fillRequests || []).concat(ctx.sizingRequests || []);
+  for (let i = 0; i < sizingRequests.length; i++) {
+    const req = sizingRequests[i];
     const node = await getNodeSafe(req.id);
     if (!node) continue;
-    const ws = checkFillRequested(node, req);
+    const ws = checkSizingRequested(node, req);
     for (let j = 0; j < ws.length; j++) warnings.push(ws[j]);
   }
 

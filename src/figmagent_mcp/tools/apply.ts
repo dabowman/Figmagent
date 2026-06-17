@@ -145,6 +145,12 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
         .describe(
           "Set isExposedInstance on a nested INSTANCE inside a COMPONENT. Surfaces the instance's properties at the parent level.",
         ),
+      componentProperties: z
+        .record(z.string(), z.union([z.boolean(), z.string()]))
+        .optional()
+        .describe(
+          "Set component-property VALUES on an existing INSTANCE (maps to instance.setProperties). NOTE: this is the opposite direction of the separate component_properties tool, which DEFINES property definitions on a main COMPONENT — same words, different target and direction. Supports BOOLEAN (true/false), VARIANT (option string e.g. 'Small'), TEXT (string), and INSTANCE_SWAP (target COMPONENT/COMPONENT_SET node ID string) properties. Keys are property names. BOOLEAN/TEXT/INSTANCE_SWAP names carry an id suffix like 'Actions?#123:4'; VARIANT names are bare (e.g. 'Size'). A bare name without the suffix is matched leniently to the unique definition when unambiguous. Unknown or ambiguous names fail with the fix; an invalid VARIANT option fails with the valid options listed (validated against the main component's definitions); an INSTANCE_SWAP value that is not a real COMPONENT/COMPONENT_SET node id fails with the fix. Read the instance to discover exact keys. Example: { 'Actions?': false, 'Size': 'Small' }.",
+        ),
 
       // Style references
       textStyleId: z
@@ -179,7 +185,7 @@ server.tool(
   "edit",
   `Edit one or more existing Figma nodes: visual properties, font properties, text content, layout, position, name, stacking order, design token variables, styles, component operations, and deletion.
 
-Handles fill color, stroke, corner radius, opacity, width, height, x/y position, rename, reorder (index), text content (characters), font family/weight/size/color, layout mode, padding, alignment, sizing, spacing, variable bindings, text style application, variant swapping (swapVariantId), exposed instances (isExposedInstance), and deletion (delete: true).
+Handles fill color, stroke, corner radius, opacity, width, height, x/y position, rename, reorder (index), text content (characters), font family/weight/size/color, layout mode, padding, alignment, sizing, spacing, variable bindings, text style application, variant swapping (swapVariantId), exposed instances (isExposedInstance), component-property values on instances (componentProperties), and deletion (delete: true).
 
 For a single node:
   { nodes: [{ nodeId: "123", fillColor: { r: 1, g: 0, b: 0 } }] }
@@ -220,7 +226,10 @@ Swap an instance to a different variant (keeps position and compatible overrides
 Expose a nested instance's properties at the parent component level:
   { nodes: [{ nodeId: "nestedInstance", isExposedInstance: true }] }
 
-Execution order per node: component ops (swapVariantId/isExposedInstance) → layout mode → rename/move/reorder → direct values → font properties → characters → variable bindings → text style → effect style → delete last.
+Set component-property values on an instance (toggle a BOOLEAN, pick a VARIANT, swap an INSTANCE_SWAP, set a TEXT property):
+  { nodes: [{ nodeId: "instance1", componentProperties: { "Actions?": false, "Size": "Small" } }] }
+
+Execution order per node: component ops (swapVariantId/isExposedInstance/componentProperties) → layout mode → rename/move/reorder → direct values → font properties → characters → variable bindings → text style → effect style → delete last.
 Variable bindings override direct values (set both to get a fallback + token).
 x/y move the node but do NOT change its parent. To reparent: write({ fromNodeId, parentId: newParent }) then edit with delete: true on the original.
 Width and height resize the node. Use variables.width/height to bind dimension tokens.
@@ -258,6 +267,10 @@ IMPORTANT: Bind variables and text styles on COMPONENT nodes, not instances — 
       }
 
       return {
+        // #60: a batch where the verdict is failure (every op failed, or the
+        // plugin reported success:false) must carry is_error — the JSON summary
+        // starts with "{" and the central text matcher can't see the verdict.
+        isError: typedResult.success === false || (typedResult.successCount === 0 && typedResult.totalNodes > 0),
         content: [
           {
             type: "text",
@@ -267,6 +280,7 @@ IMPORTANT: Bind variables and text styles on COMPONENT nodes, not instances — 
       };
     } catch (error) {
       return {
+        isError: true,
         content: [
           {
             type: "text",
