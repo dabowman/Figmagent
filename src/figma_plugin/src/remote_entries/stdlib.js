@@ -36,14 +36,16 @@ globalThis.fig = {
   // continues — a run_script caller has no warnings channel: a returned warning
   // would be silently discarded and a no-op (e.g. an unscoped variable on a
   // stroke) would masquerade as success. So throw with the stated fix instead.
+  //
+  // MUST be awaited: this returns a Promise and the scope-mismatch guard throws
+  // *inside* it. A script that calls it without `await` swallows the rejection
+  // and the skipped-bind no-op silently masquerades as success again (issue #63).
+  // bindVariableToNode returns structured { message, fix }, so the throw path
+  // forwards both fields to fail() directly — no string round-tripping.
   bindVariable: (node, field, variableId) => {
     return bindVariableToNode(node, field, variableId).then((warning) => {
       if (warning) {
-        const idx = warning.message.indexOf(" Fix: ");
-        if (idx >= 0) {
-          fail(warning.message.slice(0, idx), warning.message.slice(idx + 6));
-        }
-        fail(warning.message, "adjust the variable or field so the bind applies");
+        fail(warning.message, warning.fix || "adjust the variable or field so the bind applies");
       }
       return null;
     });

@@ -127,19 +127,80 @@ describe("stdlib bundle", () => {
 
   // Issue #63: fig.bindVariable must bind BOTH fill and stroke paints (via
   // setBoundVariableForPaint) and must throw — not silently return a warning —
-  // when a bind is skipped, so a no-op can't masquerade as success.
-  test("bindVariable binds paints via setBoundVariableForPaint and throws on warnings", async () => {
+  // when a bind is skipped, so a no-op can't masquerade as success. These tests
+  // *execute* the bundled IIFE against a fake `figma` so they exercise the
+  // behavior, not just the bundle's textual shape.
+
+  // Build the stdlib IIFE once and instantiate `fig` against a supplied
+  // `figma`/`globalThis` stub. The bundle attaches to globalThis.fig.
+  async function loadFig(figmaStub: unknown): Promise<{
+    bindVariable: (node: unknown, field: string, variableId: string) => Promise<unknown>;
+  }> {
     const code = await getDomainBundle("stdlib");
-    // The shared bindVariableToNode path routes fill AND stroke paint binding
-    // through the known-good Plugin API.
-    expect(code).toContain("setBoundVariableForPaint");
-    expect(code).toContain("strokes");
-    // The fig.bindVariable wrapper inspects the returned warning and raises it
-    // instead of returning it (a returned warning has a .message; the wrapper
-    // surfaces it through the fail() error helper rather than `return warning`).
-    expect(code).toContain(".message");
-    // The wrapper returns null on success (no warning) — never the warning object.
-    expect(code).toMatch(/bindVariable:\s*\([^)]*\)\s*=>/);
+    const sandboxGlobal: { figma?: unknown; fig?: unknown } = {};
+    // The IIFE reads `globalThis` (we pass our sandbox) and `figma` (a free
+    // variable we provide as a function arg). Return the attached fig surface.
+    const factory = new Function("globalThis", "figma", `${code}\nreturn globalThis.fig;`);
+    return factory(sandboxGlobal, figmaStub) as ReturnType<typeof loadFig> extends Promise<infer T> ? T : never;
+  }
+
+  // A fake variable with the given scopes, plus a `figma` whose paint binder
+  // tags the paint so we can assert the bind actually happened.
+  function makeFigma(scopes: string[]) {
+    const boundPaints: unknown[] = [];
+    return {
+      figma: {
+        variables: {
+          getVariableByIdAsync: async (_id: string) => ({ id: _id, name: "color/primary", scopes }),
+          setBoundVariableForPaint: (paint: object, _f: string, v: { id: string }) => {
+            const bound = Object.assign({}, paint, { boundVariables: { color: { id: v.id } } });
+            boundPaints.push(bound);
+            return bound;
+          },
+        },
+      },
+      boundPaints,
+    };
+  }
+
+  test("bindVariable binds BOTH fill and stroke paints via setBoundVariableForPaint", async () => {
+    // ALL_SCOPES covers both the FRAME fill and the stroke field.
+    const { figma, boundPaints } = makeFigma(["ALL_SCOPES"]);
+    const fig = await loadFig(figma);
+
+    const fillNode = { id: "1:1", type: "FRAME", fills: [{ type: "SOLID", color: { r: 0, g: 0, b: 0 } }] };
+    const strokeNode = { id: "1:2", type: "FRAME", strokes: [{ type: "SOLID", color: { r: 0, g: 0, b: 0 } }] };
+
+    expect(await fig.bindVariable(fillNode, "fill", "VariableID:1")).toBeNull();
+    expect(await fig.bindVariable(strokeNode, "stroke", "VariableID:1")).toBeNull();
+
+    // Both paint binds routed through setBoundVariableForPaint (the #63 fix).
+    expect(boundPaints.length).toBe(2);
+    // And the bound paint was written back onto the node's fills/strokes.
+    expect((fillNode.fills[0] as { boundVariables?: unknown }).boundVariables).toBeDefined();
+    expect((strokeNode.strokes[0] as { boundVariables?: unknown }).boundVariables).toBeDefined();
+  }, 30000);
+
+  test("bindVariable THROWS on a scope mismatch (no silent no-op) with message + fix", async () => {
+    // STROKE_COLOR variable, but we bind it to a fill field → scope mismatch.
+    const { figma, boundPaints } = makeFigma(["STROKE_COLOR"]);
+    const fig = await loadFig(figma);
+    const node = { id: "1:3", type: "FRAME", fills: [{ type: "SOLID", color: { r: 0, g: 0, b: 0 } }] };
+
+    let thrown: Error | null = null;
+    try {
+      await fig.bindVariable(node, "fill", "VariableID:1");
+    } catch (e) {
+      thrown = e as Error;
+    }
+    expect(thrown).not.toBeNull();
+    // The fail() error carries the descriptive message AND the stated fix.
+    expect(thrown!.message).toContain("Skipped binding");
+    expect(thrown!.message).toContain("Fix:");
+    // No double period (the structured {message, fix} fix — issue #74 review).
+    expect(thrown!.message).not.toContain("..");
+    // The mismatched bind was NOT applied (loud failure, not silent no-op).
+    expect(boundPaints.length).toBe(0);
   }, 30000);
 });
 
