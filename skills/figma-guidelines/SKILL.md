@@ -74,6 +74,8 @@ Auto layout is how you build responsive, well-structured designs. Read `referenc
 
 **Key rule**: A parent cannot HUG on an axis where a child is set to FILL. One of them must be FIXED.
 
+**Counter-axis default**: a new auto-layout frame defaults the counter axis to FIXED 100px (not HUG). For a **horizontal** frame that should hug its content height — badges, pills, nav items, rows — set `layoutSizingVertical: HUG` in the same `create`/`edit` rather than fixing the "balloon frame" reactively after a screenshot.
+
 ### Absolute Positioning Within Auto Layout
 
 To make a child ignore the flow (like CSS `position: absolute`), set `layoutPositioning = 'ABSOLUTE'` on the child. It stays nested in the frame but uses constraints instead of auto layout rules. Useful for overlapping badges, floating elements, or decorative layers.
@@ -88,6 +90,10 @@ Only works on horizontal auto layout. Items that overflow wrap to the next line.
 - Trying to FILL a child inside a HUG parent on the same axis — contradiction.
 - Setting child sizing properties before the parent has auto layout enabled — causes errors.
 - Forgetting that removing auto layout (`layoutMode = 'NONE'`) does NOT restore children to their original positions.
+
+### Converting a Static Tree to Auto Layout
+
+Work **outside-in** (root → body → sections → … → text), and set `layoutMode` on each frame **before** setting `layoutSizingHorizontal/Vertical` on it or its children — combine both in one `edit` per node where possible (setting child sizing before the parent has auto layout fails).
 
 ---
 
@@ -166,6 +172,10 @@ A text node can have different fonts/sizes/colors on different character ranges.
 ### Properties That DON'T Require Font Loading
 
 Fills, strokes, stroke weight, stroke alignment, and opacity can be changed without loading fonts.
+
+### Repairing a Width-0 Text Node
+
+A TEXT node collapsed to width 0 (from `textAutoResize: WIDTH_AND_HEIGHT` under a constrained parent — text wraps one character per line) cannot be fixed with `layoutSizingHorizontal: FILL` directly: the FILL apply is a silent no-op from width 0. Set an explicit width (or `textAutoResize: HEIGHT`) **first**, then apply FILL in a second `edit`. Both steps batch across many nodes.
 
 ---
 
@@ -313,6 +323,10 @@ If a similar element exists, clone it and modify rather than creating from scrat
 ### Use Composite Operations When Available
 
 If the MCP provides batch or composite tools (e.g., creating a frame with auto layout in one call), prefer those over sequential single-property calls. This reduces round-trips and errors.
+
+### Import a Specific Library Variant by Searching, Not From a List
+
+When importing **one specific variant** from a published library, `search_library_components` for the exact variant suffix (e.g. `Secondary/Small/Default, Destructive=False`) rather than picking a key off a `get_component_variants` list — that list can truncate under the output budget, so you may grab the wrong variant (e.g. an IconButton key instead of the text Button).
 
 ### Ask For Reference Material
 
