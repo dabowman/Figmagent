@@ -9,6 +9,7 @@ import {
   isNearZeroWidthText,
   isBalloonFrame,
   checkFillRequested,
+  checkSizingRequested,
   checkFontFallback,
 } from "../src/figma_plugin/src/assertions.js";
 
@@ -126,6 +127,91 @@ describe("checkFillRequested", () => {
     );
     expect(warnings.length).toBe(1);
     expect(warnings[0].message).toContain("layoutSizingVertical");
+  });
+});
+
+describe("checkSizingRequested", () => {
+  const parent = { id: "9:9", name: "Card" };
+
+  test("flags a HUG request that did not apply (parent not auto-layout) — #53", () => {
+    const warnings = checkSizingRequested(
+      { id: "1:1", layoutSizingHorizontal: "FIXED", width: 200, parent },
+      { horizontal: "HUG", vertical: undefined, priorWidth: 200, priorHeight: 40 },
+    );
+    expect(warnings.length).toBe(1);
+    expect(warnings[0].check).toBe("fill_not_applied");
+    expect(warnings[0].message).toContain("'HUG'");
+    expect(warnings[0].message).toContain("FIXED");
+    expect(warnings[0].message).toContain("Fix:");
+  });
+
+  test("no warning when the requested value stuck", () => {
+    const warnings = checkSizingRequested(
+      { id: "1:1", layoutSizingHorizontal: "HUG", width: 80, parent },
+      { horizontal: "HUG", vertical: undefined, priorWidth: 80, priorHeight: 40 },
+    );
+    expect(warnings).toEqual([]);
+  });
+
+  test("FILL stuck but width still collapsed at 0 from a prior 0 — width_collapse (#50)", () => {
+    const warnings = checkSizingRequested(
+      { id: "13:163", type: "TEXT", layoutSizingHorizontal: "FILL", width: 0, parent },
+      { horizontal: "FILL", vertical: undefined, priorWidth: 0, priorHeight: 16 },
+    );
+    expect(warnings.length).toBe(1);
+    expect(warnings[0].check).toBe("width_collapse");
+    expect(warnings[0].message).toContain("no-op");
+    expect(warnings[0].message).toContain("Fix:");
+  });
+
+  test("FILL that expanded width past 0 produces no collapse warning", () => {
+    const warnings = checkSizingRequested(
+      { id: "13:163", type: "TEXT", layoutSizingHorizontal: "FILL", width: 132, parent },
+      { horizontal: "FILL", vertical: undefined, priorWidth: 0, priorHeight: 16 },
+    );
+    expect(warnings).toEqual([]);
+  });
+
+  test("FILL collapsed but width was already non-zero before the op — no warning (not a no-op)", () => {
+    const warnings = checkSizingRequested(
+      { id: "1:1", type: "TEXT", layoutSizingHorizontal: "FILL", width: 0, parent },
+      { horizontal: "FILL", vertical: undefined, priorWidth: 120, priorHeight: 16 },
+    );
+    expect(warnings).toEqual([]);
+  });
+
+  test("accepts the legacy boolean FILL request shape (create.js) via checkFillRequested alias", () => {
+    const warnings = checkFillRequested(
+      { id: "1:1", layoutSizingHorizontal: "FIXED", parent },
+      { horizontal: true, vertical: false },
+    );
+    expect(warnings.length).toBe(1);
+    expect(warnings[0].check).toBe("fill_not_applied");
+  });
+
+  test("create.js boolean FILL with NO prior + collapsed width: no width_collapse (unknown prior, skip)", () => {
+    // create.js pushes { id, horizontal, vertical } with no priorWidth. A
+    // freshly-created node has no "before the op", so an unknown prior must not
+    // be treated as zero — otherwise every new collapsed FILL node would wrongly
+    // claim it was collapsed before the op.
+    const warnings = checkSizingRequested(
+      { id: "1:1", type: "TEXT", layoutSizingHorizontal: "FILL", width: 0, parent },
+      { horizontal: true, vertical: false },
+    );
+    expect(warnings).toEqual([]);
+  });
+
+  test("FILL recovery FAILED on apply path (prior 0, still 0 after) — width_collapse fires (#50 headline)", () => {
+    // This mirrors the apply.js path: priorWidth is now captured BEFORE the
+    // width-0 TEXT recovery resize, so a width-0 TEXT whose FILL could not
+    // recover the dimension is reported here as 0 (not the recovery's 100).
+    const warnings = checkSizingRequested(
+      { id: "13:163", type: "TEXT", layoutSizingHorizontal: "FILL", width: 0, parent },
+      { horizontal: "FILL", vertical: undefined, priorWidth: 0, priorHeight: 16 },
+    );
+    expect(warnings.length).toBe(1);
+    expect(warnings[0].check).toBe("width_collapse");
+    expect(warnings[0].message).toContain("already collapsed at 0 before the op");
   });
 });
 

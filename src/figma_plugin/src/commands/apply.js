@@ -88,6 +88,9 @@ function applyStrokeColor(node, colorSpec) {
 // Binds a variable to a node field. Returns a warning object (and skips the
 // bind) when the variable's declared scopes don't cover this field on this
 // node type — Figma's API would accept the bind silently, so we surface it.
+// The warning carries `message` (what happened) and `fix` (how to resolve) as
+// separate structured fields, so consumers (apply.js batch path, the stdlib
+// fig.bindVariable throw path) never have to parse a fix back out of a string.
 export async function bindVariableToNode(node, field, variableId) {
   const variable = await figma.variables.getVariableByIdAsync(variableId);
   if (!variable)
@@ -123,7 +126,8 @@ export async function bindVariableToNode(node, field, variableId) {
           scopes.join(", ") +
           "], which don't cover this field (needs one of: " +
           requiredScopes.join(", ") +
-          "). Fix: bind a variable scoped for this field, or widen the variable's scopes with update_variables.",
+          ")",
+        fix: "bind a variable scoped for this field, or widen the variable's scopes with update_variables",
       };
     }
   }
@@ -182,6 +186,170 @@ async function applyEffectStyle(node, styleId, styleCache) {
   if (!style) throw new Error("Effect style not found or not cached: " + styleId);
 
   await node.setEffectStyleIdAsync(styleId);
+}
+
+// Strip the trailing "#id:n" suffix Figma appends to BOOLEAN/TEXT/INSTANCE_SWAP
+// property names so a user-supplied bare name can match the resolved key.
+function baseComponentPropertyName(key) {
+  const hashIdx = key.indexOf("#");
+  if (hashIdx === -1) return key;
+  return key.substring(0, hashIdx);
+}
+
+// Resolve a user-supplied component-property name to the instance's actual key.
+// Accepts the exact key (with #suffix) or a bare base name when it maps to a
+// single definition. Returns { key } on success or { error, fix } on failure.
+function resolveComponentPropertyKey(node, userKey) {
+  const defs = node.componentProperties || {};
+  const keys = Object.keys(defs);
+  // Exact match wins (handles VARIANT bare names and full #suffix names).
+  if (keys.indexOf(userKey) !== -1) {
+    return { key: userKey };
+  }
+  // Lenient match: compare against base names (suffix stripped).
+  const matches = [];
+  const base = baseComponentPropertyName(userKey);
+  for (let i = 0; i < keys.length; i++) {
+    if (baseComponentPropertyName(keys[i]) === base) matches.push(keys[i]);
+  }
+  if (matches.length === 1) return { key: matches[0] };
+  if (matches.length > 1) {
+    return {
+      error: "Ambiguous component property name '" + userKey + "' on instance " + node.id,
+      fix: "pass the exact key with its id suffix — candidates: " + matches.join(", "),
+    };
+  }
+  return {
+    error: "Unknown component property '" + userKey + "' on instance " + node.id,
+    fix: "available properties: " + (keys.length ? keys.join(", ") : "(none)") + " — read the instance to confirm keys",
+  };
+}
+
+// Coerce and validate a value for a component property of the given type.
+// Returns { value } on success or { error, fix } on mismatch. `defDefs` is the
+// MAIN component's componentPropertyDefinitions (the only place VARIANT options
+// and INSTANCE_SWAP preferredValues live — an instance's componentProperties
+// never carries variantOptions). Async because INSTANCE_SWAP validation looks
+// the target node up.
+async function coerceComponentPropertyValue(key, propType, rawValue, defDefs) {
+  if (propType === "BOOLEAN") {
+    if (typeof rawValue !== "boolean") {
+      return {
+        error: "BOOLEAN property '" + key + "' expects true/false, got " + typeof rawValue,
+        fix: "pass a boolean — e.g. { \"" + baseComponentPropertyName(key) + "\": false }",
+      };
+    }
+    return { value: rawValue };
+  }
+  if (propType === "TEXT") {
+    if (typeof rawValue !== "string") {
+      return {
+        error: "TEXT property '" + key + "' expects a string, got " + typeof rawValue,
+        fix: "pass a string value",
+      };
+    }
+    return { value: rawValue };
+  }
+  if (propType === "INSTANCE_SWAP") {
+    if (typeof rawValue !== "string") {
+      return {
+        error: "INSTANCE_SWAP property '" + key + "' expects a COMPONENT node id string, got " + typeof rawValue,
+        fix: "pass the target COMPONENT node id (find it with grep or read)",
+      };
+    }
+    // Verify the value is a real COMPONENT / COMPONENT_SET node id — a typo, a
+    // deleted node, or a library *key* mistaken for a node id would otherwise
+    // surface as a generic setProperties failure.
+    const target = await figma.getNodeByIdAsync(rawValue);
+    if (!target) {
+      return {
+        error: "INSTANCE_SWAP property '" + key + "' references node '" + rawValue + "' which does not exist",
+        fix: "pass the node id of a local COMPONENT or COMPONENT_SET (grep/read to find it); a library component key is not a node id — import it first",
+      };
+    }
+    if (target.type !== "COMPONENT" && target.type !== "COMPONENT_SET") {
+      return {
+        error: "INSTANCE_SWAP property '" + key + "' references " + rawValue + " (type: " + target.type + "), not a component",
+        fix: "pass the node id of a COMPONENT or COMPONENT_SET",
+      };
+    }
+    return { value: rawValue };
+  }
+  if (propType === "VARIANT") {
+    if (typeof rawValue !== "string") {
+      return {
+        error: "VARIANT property '" + key + "' expects an option string, got " + typeof rawValue,
+        fix: "pass one of the variant option values",
+      };
+    }
+    // Validate against declared options from the MAIN component's definitions.
+    const def = defDefs ? defDefs[key] : undefined;
+    const options = def && Array.isArray(def.variantOptions) ? def.variantOptions : null;
+    if (options && options.indexOf(rawValue) === -1) {
+      return {
+        error: "VARIANT property '" + key + "' has no option '" + rawValue + "'",
+        fix: "use one of: " + options.join(", "),
+      };
+    }
+    return { value: rawValue };
+  }
+  // Unknown/unsupported property type (defensive — Figma only emits the four above).
+  return {
+    error: "Unsupported component property type '" + propType + "' for '" + key + "'",
+    fix: "only BOOLEAN, VARIANT, TEXT, and INSTANCE_SWAP values can be set on an instance",
+  };
+}
+
+// Set component-property values on an INSTANCE via setProperties. Resolves each
+// user-supplied name to the instance's actual key, type-checks the value, and
+// applies the whole batch atomically. Throws (with a stated fix) on any
+// unknown/ambiguous name or type mismatch so nothing is half-applied.
+async function applyComponentProperties(node, componentProperties) {
+  if (node.type !== "INSTANCE") {
+    fail(
+      "componentProperties requires an INSTANCE node: " + node.id + " (type: " + node.type + ")",
+      "target an instance — set property definitions on the main component with component_properties instead",
+    );
+  }
+  const defs = node.componentProperties || {};
+  const userKeys = Object.keys(componentProperties);
+  if (userKeys.length === 0) {
+    fail(
+      "componentProperties is empty on instance " + node.id,
+      "pass at least one property — read the instance to list its keys, then set { \"<key>\": <value> }",
+    );
+  }
+  // VARIANT options (and INSTANCE_SWAP preferred values) live on the MAIN
+  // component's componentPropertyDefinitions, never on the instance's
+  // componentProperties. Resolve them once so VARIANT validation isn't dead code.
+  const mainComponent = await node.getMainComponentAsync();
+  let defDefs = {};
+  if (mainComponent) {
+    if (mainComponent.parent && mainComponent.parent.type === "COMPONENT_SET") {
+      defDefs = mainComponent.parent.componentPropertyDefinitions || {};
+    } else if ("componentPropertyDefinitions" in mainComponent) {
+      defDefs = mainComponent.componentPropertyDefinitions || {};
+    }
+  }
+  const resolved = {};
+  for (let i = 0; i < userKeys.length; i++) {
+    const userKey = userKeys[i];
+    const r = resolveComponentPropertyKey(node, userKey);
+    if (r.error) fail(r.error, r.fix);
+    const propType = defs[r.key] ? defs[r.key].type : undefined;
+    const c = await coerceComponentPropertyValue(r.key, propType, componentProperties[userKey], defDefs);
+    if (c.error) fail(c.error, c.fix);
+    resolved[r.key] = c.value;
+  }
+  try {
+    node.setProperties(resolved);
+  } catch (e) {
+    const msg = e && e.message ? e.message : String(e);
+    fail(
+      "setProperties failed on instance " + node.id + ": " + msg,
+      "verify each value matches its property type — VARIANT options must be exact, INSTANCE_SWAP needs a valid COMPONENT id; read the instance to list valid keys and options",
+    );
+  }
 }
 
 async function processNode(op, styleCache, ctx) {
@@ -306,6 +474,11 @@ async function processNode(op, styleCache, ctx) {
     node.isExposedInstance = op.isExposedInstance;
   }
 
+  // Set component-property values on an instance (BOOLEAN/VARIANT/TEXT/INSTANCE_SWAP).
+  if (op.componentProperties && typeof op.componentProperties === "object") {
+    await applyComponentProperties(node, op.componentProperties);
+  }
+
   // Phase 1: Layout mode (must come first — enables padding/alignment/sizing)
   if (op.layoutMode !== undefined && "layoutMode" in node) {
     node.layoutMode = op.layoutMode;
@@ -400,6 +573,15 @@ async function processNode(op, styleCache, ctx) {
     }
   }
 
+  // Snapshot dimensions BEFORE the width-0 TEXT recovery (below) or any sizing
+  // mutation runs, so a post-write assertion can tell whether a FILL request
+  // actually changed the dimension (vs. a no-op that left an already-collapsed
+  // width-0 TEXT at 0 — issue #50). Captured here, not just before
+  // layoutSizing*, because the recovery resizes 0→100 and would mask the
+  // collapse the assertion exists to catch.
+  const priorWidth = prop(node, "width");
+  const priorHeight = prop(node, "height");
+
   // Text layout/resize properties (applies to any TEXT node — not gated on font props).
   // Ordered BEFORE layoutSizingHorizontal so coercion and width-recovery happen before
   // FILL is applied: setting FILL on a TEXT node with WIDTH_AND_HEIGHT collapses width to 0,
@@ -449,41 +631,51 @@ async function processNode(op, styleCache, ctx) {
   if (op.counterAxisSpacing !== undefined && "counterAxisSpacing" in node) {
     node.counterAxisSpacing = toNumber(op.counterAxisSpacing, 0);
   }
-  // FILL sizing requires an auto-layout parent — pre-check instead of letting
-  // Figma throw mid-op (warn + skip; the rest of the op still applies).
-  const fillBlocked =
-    (op.layoutSizingHorizontal === "FILL" || op.layoutSizingVertical === "FILL") && !parentHasAutoLayout(node);
-  if (fillBlocked) {
+  // layoutSizing* (FILL/HUG/FIXED) only takes effect when the node lives in an
+  // auto-layout context — its PARENT must be an auto-layout frame. Set
+  // otherwise it is a silent no-op (Figma reports success but nothing changes)
+  // — issues #50/#53. layoutMode is applied earlier (Phase 1), so a combined
+  // { layoutMode, layoutSizing* } call on a parent works; but layoutSizing* on
+  // a child whose parent isn't auto-layout (yet) is the wasted-call trap.
+  // Pre-check the parent so we warn + skip instead of letting the no-op (or a
+  // mid-op throw) masquerade as success.
+  const wantsSizing = op.layoutSizingHorizontal !== undefined || op.layoutSizingVertical !== undefined;
+  const sizingContextMissing = wantsSizing && !parentHasAutoLayout(node);
+  if (sizingContextMissing) {
     const blockedParent = prop(node, "parent");
     const parentLabel = blockedParent ? blockedParent.id + ' ("' + blockedParent.name + '")' : "the parent";
+    const requested = [];
+    if (op.layoutSizingHorizontal !== undefined) requested.push("layoutSizingHorizontal");
+    if (op.layoutSizingVertical !== undefined) requested.push("layoutSizingVertical");
     warnings.push({
       nodeId: op.nodeId,
       check: "fill_not_applied",
       message:
-        "FILL sizing on " +
+        requested.join("/") +
+        " on " +
         op.nodeId +
         " skipped — parent " +
         parentLabel +
-        " has no auto-layout. Fix: edit the parent with layoutMode: 'HORIZONTAL' or 'VERTICAL' first, or give " +
+        " has no auto-layout, so the sizing is a silent no-op. Fix: edit the parent with layoutMode: 'HORIZONTAL' " +
+        "or 'VERTICAL' first (combine layoutMode + layoutSizing* in one apply on the parent), or give " +
         op.nodeId +
         " an explicit width/height.",
     });
   }
-  if (op.layoutSizingHorizontal !== undefined && "layoutSizingHorizontal" in node) {
-    if (!(op.layoutSizingHorizontal === "FILL" && fillBlocked)) {
-      node.layoutSizingHorizontal = op.layoutSizingHorizontal;
-      if (op.layoutSizingHorizontal === "FILL" && ctx) {
-        ctx.fillRequests.push({ id: node.id, horizontal: true, vertical: false });
-      }
-    }
+  if (op.layoutSizingHorizontal !== undefined && "layoutSizingHorizontal" in node && !sizingContextMissing) {
+    node.layoutSizingHorizontal = op.layoutSizingHorizontal;
   }
-  if (op.layoutSizingVertical !== undefined && "layoutSizingVertical" in node) {
-    if (!(op.layoutSizingVertical === "FILL" && fillBlocked)) {
-      node.layoutSizingVertical = op.layoutSizingVertical;
-      if (op.layoutSizingVertical === "FILL" && ctx) {
-        ctx.fillRequests.push({ id: node.id, horizontal: false, vertical: true });
-      }
-    }
+  if (op.layoutSizingVertical !== undefined && "layoutSizingVertical" in node && !sizingContextMissing) {
+    node.layoutSizingVertical = op.layoutSizingVertical;
+  }
+  if (wantsSizing && !sizingContextMissing && ctx) {
+    ctx.sizingRequests.push({
+      id: node.id,
+      horizontal: op.layoutSizingHorizontal,
+      vertical: op.layoutSizingVertical,
+      priorWidth: typeof priorWidth === "number" ? priorWidth : null,
+      priorHeight: typeof priorHeight === "number" ? priorHeight : null,
+    });
   }
 
   // Phase 2.8: Text content (font-safe replacement via setcharacters.js —
@@ -504,7 +696,15 @@ async function processNode(op, styleCache, ctx) {
     const fields = Object.keys(op.variables);
     for (let i = 0; i < fields.length; i++) {
       const bindWarning = await bindVariableToNode(node, fields[i], op.variables[fields[i]]);
-      if (bindWarning) warnings.push(bindWarning);
+      if (bindWarning) {
+        // Fold the structured `fix` back into `message` for the warnings block,
+        // which renders `message` only (formatWarningsBlock in utils.ts).
+        if (bindWarning.fix) {
+          bindWarning.message = bindWarning.message + ". Fix: " + bindWarning.fix;
+          delete bindWarning.fix;
+        }
+        warnings.push(bindWarning);
+      }
     }
   }
 
@@ -633,7 +833,7 @@ export async function apply(params) {
   const ctx = {
     modifiedIds: [],
     explicitHeightIds: [],
-    fillRequests: [],
+    sizingRequests: [],
     fontRequests: [],
     rawSets: [],
   };
@@ -704,7 +904,7 @@ export async function apply(params) {
     const assertionWarnings = await runPostWriteAssertions({
       nodeIds: ctx.modifiedIds,
       explicitHeightIds: ctx.explicitHeightIds,
-      fillRequests: ctx.fillRequests,
+      sizingRequests: ctx.sizingRequests,
       fontRequests: ctx.fontRequests,
     });
     for (let wi = 0; wi < assertionWarnings.length; wi++) warnings.push(assertionWarnings[wi]);

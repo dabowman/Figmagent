@@ -136,6 +136,109 @@ describe("apply: boundary warnings instead of silent skips", () => {
     expect(fakeNodes["3:3"].layoutSizingHorizontal).toBe("FIXED");
   });
 
+  test("HUG sizing under a non-auto-layout parent warns and is skipped (#53 generalization)", async () => {
+    fakeNodes["4:4"] = {
+      id: "4:4",
+      type: "FRAME",
+      name: "wrapper",
+      width: 200,
+      height: 80,
+      layoutSizingHorizontal: "FIXED",
+      parent: { id: "8:8", name: "Page", type: "FRAME" },
+    };
+    const result = await apply({ nodes: [{ nodeId: "4:4", layoutSizingHorizontal: "HUG" }] });
+    expect(result.successCount).toBe(1);
+    const w = result.warnings.find((w: any) => w.check === "fill_not_applied");
+    expect(w).toBeDefined();
+    expect(w.message).toContain("layoutSizingHorizontal");
+    expect(w.message).toContain("silent no-op");
+    expect(w.message).toContain("Fix:");
+    // The sizing value was NOT applied (no auto-layout parent).
+    expect(fakeNodes["4:4"].layoutSizingHorizontal).toBe("FIXED");
+  });
+
+  test("layoutMode + layoutSizing* combined in one apply: layoutMode applied first, sizing sticks (#53)", async () => {
+    // Parent IS auto-layout, so FILL on the child is valid in one call.
+    fakeNodes["5:5"] = {
+      id: "5:5",
+      type: "FRAME",
+      name: "row",
+      width: 300,
+      height: 40,
+      layoutMode: "NONE",
+      layoutSizingHorizontal: "FIXED",
+      parent: { id: "7:7", name: "Col", type: "FRAME", layoutMode: "VERTICAL" },
+    };
+    const result = await apply({
+      nodes: [{ nodeId: "5:5", layoutMode: "HORIZONTAL", layoutSizingHorizontal: "FILL" }],
+    });
+    expect(result.successCount).toBe(1);
+    // layoutMode (Phase 1) applied before layoutSizing — both stuck.
+    expect(fakeNodes["5:5"].layoutMode).toBe("HORIZONTAL");
+    expect(fakeNodes["5:5"].layoutSizingHorizontal).toBe("FILL");
+    const w = (result.warnings || []).find((w: any) => w.check === "fill_not_applied");
+    expect(w).toBeUndefined();
+  });
+
+  test("FILL on a width-0 TEXT under an auto-layout parent: width-0 recovery resizes before FILL (#50)", async () => {
+    fakeNodes["13:163"] = {
+      id: "13:163",
+      type: "TEXT",
+      name: "label",
+      width: 0,
+      height: 16,
+      textAutoResize: "HEIGHT",
+      characters: "Hello",
+      layoutSizingHorizontal: "FIXED",
+      parent: { id: "6:6", name: "Cell", type: "FRAME", layoutMode: "HORIZONTAL" },
+      resize(w: number, h: number) {
+        this.width = w;
+        this.height = h;
+      },
+    };
+    const result = await apply({
+      nodes: [{ nodeId: "13:163", textAutoResize: "HEIGHT", layoutSizingHorizontal: "FILL" }],
+    });
+    expect(result.successCount).toBe(1);
+    // Width-0 recovery nudged width off 0 before FILL was applied (so FILL isn't a no-op).
+    expect(fakeNodes["13:163"].width).toBeGreaterThan(0);
+    expect(fakeNodes["13:163"].layoutSizingHorizontal).toBe("FILL");
+    // Recovery succeeded → no collapse warning.
+    const collapse = (result.warnings || []).filter((w: any) => w.check === "width_collapse");
+    expect(collapse).toEqual([]);
+  });
+
+  test("FILL on a width-0 TEXT where recovery FAILS to grow it: width_collapse fires (#50 ordering)", async () => {
+    // priorWidth must be snapshotted BEFORE the width-0 recovery resize, else
+    // the post-write assertion would see the recovery's value (not 0) and the
+    // collapse warning — the whole point of #50 — could never fire on the apply
+    // path. Here resize is a no-op (FILL/parent gave the TEXT no room), so the
+    // node stays at width 0 and the warning must still fire.
+    fakeNodes["14:200"] = {
+      id: "14:200",
+      type: "TEXT",
+      name: "stuck",
+      width: 0,
+      height: 16,
+      textAutoResize: "HEIGHT",
+      characters: "Hello",
+      layoutSizingHorizontal: "FIXED",
+      parent: { id: "6:6", name: "Cell", type: "FRAME", layoutMode: "HORIZONTAL" },
+      // Recovery and FILL both fail to give the node any width.
+      resize(_w: number, _h: number) {
+        /* no-op: simulates Figma leaving the collapsed TEXT at 0 */
+      },
+    };
+    const result = await apply({
+      nodes: [{ nodeId: "14:200", textAutoResize: "HEIGHT", layoutSizingHorizontal: "FILL" }],
+    });
+    expect(result.successCount).toBe(1);
+    expect(fakeNodes["14:200"].width).toBe(0);
+    const w = (result.warnings || []).find((w: any) => w.check === "width_collapse");
+    expect(w).toBeDefined();
+    expect(w.message).toContain("Fix:");
+  });
+
   test("swapVariantId to a non-sibling variant is rejected with the component set named", async () => {
     fakeNodes["i1"] = {
       id: "i1",
@@ -205,6 +308,157 @@ describe("apply: boundary warnings instead of silent skips", () => {
     expect(w.message).toContain("TEXT_FILL");
     expect(w.message).toContain("Fix:");
     expect(fakeNodes["1:1"].fills).toEqual([]);
+  });
+});
+
+describe("apply: componentProperties (set values on an instance)", () => {
+  // `defs` is the instance's componentProperties (no variantOptions — Figma
+  // never puts them there). `mainDefs`, when given, is the MAIN component's
+  // componentPropertyDefinitions where variantOptions actually live; it backs
+  // getMainComponentAsync so VARIANT validation exercises the real path.
+  function makeInstance(id: string, defs: Record<string, any>, mainDefs?: Record<string, any>) {
+    let applied: any = null;
+    const node: any = {
+      id,
+      type: "INSTANCE",
+      name: "inst",
+      componentProperties: defs,
+      getMainComponentAsync: async () =>
+        mainDefs ? { id: id + ":main", type: "COMPONENT", parent: null, componentPropertyDefinitions: mainDefs } : null,
+      setProperties: (props: any) => {
+        applied = props;
+      },
+      getApplied: () => applied,
+    };
+    return node;
+  }
+
+  test("toggles a BOOLEAN by bare name (resolves the #id suffix)", async () => {
+    fakeNodes["i1"] = makeInstance("i1", {
+      "Actions?#12:3": { type: "BOOLEAN", value: true },
+      Size: { type: "VARIANT", value: "MD" },
+    });
+    const result = await apply({ nodes: [{ nodeId: "i1", componentProperties: { "Actions?": false } }] });
+    expect(result.successCount).toBe(1);
+    expect(fakeNodes["i1"].getApplied()).toEqual({ "Actions?#12:3": false });
+  });
+
+  test("sets a VARIANT (bare name) and validates against options", async () => {
+    fakeNodes["i1"] = makeInstance(
+      "i1",
+      // Instance side: no variantOptions, matching real Figma.
+      { Size: { type: "VARIANT", value: "MD" } },
+      // Main component definitions carry the options.
+      { Size: { type: "VARIANT", variantOptions: ["SM", "MD", "LG"] } },
+    );
+    const ok = await apply({ nodes: [{ nodeId: "i1", componentProperties: { Size: "LG" } }] });
+    expect(ok.successCount).toBe(1);
+    expect(fakeNodes["i1"].getApplied()).toEqual({ Size: "LG" });
+  });
+
+  test("rejects an unknown property name with the fix and available keys", async () => {
+    fakeNodes["i1"] = makeInstance("i1", { "Actions?#12:3": { type: "BOOLEAN", value: true } });
+    const result = await apply({ nodes: [{ nodeId: "i1", componentProperties: { Nope: false } }] });
+    expect(result.failureCount).toBe(1);
+    const failedOp = result.results.find((r: any) => !r.success);
+    expect(failedOp.error).toContain("Unknown component property");
+    expect(failedOp.error).toContain("Fix:");
+    expect(fakeNodes["i1"].getApplied()).toBeNull();
+  });
+
+  test("rejects an invalid VARIANT option with the valid options", async () => {
+    // Options live ONLY on the main component's definitions — the instance's
+    // componentProperties carries no variantOptions (real Figma shape). The
+    // reject must come from getMainComponentAsync, not the instance.
+    fakeNodes["i1"] = makeInstance(
+      "i1",
+      { Size: { type: "VARIANT", value: "MD" } },
+      { Size: { type: "VARIANT", variantOptions: ["SM", "MD", "LG"] } },
+    );
+    const result = await apply({ nodes: [{ nodeId: "i1", componentProperties: { Size: "XL" } }] });
+    expect(result.failureCount).toBe(1);
+    const failedOp = result.results.find((r: any) => !r.success);
+    expect(failedOp.error).toContain("no option 'XL'");
+    expect(failedOp.error).toContain("Fix:");
+    expect(fakeNodes["i1"].getApplied()).toBeNull();
+  });
+
+  test("rejects a BOOLEAN given a non-boolean value", async () => {
+    fakeNodes["i1"] = makeInstance("i1", { "Actions?#12:3": { type: "BOOLEAN", value: true } });
+    const result = await apply({ nodes: [{ nodeId: "i1", componentProperties: { "Actions?": "false" } }] });
+    expect(result.failureCount).toBe(1);
+    const failedOp = result.results.find((r: any) => !r.success);
+    expect(failedOp.error).toContain("expects true/false");
+  });
+
+  test("componentProperties on a non-INSTANCE node fails with a fix", async () => {
+    fakeNodes["f1"] = { id: "f1", type: "FRAME", name: "frame" };
+    const result = await apply({ nodes: [{ nodeId: "f1", componentProperties: { Size: "LG" } }] });
+    expect(result.failureCount).toBe(1);
+    const failedOp = result.results.find((r: any) => !r.success);
+    expect(failedOp.error).toContain("requires an INSTANCE");
+    expect(failedOp.error).toContain("Fix:");
+  });
+
+  test("ambiguous bare name (two suffixed keys share a base) fails listing candidates", async () => {
+    fakeNodes["i1"] = makeInstance("i1", {
+      "Label#1:1": { type: "TEXT", value: "a" },
+      "Label#2:2": { type: "TEXT", value: "b" },
+    });
+    const result = await apply({ nodes: [{ nodeId: "i1", componentProperties: { Label: "x" } }] });
+    expect(result.failureCount).toBe(1);
+    const failedOp = result.results.find((r: any) => !r.success);
+    expect(failedOp.error).toContain("Ambiguous");
+    expect(failedOp.error).toContain("Label#1:1");
+  });
+
+  test("sets an INSTANCE_SWAP to a valid COMPONENT node id", async () => {
+    fakeNodes["c9"] = { id: "c9", type: "COMPONENT", name: "Icon" };
+    fakeNodes["i1"] = makeInstance("i1", { "Icon#9:9": { type: "INSTANCE_SWAP", value: "c0" } });
+    const result = await apply({ nodes: [{ nodeId: "i1", componentProperties: { Icon: "c9" } }] });
+    expect(result.successCount).toBe(1);
+    expect(fakeNodes["i1"].getApplied()).toEqual({ "Icon#9:9": "c9" });
+  });
+
+  test("rejects an INSTANCE_SWAP given a non-string value", async () => {
+    fakeNodes["i1"] = makeInstance("i1", { "Icon#9:9": { type: "INSTANCE_SWAP", value: "c0" } });
+    const result = await apply({ nodes: [{ nodeId: "i1", componentProperties: { Icon: 42 as any } }] });
+    expect(result.failureCount).toBe(1);
+    const failedOp = result.results.find((r: any) => !r.success);
+    expect(failedOp.error).toContain("COMPONENT node id string");
+    expect(failedOp.error).toContain("Fix:");
+    expect(fakeNodes["i1"].getApplied()).toBeNull();
+  });
+
+  test("rejects an INSTANCE_SWAP whose node id does not exist", async () => {
+    fakeNodes["i1"] = makeInstance("i1", { "Icon#9:9": { type: "INSTANCE_SWAP", value: "c0" } });
+    const result = await apply({ nodes: [{ nodeId: "i1", componentProperties: { Icon: "missing" } }] });
+    expect(result.failureCount).toBe(1);
+    const failedOp = result.results.find((r: any) => !r.success);
+    expect(failedOp.error).toContain("does not exist");
+    expect(failedOp.error).toContain("Fix:");
+    expect(fakeNodes["i1"].getApplied()).toBeNull();
+  });
+
+  test("rejects an INSTANCE_SWAP pointing at a non-component node", async () => {
+    fakeNodes["f9"] = { id: "f9", type: "FRAME", name: "frame" };
+    fakeNodes["i1"] = makeInstance("i1", { "Icon#9:9": { type: "INSTANCE_SWAP", value: "c0" } });
+    const result = await apply({ nodes: [{ nodeId: "i1", componentProperties: { Icon: "f9" } }] });
+    expect(result.failureCount).toBe(1);
+    const failedOp = result.results.find((r: any) => !r.success);
+    expect(failedOp.error).toContain("not a component");
+    expect(failedOp.error).toContain("Fix:");
+    expect(fakeNodes["i1"].getApplied()).toBeNull();
+  });
+
+  test("rejects an empty componentProperties object with a fix", async () => {
+    fakeNodes["i1"] = makeInstance("i1", { "Actions?#12:3": { type: "BOOLEAN", value: true } });
+    const result = await apply({ nodes: [{ nodeId: "i1", componentProperties: {} }] });
+    expect(result.failureCount).toBe(1);
+    const failedOp = result.results.find((r: any) => !r.success);
+    expect(failedOp.error).toContain("empty");
+    expect(failedOp.error).toContain("Fix:");
+    expect(fakeNodes["i1"].getApplied()).toBeNull();
   });
 });
 

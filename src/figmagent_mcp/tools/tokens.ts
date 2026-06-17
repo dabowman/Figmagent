@@ -756,6 +756,7 @@ Update text style properties:
   { updates: [
     { styleId: "S:abc...", fontSize: 24, fontFamily: "Roboto", fontStyle: "Medium" }
   ]}
+  (TEXT: the style's current font is loaded automatically before any write — even a non-font prop like lineHeight — so updates never fail on an unloaded font. For a mixed-font text style, pass BOTH fontFamily and fontStyle to change the font; a partial change is rejected.)
 
 Rename a style:
   { updates: [{ styleId: "S:abc...", name: "Brand/NewName" }] }
