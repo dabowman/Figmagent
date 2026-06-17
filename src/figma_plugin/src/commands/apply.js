@@ -88,6 +88,9 @@ function applyStrokeColor(node, colorSpec) {
 // Binds a variable to a node field. Returns a warning object (and skips the
 // bind) when the variable's declared scopes don't cover this field on this
 // node type — Figma's API would accept the bind silently, so we surface it.
+// The warning carries `message` (what happened) and `fix` (how to resolve) as
+// separate structured fields, so consumers (apply.js batch path, the stdlib
+// fig.bindVariable throw path) never have to parse a fix back out of a string.
 export async function bindVariableToNode(node, field, variableId) {
   const variable = await figma.variables.getVariableByIdAsync(variableId);
   if (!variable)
@@ -123,7 +126,8 @@ export async function bindVariableToNode(node, field, variableId) {
           scopes.join(", ") +
           "], which don't cover this field (needs one of: " +
           requiredScopes.join(", ") +
-          "). Fix: bind a variable scoped for this field, or widen the variable's scopes with update_variables.",
+          ")",
+        fix: "bind a variable scoped for this field, or widen the variable's scopes with update_variables",
       };
     }
   }
@@ -523,7 +527,15 @@ async function processNode(op, styleCache, ctx) {
     const fields = Object.keys(op.variables);
     for (let i = 0; i < fields.length; i++) {
       const bindWarning = await bindVariableToNode(node, fields[i], op.variables[fields[i]]);
-      if (bindWarning) warnings.push(bindWarning);
+      if (bindWarning) {
+        // Fold the structured `fix` back into `message` for the warnings block,
+        // which renders `message` only (formatWarningsBlock in utils.ts).
+        if (bindWarning.fix) {
+          bindWarning.message = bindWarning.message + ". Fix: " + bindWarning.fix;
+          delete bindWarning.fix;
+        }
+        warnings.push(bindWarning);
+      }
     }
   }
 
