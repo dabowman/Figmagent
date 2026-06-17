@@ -188,6 +188,170 @@ async function applyEffectStyle(node, styleId, styleCache) {
   await node.setEffectStyleIdAsync(styleId);
 }
 
+// Strip the trailing "#id:n" suffix Figma appends to BOOLEAN/TEXT/INSTANCE_SWAP
+// property names so a user-supplied bare name can match the resolved key.
+function baseComponentPropertyName(key) {
+  const hashIdx = key.indexOf("#");
+  if (hashIdx === -1) return key;
+  return key.substring(0, hashIdx);
+}
+
+// Resolve a user-supplied component-property name to the instance's actual key.
+// Accepts the exact key (with #suffix) or a bare base name when it maps to a
+// single definition. Returns { key } on success or { error, fix } on failure.
+function resolveComponentPropertyKey(node, userKey) {
+  const defs = node.componentProperties || {};
+  const keys = Object.keys(defs);
+  // Exact match wins (handles VARIANT bare names and full #suffix names).
+  if (keys.indexOf(userKey) !== -1) {
+    return { key: userKey };
+  }
+  // Lenient match: compare against base names (suffix stripped).
+  const matches = [];
+  const base = baseComponentPropertyName(userKey);
+  for (let i = 0; i < keys.length; i++) {
+    if (baseComponentPropertyName(keys[i]) === base) matches.push(keys[i]);
+  }
+  if (matches.length === 1) return { key: matches[0] };
+  if (matches.length > 1) {
+    return {
+      error: "Ambiguous component property name '" + userKey + "' on instance " + node.id,
+      fix: "pass the exact key with its id suffix — candidates: " + matches.join(", "),
+    };
+  }
+  return {
+    error: "Unknown component property '" + userKey + "' on instance " + node.id,
+    fix: "available properties: " + (keys.length ? keys.join(", ") : "(none)") + " — read the instance to confirm keys",
+  };
+}
+
+// Coerce and validate a value for a component property of the given type.
+// Returns { value } on success or { error, fix } on mismatch. `defDefs` is the
+// MAIN component's componentPropertyDefinitions (the only place VARIANT options
+// and INSTANCE_SWAP preferredValues live — an instance's componentProperties
+// never carries variantOptions). Async because INSTANCE_SWAP validation looks
+// the target node up.
+async function coerceComponentPropertyValue(key, propType, rawValue, defDefs) {
+  if (propType === "BOOLEAN") {
+    if (typeof rawValue !== "boolean") {
+      return {
+        error: "BOOLEAN property '" + key + "' expects true/false, got " + typeof rawValue,
+        fix: "pass a boolean — e.g. { \"" + baseComponentPropertyName(key) + "\": false }",
+      };
+    }
+    return { value: rawValue };
+  }
+  if (propType === "TEXT") {
+    if (typeof rawValue !== "string") {
+      return {
+        error: "TEXT property '" + key + "' expects a string, got " + typeof rawValue,
+        fix: "pass a string value",
+      };
+    }
+    return { value: rawValue };
+  }
+  if (propType === "INSTANCE_SWAP") {
+    if (typeof rawValue !== "string") {
+      return {
+        error: "INSTANCE_SWAP property '" + key + "' expects a COMPONENT node id string, got " + typeof rawValue,
+        fix: "pass the target COMPONENT node id (find it with grep or read)",
+      };
+    }
+    // Verify the value is a real COMPONENT / COMPONENT_SET node id — a typo, a
+    // deleted node, or a library *key* mistaken for a node id would otherwise
+    // surface as a generic setProperties failure.
+    const target = await figma.getNodeByIdAsync(rawValue);
+    if (!target) {
+      return {
+        error: "INSTANCE_SWAP property '" + key + "' references node '" + rawValue + "' which does not exist",
+        fix: "pass the node id of a local COMPONENT or COMPONENT_SET (grep/read to find it); a library component key is not a node id — import it first",
+      };
+    }
+    if (target.type !== "COMPONENT" && target.type !== "COMPONENT_SET") {
+      return {
+        error: "INSTANCE_SWAP property '" + key + "' references " + rawValue + " (type: " + target.type + "), not a component",
+        fix: "pass the node id of a COMPONENT or COMPONENT_SET",
+      };
+    }
+    return { value: rawValue };
+  }
+  if (propType === "VARIANT") {
+    if (typeof rawValue !== "string") {
+      return {
+        error: "VARIANT property '" + key + "' expects an option string, got " + typeof rawValue,
+        fix: "pass one of the variant option values",
+      };
+    }
+    // Validate against declared options from the MAIN component's definitions.
+    const def = defDefs ? defDefs[key] : undefined;
+    const options = def && Array.isArray(def.variantOptions) ? def.variantOptions : null;
+    if (options && options.indexOf(rawValue) === -1) {
+      return {
+        error: "VARIANT property '" + key + "' has no option '" + rawValue + "'",
+        fix: "use one of: " + options.join(", "),
+      };
+    }
+    return { value: rawValue };
+  }
+  // Unknown/unsupported property type (defensive — Figma only emits the four above).
+  return {
+    error: "Unsupported component property type '" + propType + "' for '" + key + "'",
+    fix: "only BOOLEAN, VARIANT, TEXT, and INSTANCE_SWAP values can be set on an instance",
+  };
+}
+
+// Set component-property values on an INSTANCE via setProperties. Resolves each
+// user-supplied name to the instance's actual key, type-checks the value, and
+// applies the whole batch atomically. Throws (with a stated fix) on any
+// unknown/ambiguous name or type mismatch so nothing is half-applied.
+async function applyComponentProperties(node, componentProperties) {
+  if (node.type !== "INSTANCE") {
+    fail(
+      "componentProperties requires an INSTANCE node: " + node.id + " (type: " + node.type + ")",
+      "target an instance — set property definitions on the main component with component_properties instead",
+    );
+  }
+  const defs = node.componentProperties || {};
+  const userKeys = Object.keys(componentProperties);
+  if (userKeys.length === 0) {
+    fail(
+      "componentProperties is empty on instance " + node.id,
+      "pass at least one property — read the instance to list its keys, then set { \"<key>\": <value> }",
+    );
+  }
+  // VARIANT options (and INSTANCE_SWAP preferred values) live on the MAIN
+  // component's componentPropertyDefinitions, never on the instance's
+  // componentProperties. Resolve them once so VARIANT validation isn't dead code.
+  const mainComponent = await node.getMainComponentAsync();
+  let defDefs = {};
+  if (mainComponent) {
+    if (mainComponent.parent && mainComponent.parent.type === "COMPONENT_SET") {
+      defDefs = mainComponent.parent.componentPropertyDefinitions || {};
+    } else if ("componentPropertyDefinitions" in mainComponent) {
+      defDefs = mainComponent.componentPropertyDefinitions || {};
+    }
+  }
+  const resolved = {};
+  for (let i = 0; i < userKeys.length; i++) {
+    const userKey = userKeys[i];
+    const r = resolveComponentPropertyKey(node, userKey);
+    if (r.error) fail(r.error, r.fix);
+    const propType = defs[r.key] ? defs[r.key].type : undefined;
+    const c = await coerceComponentPropertyValue(r.key, propType, componentProperties[userKey], defDefs);
+    if (c.error) fail(c.error, c.fix);
+    resolved[r.key] = c.value;
+  }
+  try {
+    node.setProperties(resolved);
+  } catch (e) {
+    const msg = e && e.message ? e.message : String(e);
+    fail(
+      "setProperties failed on instance " + node.id + ": " + msg,
+      "verify each value matches its property type — VARIANT options must be exact, INSTANCE_SWAP needs a valid COMPONENT id; read the instance to list valid keys and options",
+    );
+  }
+}
+
 async function processNode(op, styleCache, ctx) {
   const warnings = [];
   let node = await figma.getNodeByIdAsync(op.nodeId);
@@ -308,6 +472,11 @@ async function processNode(op, styleCache, ctx) {
   if (op.isExposedInstance !== undefined) {
     if (node.type !== "INSTANCE") throw new Error("isExposedInstance requires an INSTANCE node: " + op.nodeId);
     node.isExposedInstance = op.isExposedInstance;
+  }
+
+  // Set component-property values on an instance (BOOLEAN/VARIANT/TEXT/INSTANCE_SWAP).
+  if (op.componentProperties && typeof op.componentProperties === "object") {
+    await applyComponentProperties(node, op.componentProperties);
   }
 
   // Phase 1: Layout mode (must come first — enables padding/alignment/sizing)
