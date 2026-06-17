@@ -1,0 +1,11 @@
+{
+  "name": "figmagent",
+  "version": "0.3.3",
+  "description": "Bridge AI agents with Figma — read/write canvas access, design tokens, components, linting, and library access via the Figmagent MCP server, plus Figma design skills and sub-agents.",
+  "author": {
+    "name": "David Bowman"
+  },
+  "homepage": "https://github.com/dabowman/Figmagent",
+  "repository": "https://github.com/dabowman/Figmagent",
+  "keywords": ["figma", "design", "mcp", "design-system", "design-tokens"]
+}

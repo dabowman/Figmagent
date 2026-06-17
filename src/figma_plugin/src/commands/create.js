@@ -1,8 +1,33 @@
 // Create command: builds one or more nodes from a recursive spec
 
-import { toNumber, sendProgressUpdate, fail, FONT_WEIGHT_STYLES } from "../helpers.js";
+import { toNumber, sendProgressUpdate, fail, prop, FONT_WEIGHT_STYLES } from "../helpers.js";
 import { runPostWriteAssertions } from "../assertions.js";
 import { miniLint } from "./lint.js";
+
+// Collect override-path IDs for the TEXT descendants of a freshly created
+// INSTANCE so the agent can set text overrides without a follow-up scan.
+// Instance descendants already carry IDs in Figma's override-path format —
+// one I-segment chained per nesting boundary (e.g. I<instanceId>;<componentNodeId>
+// at one level, I<outer>;I<inner>;<componentNodeId> for an instance nested in an
+// instance). Each child's own id is the full path the edit tool targets, so the
+// walk emits it verbatim and deeper nesting just yields a longer chain. Walks the
+// live instance subtree, not the spec.
+function collectInstanceTextOverrides(instanceNode) {
+  const overrides = {};
+  function walk(node) {
+    const children = prop(node, "children");
+    if (!children) return;
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i];
+      if (prop(child, "type") === "TEXT") {
+        overrides[prop(child, "id")] = { name: prop(child, "name"), characters: prop(child, "characters") };
+      }
+      walk(child);
+    }
+  }
+  walk(instanceNode);
+  return overrides;
+}
 
 export async function create(params) {
   const parentId = params.parentId;
@@ -320,25 +345,35 @@ export async function create(params) {
     // Setting FILL with WIDTH_AND_HEIGHT collapses width; setting textAutoResize to HEIGHT
     // on a width-0 node freezes 0. Handle both preemptively.
     if (nodeType === "TEXT") {
+      // Default TEXT in an auto-layout parent to FILL + HEIGHT (matches Figma UI).
+      // Only when the parent has active auto-layout and the spec sets neither
+      // layoutSizingHorizontal nor textAutoResize — explicit specs are respected.
+      const parentIsAutoLayout =
+        parentNode && "layoutMode" in parentNode && parentNode.layoutMode !== "NONE";
+      let effectiveLayoutSizingHorizontal = spec.layoutSizingHorizontal;
       let effectiveTextAutoResize = spec.textAutoResize;
+      if (parentIsAutoLayout && effectiveLayoutSizingHorizontal === undefined && effectiveTextAutoResize === undefined) {
+        effectiveLayoutSizingHorizontal = "FILL";
+        effectiveTextAutoResize = "HEIGHT";
+      }
       if (
         effectiveTextAutoResize === undefined &&
-        spec.layoutSizingHorizontal === "FILL" &&
+        effectiveLayoutSizingHorizontal === "FILL" &&
         node.textAutoResize === "WIDTH_AND_HEIGHT"
       ) {
         effectiveTextAutoResize = "HEIGHT";
       }
       const willLockWidth = effectiveTextAutoResize !== undefined && effectiveTextAutoResize !== "WIDTH_AND_HEIGHT";
-      const willSetFill = spec.layoutSizingHorizontal === "FILL";
+      const willSetFill = effectiveLayoutSizingHorizontal === "FILL";
       if ((willLockWidth || willSetFill) && node.width === 0) {
         node.resize(100, Math.max(node.height, 1));
       }
       if (effectiveTextAutoResize !== undefined && effectiveTextAutoResize !== node.textAutoResize) {
         node.textAutoResize = effectiveTextAutoResize;
       }
-      if (spec.layoutSizingHorizontal) {
+      if (effectiveLayoutSizingHorizontal) {
         try {
-          node.layoutSizingHorizontal = spec.layoutSizingHorizontal;
+          node.layoutSizingHorizontal = effectiveLayoutSizingHorizontal;
         } catch (_szErr) {}
       }
       if (spec.layoutSizingVertical) {
@@ -358,6 +393,15 @@ export async function create(params) {
     const result = { id: node.id, name: node.name, type: node.type };
     if (childResults.length > 0) {
       result.children = childResults;
+    }
+    // For INSTANCE nodes, surface the override paths for TEXT descendants so the
+    // agent can set text overrides directly (edit's nodeId accepts these paths)
+    // without a follow-up read/scan to discover them.
+    if (nodeType === "INSTANCE") {
+      const textOverrides = collectInstanceTextOverrides(node);
+      if (Object.keys(textOverrides).length > 0) {
+        result.textOverrides = textOverrides;
+      }
     }
     return result;
   }
