@@ -86,6 +86,14 @@ describe("getDesignSystem: namePattern filter (issue #28)", () => {
     expect(colorColl.variableCount).toBe(1);
   });
 
+  test("drops collections with zero matches (output reduction)", async () => {
+    // ^font/ matches font/size/base (in `color`) but nothing in `spacing`.
+    const r: any = await getDesignSystem({ namePattern: "^font/" });
+    expect(r.variables.map((c: any) => c.name)).toEqual(["color"]);
+    // The empty collection is still discoverable via the top-level list.
+    expect(r.collections).toEqual(["color", "spacing"]);
+  });
+
   test("is case-insensitive", async () => {
     const r: any = await getDesignSystem({ namePattern: "PRIMARY" });
     const allVars = r.variables.flatMap((c: any) => c.variables);

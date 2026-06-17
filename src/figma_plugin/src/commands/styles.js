@@ -354,7 +354,10 @@ export async function getDesignSystem(params) {
         }
         coll.variables = keptVars;
         coll.variableCount = keptVars.length;
-        filtered.push(coll);
+        // Drop collections with no matches — keeping empty shells defeats the
+        // output reduction this filter exists for. The top-level `collections`
+        // array already advertises every collection name (issue #28/#44).
+        if (keptVars.length > 0) filtered.push(coll);
       }
       varList = filtered;
     }

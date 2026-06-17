@@ -17,7 +17,7 @@ Works on any Figma plan — no Enterprise required.
 
 For large design systems (88K+ chars is common), FILTER instead of raising maxOutputChars — a big design system overflows the infra dump limit too. Filtering params:
 - collection: filter variables to specific collection(s) by name (ignored when includeVariables is false)
-- namePattern: regex matched (case-insensitive) against variable AND style names — e.g. "^font/" for font tokens, "primary" for anything containing "primary"
+- namePattern: regex matched (case-insensitive) against variable AND style names — e.g. "^font/" for font tokens, "primary" for anything containing "primary". Note: unlike grep's name search (case-SENSITIVE), this is case-INSENSITIVE; an invalid regex errors here rather than falling back to a literal substring match.
 - styleType: filter styles to specific type(s): "colors", "texts", "effects", "grids"
 - includeVariables/includeStyles: skip entire sections (omitted keys are absent from the response, not null)
 - includeScopes: include each variable's scopes array (e.g. ["TEXT_FILL","STROKE_COLOR"]) to verify what update_variables set
@@ -40,7 +40,7 @@ A truncated response lists the available collection names so you can pick one in
       .string()
       .optional()
       .describe(
-        'Regex (case-insensitive) matched against variable and style names. E.g. "^font/" for font tokens, "primary" for names containing "primary". Combines with collection/styleType.',
+        'Regex (case-INSENSITIVE — differs from grep, which is case-sensitive) matched against variable and style names. E.g. "^font/" for font tokens, "primary" for names containing "primary". Invalid regex errors (with a fix). Combines with collection/styleType.',
       ),
     styleType: z
       .union([

@@ -78,7 +78,7 @@ export function guardOutput(text: string, options: GuardOptions): GuardResult {
   const hints = options.narrowingHints ?? [];
   const hintBlock = hints.length > 0 ? "\n" + hints.join("\n") + "\n" : "";
   const lastLine = options.filterInsteadOfRaising
-    ? "Raising maxOutputChars will not help — this data is intrinsically large (it overflows the infra dump limit too). Filter to a subset instead."
+    ? `Prefer filtering (e.g. collection/namePattern/styleType) over raising maxOutputChars — for moderate overflows pass maxOutputChars: ${Math.min(text.length + 1000, 200_000)}, but very large systems may still hit the ${(200_000).toLocaleString()}-char transport cap, so a filtered query is the reliable path.`
     : `To get full output, pass maxOutputChars: ${Math.min(text.length + 1000, 200_000)}.`;
   const msg = [
     `Output truncated: ${text.length.toLocaleString()} chars exceeds budget of ${max.toLocaleString()}.`,
