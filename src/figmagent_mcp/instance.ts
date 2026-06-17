@@ -66,8 +66,32 @@ export const server = new McpServer(
   { instructions },
 );
 
+// ─── Error-flagging helper (issue #60) ───────────────────────────────────────
+// Tool handlers catch failures and return them as plain content text without
+// setting `isError`, so timeouts/exceptions/validation rejections arrived as
+// `is_error: false` — the agent had to string-parse to detect them. Rather than
+// touch ~40 catch blocks, we classify the result centrally. Matches the
+// established error-text conventions, anchored at the start of the first text
+// block so legitimate success output (JSON, "Successfully…", "No annotations…")
+// never trips it.
+const ERROR_TEXT_PREFIX = /^(Error[:\s]|Failed to\b|Could not\b|(Read|Write) operation ")/;
+const ERROR_TEXT_CONTAINS = /\btimed out\b|\bnot connected to figma\b|\bconnection closed\b/i;
+
+export function looksLikeError(result: any): boolean {
+  if (!result || typeof result !== "object") return false;
+  // Respect an explicit flag from the handler either way.
+  if (typeof result.isError === "boolean") return result.isError;
+  const content = result.content;
+  if (!Array.isArray(content) || content.length === 0) return false;
+  const first = content[0];
+  const text = first && typeof first.text === "string" ? first.text : "";
+  if (!text) return false;
+  return ERROR_TEXT_PREFIX.test(text) || ERROR_TEXT_CONTAINS.test(text);
+}
+
 // ─── Session logging wrapper ─────────────────────────────────────────────────
-// Patches server.tool() to record every tool call (timing, success, errors).
+// Patches server.tool() to record every tool call (timing, success, errors)
+// and to flag error/timeout/exception responses with `isError: true` (#60).
 // Must run before any tool file imports — tool files import `server` from here.
 const originalTool = server.tool.bind(server);
 server.tool = ((...args: any[]) => {
@@ -84,7 +108,15 @@ server.tool = ((...args: any[]) => {
       try {
         const result = await originalCb(params, extra);
         const responseChars = result?.content?.reduce((sum: number, c: any) => sum + (c.text?.length || 0), 0) ?? 0;
-        recordToolCall(toolName, params, start, true, responseChars);
+        // #60: catch blocks return error text as content without setting
+        // isError. Flag it so the agent can branch on is_error instead of
+        // parsing the content string. Never downgrades an explicit flag.
+        const isError = looksLikeError(result);
+        const errText = isError ? result.content?.[0]?.text : undefined;
+        recordToolCall(toolName, params, start, !isError, responseChars, errText);
+        if (isError && result && typeof result === "object" && result.isError !== true) {
+          return { ...result, isError: true };
+        }
         return result;
       } catch (err: any) {
         const msg = err?.message || String(err);

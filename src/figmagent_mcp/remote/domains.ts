@@ -102,3 +102,21 @@ export function isWriteCommand(command: string, params: unknown): boolean {
   }
   return false;
 }
+
+/**
+ * Build a timeout message that names the operation type and command (issue #46)
+ * so a write-vs-read distinction is visible to the agent. Read/write is
+ * classified with the same {@link isWriteCommand} list both transports share.
+ * Writes carry the degraded-connection hint because a stalled write while reads
+ * still succeed usually means a flaky connection, not a bad request.
+ */
+export function timeoutMessage(command: string, timeoutMs: number, params?: unknown, isWrite?: boolean): string {
+  const seconds = Math.round(timeoutMs / 1000);
+  const write = typeof isWrite === "boolean" ? isWrite : isWriteCommand(command, params);
+  const kind = write ? "Write" : "Read";
+  const base = `${kind} operation "${command}" timed out after ${seconds}s`;
+  if (write) {
+    return `${base} (if reads succeed but writes fail, the connection may be degraded — try use_file to re-join the channel)`;
+  }
+  return base;
+}
