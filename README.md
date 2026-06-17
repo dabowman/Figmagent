@@ -81,6 +81,8 @@ Select with the `FIGMA_TRANSPORT` env var on the MCP server process:
 
 **First-run OAuth:** on the first remote command the server prints an authorization URL to stderr (and tries to open your browser), then waits up to 5 minutes for the redirect on a local loopback port. Approve in the browser; tokens are saved to `~/.figmagent/auth.json` (0600) and refreshed automatically. Headless machines: open the printed URL anywhere, then complete the redirect from a browser that can reach `127.0.0.1` on that machine.
 
+**Re-authenticating:** if commands start failing with an authorization error or "you don't have edit access" (usually the stored token belongs to the wrong Figma account), call the `reauthenticate` tool from your agent — no need to hand-edit `~/.figmagent/auth.json`. It clears the cached token, reopens the browser login so you can pick an account with editor access, and reports which account is now authenticated. (`use_figma` runs every command — reads included — as a script in the file's VM, so the authenticated account must be an **editor** on the file.)
+
 **Selecting a file:** the remote transport has no channels. Pass a Figma file URL (or bare fileKey) to `use_file`, or set `FIGMA_FILE_KEY`. Override the endpoint with `FIGMA_MCP_URL` if needed.
 
 **Parity harness:** `bun scripts/parity-check.ts --file <figmaUrl> [--channel <relayChannel>]` runs the read suite (add `--battery` for the representative 8-variant build A/B) on both transports against the same file, diffs normalized outputs, and prints per-command latency. Measured (2026-06-11, 13-command suite + battery): identical outputs and call counts on both transports; remote ~0.8–2.5s/call vs plugin ~5–75ms/call — remote trades per-call speed for zero local setup and atomic rollback.

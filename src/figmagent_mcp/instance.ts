@@ -35,7 +35,7 @@ The core tools mirror Claude Code primitives but operate on Figma nodes, NOT fil
 
 ## Available Tools
 
-All 39 tools provided by this server, grouped by domain:
+All 40 tools provided by this server, grouped by domain:
 
 **Core:** read, grep, edit, write, lint, screenshot, use_file, get_selection
 **Escape Hatch:** run_script (remote transport only) — raw Plugin API script with the fig.* stdlib preloaded. LAST RESORT: use only when no first-class tool covers the operation. mode: "write" scripts that return { nodeIds: [...] } get post-run structural checks.
@@ -46,6 +46,7 @@ All 39 tools provided by this server, grouped by domain:
 **Annotations & Comments:** get_annotations, set_annotation, set_multiple_annotations, get_comments, post_comment, delete_comment
 **Connections & Prototyping:** get_reactions, set_default_connector, create_connections, set_focus, set_selections
 **Session:** export_session
+**Auth:** reauthenticate (remote transport — re-run Figma OAuth, e.g. wrong-account or edit-access errors)
 
 ## Prompts Available
 Request these for detailed workflow guidance:

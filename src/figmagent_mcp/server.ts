@@ -22,6 +22,7 @@ import "./tools/libraries.js";
 import "./tools/comments.js";
 import "./tools/lint.js";
 import "./tools/session.js";
+import "./tools/auth.js";
 import "./tools/file.js";
 import "./tools/script.js";
 import "./prompts/index.js";
