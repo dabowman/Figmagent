@@ -124,6 +124,23 @@ describe("stdlib bundle", () => {
       expect(code).toContain(name);
     }
   }, 30000);
+
+  // Issue #63: fig.bindVariable must bind BOTH fill and stroke paints (via
+  // setBoundVariableForPaint) and must throw — not silently return a warning —
+  // when a bind is skipped, so a no-op can't masquerade as success.
+  test("bindVariable binds paints via setBoundVariableForPaint and throws on warnings", async () => {
+    const code = await getDomainBundle("stdlib");
+    // The shared bindVariableToNode path routes fill AND stroke paint binding
+    // through the known-good Plugin API.
+    expect(code).toContain("setBoundVariableForPaint");
+    expect(code).toContain("strokes");
+    // The fig.bindVariable wrapper inspects the returned warning and raises it
+    // instead of returning it (a returned warning has a .message; the wrapper
+    // surfaces it through the fail() error helper rather than `return warning`).
+    expect(code).toContain(".message");
+    // The wrapper returns null on success (no warning) — never the warning object.
+    expect(code).toMatch(/bindVariable:\s*\([^)]*\)\s*=>/);
+  }, 30000);
 });
 
 describe("script assembly", () => {

@@ -6,7 +6,7 @@
 // No optional chaining (?.), nullish coalescing (??), or object spread — this
 // code runs in the remote Figma VM.
 
-import { prop, sanitizeSymbols, loadFontWithFallback } from "../helpers.js";
+import { prop, sanitizeSymbols, loadFontWithFallback, fail } from "../helpers.js";
 import { setCharacters } from "../setcharacters.js";
 import { checkNodes } from "../assertions.js";
 import { getNodeTree } from "../commands/document.js";
@@ -30,9 +30,24 @@ globalThis.fig = {
     return getNodeTree({ nodeId: nodeId, detail: detail || "layout" }).then(sanitizeSymbols);
   },
 
-  // Scope-validated design-token binding (FIELD_MAP fields). Returns a
-  // warning object when the variable's scopes don't cover the field, else null.
-  bindVariable: bindVariableToNode,
+  // Scope-validated design-token binding (FIELD_MAP fields). Binds fill AND
+  // stroke paints via setBoundVariableForPaint (see bindVariableToNode). Unlike
+  // the edit/apply batch path — which collects scope-mismatch warnings and
+  // continues — a run_script caller has no warnings channel: a returned warning
+  // would be silently discarded and a no-op (e.g. an unscoped variable on a
+  // stroke) would masquerade as success. So throw with the stated fix instead.
+  bindVariable: (node, field, variableId) => {
+    return bindVariableToNode(node, field, variableId).then((warning) => {
+      if (warning) {
+        const idx = warning.message.indexOf(" Fix: ");
+        if (idx >= 0) {
+          fail(warning.message.slice(0, idx), warning.message.slice(idx + 6));
+        }
+        fail(warning.message, "adjust the variable or field so the bind applies");
+      }
+      return null;
+    });
+  },
 
   // Post-write structural assertions over node ids → warnings[].
   check: (nodeIds) => checkNodes(nodeIds, {}),
