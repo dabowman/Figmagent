@@ -210,6 +210,44 @@ describe("create: INSTANCE override paths for TEXT children (#43)", () => {
     expect(Object.keys(res.tree.textOverrides)).toEqual(["I58:128;4:60"]);
   });
 
+  test("nested instance: TEXT child's chained override path is captured verbatim", async () => {
+    // An instance nested inside the created instance — Figma chains an I-segment
+    // per nesting boundary, so the deep TEXT child's id is I<outer>;I<inner>;<comp>.
+    const deepLabel = {
+      id: "I60:5;I58:128;4:60",
+      type: "TEXT",
+      name: "Label",
+      characters: "Submit",
+      children: [],
+    };
+    const innerInstance = {
+      id: "I60:5;58:128",
+      type: "INSTANCE",
+      name: "Button",
+      children: [deepLabel],
+    };
+    const outerInstance = {
+      id: "60:5",
+      type: "INSTANCE",
+      name: "Card",
+      x: 0,
+      y: 0,
+      width: 200,
+      height: 80,
+      fills: [],
+      children: [innerInstance],
+      resize() {},
+      appendChild() {},
+    };
+    nodesById["comp3"] = { id: "comp3", type: "COMPONENT", createInstance: () => outerInstance };
+
+    const res = await create({ tree: { type: "INSTANCE", componentId: "comp3" } });
+    expect(res.tree.textOverrides).toBeDefined();
+    // The full chained path round-trips verbatim — not just the single-level form.
+    expect(res.tree.textOverrides["I60:5;I58:128;4:60"]).toEqual({ name: "Label", characters: "Submit" });
+    expect(Object.keys(res.tree.textOverrides)).toEqual(["I60:5;I58:128;4:60"]);
+  });
+
   test("an INSTANCE with no TEXT descendants omits textOverrides", async () => {
     const instance = {
       id: "59:1",

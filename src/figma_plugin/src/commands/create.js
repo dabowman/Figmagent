@@ -6,9 +6,12 @@ import { miniLint } from "./lint.js";
 
 // Collect override-path IDs for the TEXT descendants of a freshly created
 // INSTANCE so the agent can set text overrides without a follow-up scan.
-// Instance descendants already carry IDs in Figma's override-path format
-// (I<instanceId>;<componentNodeId>), so each child's own id is the path the
-// edit tool targets. Walks the live instance subtree, not the spec.
+// Instance descendants already carry IDs in Figma's override-path format —
+// one I-segment chained per nesting boundary (e.g. I<instanceId>;<componentNodeId>
+// at one level, I<outer>;I<inner>;<componentNodeId> for an instance nested in an
+// instance). Each child's own id is the full path the edit tool targets, so the
+// walk emits it verbatim and deeper nesting just yields a longer chain. Walks the
+// live instance subtree, not the spec.
 function collectInstanceTextOverrides(instanceNode) {
   const overrides = {};
   function walk(node) {
@@ -16,8 +19,8 @@ function collectInstanceTextOverrides(instanceNode) {
     if (!children) return;
     for (let i = 0; i < children.length; i++) {
       const child = children[i];
-      if (child.type === "TEXT") {
-        overrides[child.id] = { name: child.name, characters: prop(child, "characters") };
+      if (prop(child, "type") === "TEXT") {
+        overrides[prop(child, "id")] = { name: prop(child, "name"), characters: prop(child, "characters") };
       }
       walk(child);
     }
