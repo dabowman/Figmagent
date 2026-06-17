@@ -136,6 +136,109 @@ describe("apply: boundary warnings instead of silent skips", () => {
     expect(fakeNodes["3:3"].layoutSizingHorizontal).toBe("FIXED");
   });
 
+  test("HUG sizing under a non-auto-layout parent warns and is skipped (#53 generalization)", async () => {
+    fakeNodes["4:4"] = {
+      id: "4:4",
+      type: "FRAME",
+      name: "wrapper",
+      width: 200,
+      height: 80,
+      layoutSizingHorizontal: "FIXED",
+      parent: { id: "8:8", name: "Page", type: "FRAME" },
+    };
+    const result = await apply({ nodes: [{ nodeId: "4:4", layoutSizingHorizontal: "HUG" }] });
+    expect(result.successCount).toBe(1);
+    const w = result.warnings.find((w: any) => w.check === "fill_not_applied");
+    expect(w).toBeDefined();
+    expect(w.message).toContain("layoutSizingHorizontal");
+    expect(w.message).toContain("silent no-op");
+    expect(w.message).toContain("Fix:");
+    // The sizing value was NOT applied (no auto-layout parent).
+    expect(fakeNodes["4:4"].layoutSizingHorizontal).toBe("FIXED");
+  });
+
+  test("layoutMode + layoutSizing* combined in one apply: layoutMode applied first, sizing sticks (#53)", async () => {
+    // Parent IS auto-layout, so FILL on the child is valid in one call.
+    fakeNodes["5:5"] = {
+      id: "5:5",
+      type: "FRAME",
+      name: "row",
+      width: 300,
+      height: 40,
+      layoutMode: "NONE",
+      layoutSizingHorizontal: "FIXED",
+      parent: { id: "7:7", name: "Col", type: "FRAME", layoutMode: "VERTICAL" },
+    };
+    const result = await apply({
+      nodes: [{ nodeId: "5:5", layoutMode: "HORIZONTAL", layoutSizingHorizontal: "FILL" }],
+    });
+    expect(result.successCount).toBe(1);
+    // layoutMode (Phase 1) applied before layoutSizing — both stuck.
+    expect(fakeNodes["5:5"].layoutMode).toBe("HORIZONTAL");
+    expect(fakeNodes["5:5"].layoutSizingHorizontal).toBe("FILL");
+    const w = (result.warnings || []).find((w: any) => w.check === "fill_not_applied");
+    expect(w).toBeUndefined();
+  });
+
+  test("FILL on a width-0 TEXT under an auto-layout parent: width-0 recovery resizes before FILL (#50)", async () => {
+    fakeNodes["13:163"] = {
+      id: "13:163",
+      type: "TEXT",
+      name: "label",
+      width: 0,
+      height: 16,
+      textAutoResize: "HEIGHT",
+      characters: "Hello",
+      layoutSizingHorizontal: "FIXED",
+      parent: { id: "6:6", name: "Cell", type: "FRAME", layoutMode: "HORIZONTAL" },
+      resize(w: number, h: number) {
+        this.width = w;
+        this.height = h;
+      },
+    };
+    const result = await apply({
+      nodes: [{ nodeId: "13:163", textAutoResize: "HEIGHT", layoutSizingHorizontal: "FILL" }],
+    });
+    expect(result.successCount).toBe(1);
+    // Width-0 recovery nudged width off 0 before FILL was applied (so FILL isn't a no-op).
+    expect(fakeNodes["13:163"].width).toBeGreaterThan(0);
+    expect(fakeNodes["13:163"].layoutSizingHorizontal).toBe("FILL");
+    // Recovery succeeded → no collapse warning.
+    const collapse = (result.warnings || []).filter((w: any) => w.check === "width_collapse");
+    expect(collapse).toEqual([]);
+  });
+
+  test("FILL on a width-0 TEXT where recovery FAILS to grow it: width_collapse fires (#50 ordering)", async () => {
+    // priorWidth must be snapshotted BEFORE the width-0 recovery resize, else
+    // the post-write assertion would see the recovery's value (not 0) and the
+    // collapse warning — the whole point of #50 — could never fire on the apply
+    // path. Here resize is a no-op (FILL/parent gave the TEXT no room), so the
+    // node stays at width 0 and the warning must still fire.
+    fakeNodes["14:200"] = {
+      id: "14:200",
+      type: "TEXT",
+      name: "stuck",
+      width: 0,
+      height: 16,
+      textAutoResize: "HEIGHT",
+      characters: "Hello",
+      layoutSizingHorizontal: "FIXED",
+      parent: { id: "6:6", name: "Cell", type: "FRAME", layoutMode: "HORIZONTAL" },
+      // Recovery and FILL both fail to give the node any width.
+      resize(_w: number, _h: number) {
+        /* no-op: simulates Figma leaving the collapsed TEXT at 0 */
+      },
+    };
+    const result = await apply({
+      nodes: [{ nodeId: "14:200", textAutoResize: "HEIGHT", layoutSizingHorizontal: "FILL" }],
+    });
+    expect(result.successCount).toBe(1);
+    expect(fakeNodes["14:200"].width).toBe(0);
+    const w = (result.warnings || []).find((w: any) => w.check === "width_collapse");
+    expect(w).toBeDefined();
+    expect(w.message).toContain("Fix:");
+  });
+
   test("swapVariantId to a non-sibling variant is rejected with the component set named", async () => {
     fakeNodes["i1"] = {
       id: "i1",

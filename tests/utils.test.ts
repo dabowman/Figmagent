@@ -3,6 +3,7 @@ import {
   guardOutput,
   extractYamlMeta,
   extractJsonSummary,
+  paginateGroups,
   DEFAULT_MAX_OUTPUT_CHARS,
 } from "../src/figmagent_mcp/utils.js";
 
@@ -116,5 +117,102 @@ describe("extractJsonSummary", () => {
   test("handles empty object", () => {
     const result = extractJsonSummary("{}");
     expect(result).toBe("{}");
+  });
+});
+
+// ─── paginateGroups ──────────────────────────────────────────────────────────
+
+describe("paginateGroups", () => {
+  // Each group reports a fixed size of 100 via sizeOf; +8 overhead = 108/group.
+  const sizeOf = () => 100;
+  const groups = (n: number) => Array.from({ length: n }, (_, i) => ({ id: i }));
+
+  test("returns a single page when everything fits the budget", () => {
+    const result = paginateGroups(groups(3), sizeOf, { maxChars: 10_000 });
+    expect(result.paginated).toBe(false);
+    expect(result.pageCount).toBe(1);
+    expect(result.page).toBe(1);
+    expect(result.items).toHaveLength(3);
+    expect(result.totalGroups).toBe(3);
+  });
+
+  test("splits groups into budget-sized pages", () => {
+    // 108 chars/group, budget 300 → 2 groups per page (216 ok, 324 over).
+    const result = paginateGroups(groups(5), sizeOf, { maxChars: 300 });
+    expect(result.paginated).toBe(true);
+    expect(result.pageCount).toBe(3); // [0,1] [2,3] [4]
+    expect(result.page).toBe(1);
+    expect(result.items.map((g) => g.id)).toEqual([0, 1]);
+  });
+
+  test("returns the requested page", () => {
+    const result = paginateGroups(groups(5), sizeOf, { maxChars: 300, page: 2 });
+    expect(result.page).toBe(2);
+    expect(result.items.map((g) => g.id)).toEqual([2, 3]);
+  });
+
+  test("never drops a group across pages", () => {
+    const total = 11;
+    const seen: number[] = [];
+    const first = paginateGroups(groups(total), sizeOf, { maxChars: 300 });
+    for (let p = 1; p <= first.pageCount; p++) {
+      const pageResult = paginateGroups(groups(total), sizeOf, { maxChars: 300, page: p });
+      seen.push(...pageResult.items.map((g) => g.id));
+    }
+    expect(seen.sort((a, b) => a - b)).toEqual(groups(total).map((g) => g.id));
+  });
+
+  test("clamps an out-of-range page to the last page", () => {
+    const result = paginateGroups(groups(5), sizeOf, { maxChars: 300, page: 99 });
+    expect(result.page).toBe(result.pageCount);
+    expect(result.items.map((g) => g.id)).toEqual([4]);
+  });
+
+  test("flags an out-of-range page request as outOfRange", () => {
+    const result = paginateGroups(groups(5), sizeOf, { maxChars: 300, page: 99 });
+    expect(result.outOfRange).toBe(true);
+  });
+
+  test("does not flag an in-range page request as outOfRange", () => {
+    const result = paginateGroups(groups(5), sizeOf, { maxChars: 300, page: 2 });
+    expect(result.outOfRange).toBe(false);
+  });
+
+  test("does not flag the default (no explicit page) as outOfRange", () => {
+    const result = paginateGroups(groups(5), sizeOf, { maxChars: 300 });
+    expect(result.outOfRange).toBe(false);
+  });
+
+  test("clamps page below 1 to the first page", () => {
+    const result = paginateGroups(groups(5), sizeOf, { maxChars: 300, page: 0 });
+    expect(result.page).toBe(1);
+    expect(result.items.map((g) => g.id)).toEqual([0, 1]);
+    // page 0 clamps up to 1, which is in range — not "out of range" (overshoot).
+    expect(result.outOfRange).toBe(false);
+  });
+
+  test("a single oversized group still occupies its own page", () => {
+    // Group bigger than the budget can't be split — it gets its own page.
+    const big = [{ id: 0 }, { id: 1 }];
+    const result = paginateGroups(big, () => 1000, { maxChars: 300 });
+    expect(result.pageCount).toBe(2);
+    expect(result.items.map((g) => g.id)).toEqual([0]);
+  });
+
+  test("handles an empty group array", () => {
+    const result = paginateGroups([], sizeOf, { maxChars: 300 });
+    expect(result.pageCount).toBe(1);
+    expect(result.page).toBe(1);
+    expect(result.items).toHaveLength(0);
+    expect(result.paginated).toBe(false);
+  });
+
+  test("defaults to the full budget and page 1", () => {
+    const result = paginateGroups(groups(2), () => 10);
+    expect(result.page).toBe(1);
+    expect(result.paginated).toBe(false);
+    expect(result.items).toHaveLength(2);
+    // Sanity: default budget is the shared constant.
+    expect(DEFAULT_MAX_OUTPUT_CHARS).toBeGreaterThan(0);
   });
 });

@@ -26,7 +26,7 @@ The default `FIGMA_TRANSPORT=auto` picks the plugin path when the local relay is
 bun setup
 ```
 
-This writes MCP config for both Cursor (`.cursor/mcp.json`) and Claude Code (`.mcp.json`).
+This installs dependencies and writes Cursor's MCP config (`.cursor/mcp.json`). For Claude Code, install the plugin instead (see [Claude Code Setup](#claude-code-setup)) — it ships the MCP server plus skills, sub-agents, and the `/figmagent:reauth` command.
 
 2. Issue any Figma tool call. On first run the server prints an OAuth URL to stderr (and opens your browser) — approve, and tokens persist to `~/.figmagent/auth.json`. Select a file by passing a Figma URL to `use_file` or setting `FIGMA_FILE_KEY`.
 
@@ -46,7 +46,24 @@ bun socket
 
 ### Claude Code Setup
 
-Add the MCP server manually:
+Figmagent ships as a Claude Code **plugin** — installing it registers the MCP server **and** the bundled Figma skills, sub-agents, and the `/figmagent:reauth` command in one step, available across all your projects (no per-project `.mcp.json`).
+
+The plugin lives in this repo (the repo root is the plugin: `.claude-plugin/plugin.json`, `commands/`, `skills/`, `agents/`, `.mcp.json`). Its `.mcp.json` runs the server via `bun ${CLAUDE_PLUGIN_ROOT}/src/figmagent_mcp/server.ts`, so dependencies must be installed in the cloned repo first:
+
+```bash
+bun install   # or: bun setup
+```
+
+Then add this repo as a plugin marketplace and install it (a single repo can be its own marketplace):
+
+```
+/plugin marketplace add /absolute/path/to/cursor-talk-to-figma-mcp
+/plugin install figmagent
+```
+
+Reload, and `mcp__Figmagent__*` tools, the `/figmagent:reauth` command, and the Figma skills/sub-agents are available everywhere. Update with `/plugin update figmagent` after pulling.
+
+**Manual MCP registration (alternative, no plugin):** if you only want the MCP server (not the bundled skills/commands), register it directly — but then skills and `/figmagent:reauth` are not installed:
 
 ```bash
 claude mcp add Figmagent -- bun /path-to-repo/src/figmagent_mcp/server.ts
@@ -81,7 +98,7 @@ Select with the `FIGMA_TRANSPORT` env var on the MCP server process:
 
 **First-run OAuth:** on the first remote command the server prints an authorization URL to stderr (and tries to open your browser), then waits up to 5 minutes for the redirect on a local loopback port. Approve in the browser; tokens are saved to `~/.figmagent/auth.json` (0600) and refreshed automatically. Headless machines: open the printed URL anywhere, then complete the redirect from a browser that can reach `127.0.0.1` on that machine.
 
-**Re-authenticating:** if commands start failing with an authorization error or "you don't have edit access" (usually the stored token belongs to the wrong Figma account), run the `/figmagent_reauth` slash command (Claude Code) or call the `reauthenticate` tool directly — no need to hand-edit `~/.figmagent/auth.json`. It clears the cached token, reopens the browser login so you can pick an account with editor access, and reports which account is now authenticated. (`use_figma` runs every command — reads included — as a script in the file's VM, so the authenticated account must be an **editor** on the file.) Note: because Figmagent is a stdio MCP server doing its own OAuth, it can't surface a "Reauthenticate" entry in Claude Code's `/mcp` menu — that menu is reserved for remote HTTP servers whose OAuth Claude Code manages.
+**Re-authenticating:** if commands start failing with an authorization error or "you don't have edit access" (usually the stored token belongs to the wrong Figma account), run the `/figmagent:reauth` slash command (Claude Code) or call the `reauthenticate` tool directly — no need to hand-edit `~/.figmagent/auth.json`. It clears the cached token, reopens the browser login so you can pick an account with editor access, and reports which account is now authenticated. (`use_figma` runs every command — reads included — as a script in the file's VM, so the authenticated account must be an **editor** on the file.) Note: because Figmagent is a stdio MCP server doing its own OAuth, it can't surface a "Reauthenticate" entry in Claude Code's `/mcp` menu — that menu is reserved for remote HTTP servers whose OAuth Claude Code manages.
 
 **Selecting a file:** the remote transport has no channels. Pass a Figma file URL (or bare fileKey) to `use_file`, or set `FIGMA_FILE_KEY`. Override the endpoint with `FIGMA_MCP_URL` if needed.
 

@@ -98,13 +98,14 @@ The script runs with top-level await and return, with the fig.* stdlib preloaded
 - fig.setCharacters(node, text) — font-safe text replacement (handles mixed-font nodes)
 - fig.loadFont(family, weightOrStyle) — load a font; numeric weight maps to style (600 → "Semi Bold"), falls back to Inter Regular; returns the loaded FontName
 - fig.serialize(nodeOrId, detail) — FSGN raw tree for a node; detail: "structure" | "layout" | "full"
-- fig.bindVariable(node, field, variableId) — scope-validated design-token binding (fill, stroke, cornerRadius, opacity, padding*, itemSpacing, width, height, fontSize, ...); returns a warning or null
+- fig.bindVariable(node, field, variableId) — scope-validated design-token binding (fill, stroke, cornerRadius, opacity, padding*, itemSpacing, width, height, fontSize, ...). Returns null on a successful bind; THROWS (with a stated fix) when the variable's scopes don't cover the field — a skipped bind aborts the whole atomic script rather than silently no-op'ing. ALWAYS await it: it returns a Promise and the guard throws inside it, so an un-awaited call swallows the rejection and the no-op masquerades as success.
 - fig.check(nodeIds) — post-write structural assertions (zero-width text, 100px balloons, overlaps); returns warnings[]
 - fig.createNode(spec, parentId) — the full write tree builder (two-pass FILL sizing, font loading, no default fills)
 
 Conventions:
 - mode: "read" (default) is enforced by a best-effort static scan for mutating API names; the real protection is per-script rollback — a thrown error means nothing was applied. Mutating scripts MUST pass mode: "write".
 - When a mode: "write" script returns { nodeIds: [...] }, fig.check runs over those ids in the same execution and warnings are appended to the response — so return the ids you created/modified.
+- Atomic rollback + fig.bindVariable: a mode "write" script runs atomically — one thrown error discards ALL prior writes in the script. So a loop that binds many nodes and hits one scope mismatch midway rolls back every earlier bind too. If you need persist-the-good-ones-skip-the-bad behavior, use the edit tool (it collects per-bind warnings and continues), or pre-validate scopes with get_design_system, or split into one run_script per node.
 - Budget: stdlib + your code must fit 49,000 chars combined (~19K for your code).
 - Every script is session-logged in full; recurring scripts become first-class tools.`,
   {
