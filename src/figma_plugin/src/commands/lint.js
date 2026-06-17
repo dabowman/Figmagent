@@ -393,15 +393,21 @@ export function matchVariable(value, property, nodeContext, variables) {
   };
 }
 
-function checkColorProperty(node, propName, spec, indexes, nodeContext) {
+export function checkColorProperty(node, propName, spec, indexes, nodeContext) {
   const fieldName = spec.field;
-  if (!(fieldName in node)) return null;
-
-  const paints = node[fieldName];
-  if (!paints || paints.length === 0) return null;
+  const paints = prop(node, fieldName);
+  // Guard: a node may have no paints, or paints may be figma.mixed (a Symbol —
+  // common on root frames / sections / mixed-fill nodes). Indexing a Symbol
+  // yields undefined, which then crashes on `paint.type` ("cannot read property
+  // 'type' of undefined"). Bail out cleanly instead of dereferencing.
+  if (!paints || typeof paints === "symbol" || !Array.isArray(paints) || paints.length === 0) return null;
 
   const paint = paints[0];
-  if (paint.type !== "SOLID") return null;
+  if (!paint || typeof paint !== "object") return null;
+  // Only SOLID paints carry a single `color` we can match against a variable.
+  // GRADIENT_* / IMAGE / VIDEO paints have no solid `color` (gradients carry
+  // `gradientStops` instead) — skip them rather than dereferencing undefined.
+  if (prop(paint, "type") !== "SOLID") return null;
 
   // Check if already bound
   if (paint.boundVariables && paint.boundVariables.color) {
@@ -409,6 +415,7 @@ function checkColorProperty(node, propName, spec, indexes, nodeContext) {
   }
 
   const color = paint.color;
+  if (!color || typeof color !== "object") return null;
   const m = matchVariable({ r: color.r, g: color.g, b: color.b }, propName, nodeContext, indexes);
   const hexVal = rgbaToHex({ r: color.r, g: color.g, b: color.b, a: paint.opacity !== undefined ? paint.opacity : 1 });
 
