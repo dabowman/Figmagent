@@ -96,7 +96,7 @@ The plugin classifies operations via registry `lock` entries: `read` ops run fre
 
 ### Sub-agent architecture
 For large Figma tasks (8+ variants, 100+ tool calls), use the `/figma-sub-agents` skill to delegate work:
-- **Discovery** (`.claude/agents/figma-discovery.md`) — read-only exploration, returns structured JSON summary
+- **Discovery** (`agents/figma-discovery.md`, bundled in the plugin) — read-only exploration, returns structured JSON summary
 - **Builder** — creates/clones node structures, can run in parallel (max 3, plugin transport)
 - **Styler** — applies variable bindings and text styles, can run in parallel (max 3, plugin transport)
 

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "Figmagent": {
+      "command": "bun",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/src/figmagent_mcp/server.ts"]
+    }
+  }
+}
