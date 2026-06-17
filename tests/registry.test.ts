@@ -60,6 +60,8 @@ const EXPECTED_COMMANDS = [
   "update_variables",
   "create_styles",
   "update_styles",
+  "get_enabled_library_variables",
+  "import_library_variable",
   // lint
   "lint_design",
   // connections & navigation
@@ -88,6 +90,7 @@ const EXPECTED_READ = [
   "set_selections",
   "set_focus",
   "get_design_system",
+  "get_enabled_library_variables",
   "lint_design",
   "find",
 ];
@@ -106,6 +109,7 @@ const EXPECTED_GLOBAL = [
   "update_variables",
   "create_styles",
   "update_styles",
+  "import_library_variable",
   "component_properties",
 ];
 

@@ -35,14 +35,14 @@ The core tools mirror Claude Code primitives but operate on Figma nodes, NOT fil
 
 ## Available Tools
 
-All 40 tools provided by this server, grouped by domain:
+All 42 tools provided by this server, grouped by domain:
 
 **Core:** read, grep, edit, write, lint, screenshot, use_file, get_selection
 **Escape Hatch:** run_script (remote transport only) — raw Plugin API script with the fig.* stdlib preloaded. LAST RESORT: use only when no first-class tool covers the operation. mode: "write" scripts that return { nodeIds: [...] } get post-run structural checks.
 **Creating Files:** create_new_file (remote transport)
 **Components:** get_local_components, combine_as_variants, component_properties, get_instance_overrides, set_instance_overrides
 **Design System:** get_design_system, create_variables, update_variables, create_styles, update_styles, prepare_figma_variables
-**Libraries:** get_library_components, search_library_components, import_library_component, import_library_components, get_component_variants, get_library_variables
+**Libraries:** get_library_components, search_library_components, import_library_component, import_library_components, get_component_variants, get_library_variables, get_enabled_library_variables, import_library_variable
 **Annotations & Comments:** get_annotations, set_annotation, set_multiple_annotations, get_comments, post_comment, delete_comment
 **Connections & Prototyping:** get_reactions, set_default_connector, create_connections, set_focus, set_selections
 **Session:** export_session
@@ -66,8 +66,39 @@ export const server = new McpServer(
   { instructions },
 );
 
+// ─── Error-flagging helper (issue #60) ───────────────────────────────────────
+// Tool handlers catch failures and return them as plain content text without
+// setting `isError`, so timeouts/exceptions/validation rejections arrived as
+// `is_error: false` — the agent had to string-parse to detect them.
+//
+// The structured-verdict tools (`edit`/apply, `write`/create, batch
+// `import_library_components`, `set_instance_overrides`) now set `isError`
+// themselves from their own `success`/`failed` counts — the matcher below
+// cannot see a failure verdict buried in `{"success":false,…}` JSON, so the
+// source is the right place to flag it. `looksLikeError` stays as the backstop
+// for the ~40 catch blocks that emit prose like `Error …:`/`Failed to …`.
+//
+// Both arms are start-anchored. A `read`/`grep` response that merely serializes
+// a node named "Timed out" or text reading "Connection closed" must NOT be
+// flagged — only text that *begins* with an error/timeout sentinel counts.
+const ERROR_TEXT_PREFIX =
+  /^(Error[:\s]|Failed to\b|Could not\b|Unable to\b|(Read|Write) operation "|Request to Figma timed out\b|Not connected to Figma\b|Connection closed\b)/;
+
+export function looksLikeError(result: any): boolean {
+  if (!result || typeof result !== "object") return false;
+  // Respect an explicit flag from the handler either way.
+  if (typeof result.isError === "boolean") return result.isError;
+  const content = result.content;
+  if (!Array.isArray(content) || content.length === 0) return false;
+  const first = content[0];
+  const text = first && typeof first.text === "string" ? first.text : "";
+  if (!text) return false;
+  return ERROR_TEXT_PREFIX.test(text);
+}
+
 // ─── Session logging wrapper ─────────────────────────────────────────────────
-// Patches server.tool() to record every tool call (timing, success, errors).
+// Patches server.tool() to record every tool call (timing, success, errors)
+// and to flag error/timeout/exception responses with `isError: true` (#60).
 // Must run before any tool file imports — tool files import `server` from here.
 const originalTool = server.tool.bind(server);
 server.tool = ((...args: any[]) => {
@@ -84,7 +115,15 @@ server.tool = ((...args: any[]) => {
       try {
         const result = await originalCb(params, extra);
         const responseChars = result?.content?.reduce((sum: number, c: any) => sum + (c.text?.length || 0), 0) ?? 0;
-        recordToolCall(toolName, params, start, true, responseChars);
+        // #60: catch blocks return error text as content without setting
+        // isError. Flag it so the agent can branch on is_error instead of
+        // parsing the content string. Never downgrades an explicit flag.
+        const isError = looksLikeError(result);
+        const errText = isError ? result.content?.[0]?.text : undefined;
+        recordToolCall(toolName, params, start, !isError, responseChars, errText);
+        if (isError && result && typeof result === "object" && result.isError !== true) {
+          return { ...result, isError: true };
+        }
         return result;
       } catch (err: any) {
         const msg = err?.message || String(err);

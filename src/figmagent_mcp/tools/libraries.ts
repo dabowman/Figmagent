@@ -337,6 +337,9 @@ server.tool(
       const failed = results.filter((r: any) => !r.success).length;
 
       return {
+        // #60: the verdict lives in the JSON counts, not in error-prefixed text.
+        // Flag when nothing imported (every component failed).
+        isError: succeeded === 0 && failed > 0,
         content: [
           {
             type: "text",
@@ -346,6 +349,7 @@ server.tool(
       };
     } catch (error) {
       return {
+        isError: true,
         content: [
           {
             type: "text",
@@ -577,6 +581,92 @@ server.tool(
           {
             type: "text",
             text: `Error getting library variables: ${errMsg}`,
+          },
+        ],
+      };
+    }
+  },
+);
+
+// --- Tool 6: get_enabled_library_variables ---
+//
+// The variables analog of get_library_components, but Plugin-API based: it
+// enumerates library variable *collections* enabled for the CURRENT file and
+// the variables inside them via figma.teamLibrary — no fileKey, no REST call,
+// no Enterprise token, no source library file open. Pair with
+// import_library_variable to actually pull a variable in and bind it.
+
+server.tool(
+  "get_enabled_library_variables",
+  "List library variable collections enabled for the CURRENT file (and the variables inside them), via the Figma Plugin API — no fileKey, no REST call, no Enterprise token, no source library file open. This is the variables analog of get_library_components. With no arguments it returns the enabled collections (each with a key, name, and library name). Pass collectionKey to list the variables in one collection (each with a key, name, and resolvedType). Pass query to filter variable names (case-insensitive); without collectionKey, a query surfaces matching variables across all collections in one call. Use the returned variable keys with import_library_variable to pull a variable into the current file, then bind it via edit's variables. Note: the library must already be enabled in the file (Assets panel > Libraries). For published variables in a library file you have a fileKey for, use get_library_variables (REST) instead.",
+  {
+    collectionKey: z
+      .string()
+      .optional()
+      .describe(
+        "Optional. The key of a library variable collection (from a prior call with no collectionKey). Drills into that collection's variables.",
+      ),
+    query: z
+      .string()
+      .optional()
+      .describe(
+        "Optional. Case-insensitive filter on variable name. Without collectionKey, surfaces matching variables across all enabled collections.",
+      ),
+  },
+  async ({ collectionKey, query }: any) => {
+    try {
+      const result = await sendCommandToFigma("get_enabled_library_variables", {
+        collectionKey,
+        query,
+      });
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error listing enabled library variables: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  },
+);
+
+// --- Tool 7: import_library_variable ---
+
+server.tool(
+  "import_library_variable",
+  "Import published variable(s) from an enabled team library into the CURRENT file by key, so they can be bound to node properties via edit's variables. This is the variables analog of import_library_component — Plugin-API based (figma.variables.importVariableByKeyAsync), needing no fileKey, no REST call, no Enterprise token, and no source library file open. Get variable keys from get_enabled_library_variables. Pass a single variableKey or a batch via variableKeys. Returns the imported variable id(s) (use these in edit's variables to bind). The library must be enabled in the current file.",
+  {
+    variableKey: z
+      .string()
+      .optional()
+      .describe(
+        "The published key of a library variable (from get_enabled_library_variables). Use this OR variableKeys.",
+      ),
+    variableKeys: z
+      .array(z.string())
+      .optional()
+      .describe("Array of published variable keys for batch import. Use this OR variableKey."),
+  },
+  async ({ variableKey, variableKeys }: any) => {
+    try {
+      const result = await sendCommandToFigma("import_library_variable", {
+        variableKey,
+        variableKeys,
+      });
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error importing library variable: ${error instanceof Error ? error.message : String(error)}`,
           },
         ],
       };

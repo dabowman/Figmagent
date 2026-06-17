@@ -9,6 +9,8 @@ import {
   updateVariables,
   createStyles,
   updateStyles,
+  getLibraryVariables,
+  importLibraryVariable,
 } from "../commands/styles.js";
 
 export const COMMANDS = {
@@ -20,4 +22,6 @@ export const COMMANDS = {
   update_variables: { lock: "global", handler: (params) => updateVariables(params) },
   create_styles: { lock: "global", handler: (params) => createStyles(params) },
   update_styles: { lock: "global", handler: (params) => updateStyles(params) },
+  get_enabled_library_variables: { lock: "read", handler: (params) => getLibraryVariables(params) },
+  import_library_variable: { lock: "global", handler: (params) => importLibraryVariable(params) },
 };
