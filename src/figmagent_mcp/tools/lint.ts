@@ -27,12 +27,14 @@ Use after building or modifying a design to verify all properties are tokenized.
 Severity levels:
 - exact_match: variable exists with identical value (deltaE < 1.0 for colors, exact equality for scalars). Auto-fixable.
 - near_match: variable exists within threshold (deltaE < threshold for colors, within 10% for scalars). Review suggested.
-- no_match: no matching variable found. Manual action needed.`,
+- no_match: no matching variable found. Manual action needed.
+
+Pass multiple root IDs (an array) to lint several frames/pages in one call. With an array, each issue carries a rootNodeId and the response adds a per-root \`roots\` breakdown (nodes scanned, issues, auto-fixed); the top-level summary aggregates across all roots. A single string keeps the original response shape.`,
   {
     nodeId: z
-      .string()
+      .union([z.string(), z.array(z.string()).min(1)])
       .describe(
-        "Root node ID to scan. All visible descendants will be linted. Accepts PAGE node IDs (e.g. '0:1') to lint all top-level components on the page in one call.",
+        "Root node ID(s) to scan. All visible descendants are linted. Accepts a single ID string, or an array of IDs to lint several frames/pages in one call. Accepts PAGE node IDs (e.g. '0:1') to lint all top-level components on a page. Duplicate IDs are de-duplicated.",
       ),
     autoFix: z
       .boolean()
@@ -72,7 +74,7 @@ Severity levels:
         narrowingHints: [
           "  • Lower maxIssues to reduce output",
           "  • Filter with the properties param to lint specific property types",
-          "  • Lint a smaller subtree",
+          "  • Lint a smaller subtree, or fewer root IDs per call",
         ],
       });
       return {
