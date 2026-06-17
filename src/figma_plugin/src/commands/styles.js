@@ -997,3 +997,154 @@ export var FIELD_MAP = {
   paragraphSpacing: "paragraphSpacing",
   paragraphIndent: "paragraphIndent",
 };
+
+// --- Library variables (team library) ---
+//
+// Unlike components (REST-importable via fileKey), library *variables* can only
+// be enumerated and imported through the Plugin API's teamLibrary namespace —
+// no REST call, no Enterprise token, no source file open. The flow is:
+//   1. getAvailableLibraryVariableCollectionsAsync() -> collections enabled for this file
+//   2. getVariablesInLibraryCollectionAsync(collectionKey) -> variables in a collection
+//   3. importVariableByKeyAsync(variableKey) -> import into the current file, then bind
+//
+// getLibraryVariables enumerates (steps 1-2); importLibraryVariable does step 3.
+
+// Enumerate library variable collections enabled for the current file, and
+// (optionally) the variables inside them. Pass collectionKey to drill into a
+// single collection's variables; omit it for a collections overview.
+export async function getLibraryVariables(params) {
+  const collectionKey = params && params.collectionKey;
+  const queryRaw = params && params.query;
+  const query = queryRaw ? String(queryRaw).toLowerCase() : null;
+
+  if (!figma.teamLibrary || typeof figma.teamLibrary.getAvailableLibraryVariableCollectionsAsync !== "function") {
+    fail(
+      "Library variables API unavailable in this Figma environment",
+      "update Figma desktop to a version that supports figma.teamLibrary, then retry",
+    );
+  }
+
+  let collections;
+  try {
+    collections = await figma.teamLibrary.getAvailableLibraryVariableCollectionsAsync();
+  } catch (e) {
+    fail(
+      "Failed to list library variable collections: " + (e && e.message ? e.message : String(e)),
+      "enable the library in the current file (Assets panel > Libraries) so its variable collections are available",
+    );
+  }
+
+  // Drill into a single collection's variables.
+  if (collectionKey) {
+    const match = collections.find((c) => c.key === collectionKey);
+    if (!match) {
+      fail(
+        "No enabled library variable collection found with key " + collectionKey,
+        "call get_library_variables with no collectionKey to list available collection keys, then retry with one of those",
+      );
+    }
+    let vars;
+    try {
+      vars = await figma.teamLibrary.getVariablesInLibraryCollectionAsync(collectionKey);
+    } catch (e) {
+      fail(
+        "Failed to list variables in collection " + match.name + ": " + (e && e.message ? e.message : String(e)),
+        "verify the collectionKey came from get_library_variables and the library is still enabled",
+      );
+    }
+    let variables = vars.map((v) => ({ key: v.key, name: v.name, resolvedType: v.resolvedType }));
+    if (query) {
+      variables = variables.filter((v) => v.name.toLowerCase().indexOf(query) !== -1);
+    }
+    return {
+      collection: { key: match.key, name: match.name, libraryName: match.libraryName },
+      variableCount: variables.length,
+      variables: variables,
+    };
+  }
+
+  // Otherwise return a collections overview. With a query, also surface matching
+  // variables across collections so a single call can locate a variable's key.
+  const result = [];
+  for (let i = 0; i < collections.length; i++) {
+    const c = collections[i];
+    const entry = { key: c.key, name: c.name, libraryName: c.libraryName };
+    if (query) {
+      let vars;
+      try {
+        vars = await figma.teamLibrary.getVariablesInLibraryCollectionAsync(c.key);
+      } catch (_e) {
+        vars = [];
+      }
+      entry.variables = vars
+        .filter((v) => v.name.toLowerCase().indexOf(query) !== -1)
+        .map((v) => ({ key: v.key, name: v.name, resolvedType: v.resolvedType }));
+    }
+    result.push(entry);
+  }
+
+  return {
+    collectionCount: result.length,
+    collections: result,
+  };
+}
+
+// Import a published library variable (by key) into the current file so it can
+// be bound to node properties. Accepts a single variableKey or a batch of keys.
+export async function importLibraryVariable(params) {
+  const single = params && params.variableKey;
+  const batch = params && params.variableKeys;
+
+  const keys = [];
+  if (single) keys.push(single);
+  if (Array.isArray(batch)) {
+    for (let i = 0; i < batch.length; i++) keys.push(batch[i]);
+  }
+
+  if (keys.length === 0) {
+    fail(
+      "Missing variableKey (or variableKeys)",
+      "pass variableKey (or variableKeys: [...]) — get keys from get_library_variables",
+    );
+  }
+
+  if (!figma.variables || typeof figma.variables.importVariableByKeyAsync !== "function") {
+    fail(
+      "Variable import API unavailable in this Figma environment",
+      "update Figma desktop to a version that supports figma.variables.importVariableByKeyAsync, then retry",
+    );
+  }
+
+  const imported = [];
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    let variable;
+    try {
+      variable = await figma.variables.importVariableByKeyAsync(key);
+    } catch (e) {
+      fail(
+        "Failed to import library variable with key " + key + ": " + (e && e.message ? e.message : String(e)),
+        "verify the key came from get_library_variables and its library is enabled in the current file",
+      );
+    }
+    let collectionName;
+    try {
+      const collection = await figma.variables.getVariableCollectionByIdAsync(variable.variableCollectionId);
+      collectionName = collection ? collection.name : undefined;
+    } catch (_e) {
+      collectionName = undefined;
+    }
+    imported.push({
+      id: variable.id,
+      key: key,
+      name: variable.name,
+      resolvedType: variable.resolvedType,
+      collectionName: collectionName,
+    });
+  }
+
+  return {
+    importedCount: imported.length,
+    variables: imported,
+  };
+}
