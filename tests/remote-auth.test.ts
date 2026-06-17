@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FigmaOAuthProvider } from "../src/figmagent_mcp/remote/auth";
+import { FigmaOAuthProvider, hasStoredAuth } from "../src/figmagent_mcp/remote/auth";
 
 const tmpDirs: string[] = [];
 
@@ -66,6 +66,36 @@ describe("FigmaOAuthProvider persistence", () => {
     expect(existsSync(file)).toBe(true);
     const mode = statSync(file).mode & 0o777;
     expect(mode).toBe(0o600);
+  });
+
+  test("clearStoredAuth wipes the token but reuses the registered client by default", () => {
+    const file = tempAuthFile();
+    const provider = new FigmaOAuthProvider(file);
+
+    const info = { client_id: "client-abc", redirect_uris: ["http://127.0.0.1:1234/callback"] };
+    provider.saveClientInformation(info as any);
+    provider.saveTokens({ access_token: "at", token_type: "Bearer" });
+    provider.saveCodeVerifier("pkce-verifier-xyz");
+
+    provider.clearStoredAuth();
+
+    expect(provider.tokens()).toBeUndefined();
+    expect(hasStoredAuth(file)).toBe(false);
+    expect(() => provider.codeVerifier()).toThrow("restart the authorization flow");
+    // Registered client survives — reauth re-authorizes without re-registering.
+    expect(provider.clientInformation()).toEqual(info as any);
+  });
+
+  test("clearStoredAuth(true) also forgets the registered client", () => {
+    const file = tempAuthFile();
+    const provider = new FigmaOAuthProvider(file);
+    provider.saveClientInformation({ client_id: "client-abc" } as any);
+    provider.saveTokens({ access_token: "at", token_type: "Bearer" });
+
+    provider.clearStoredAuth(true);
+
+    expect(provider.tokens()).toBeUndefined();
+    expect(provider.clientInformation()).toBeUndefined();
   });
 
   test("corrupt auth file is treated as empty, not fatal", async () => {

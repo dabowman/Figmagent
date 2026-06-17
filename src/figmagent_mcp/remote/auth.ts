@@ -47,6 +47,11 @@ function writeAuthFile(file: string, data: PersistedAuth): void {
   chmodSync(file, 0o600);
 }
 
+/** True when a token is currently persisted (default auth file). */
+export function hasStoredAuth(file: string = AUTH_FILE): boolean {
+  return readAuthFile(file).tokens !== undefined;
+}
+
 /** Best-effort: open a URL in the user's browser. Failure is fine (headless). */
 function tryOpenBrowser(url: string): void {
   const opener = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
@@ -68,9 +73,30 @@ export class FigmaOAuthProvider implements OAuthClientProvider {
   private pendingCode: Promise<string> | null = null;
   private resolveCode: ((code: string) => void) | null = null;
   private rejectCode: ((err: Error) => void) | null = null;
+  /** Most recent authorization URL handed to redirectToAuthorization — surfaced
+   *  to the reauthenticate tool so the agent can show it if the browser fails to open. */
+  private lastAuthUrl: string | null = null;
 
   constructor(file: string = AUTH_FILE) {
     this.file = file;
+  }
+
+  get lastAuthorizationUrl(): string | null {
+    return this.lastAuthUrl;
+  }
+
+  /**
+   * Wipe persisted auth so the next connection re-runs the OAuth flow. Clears
+   * the token + PKCE verifier by default (a "re-authorize, pick an account"
+   * reauth); pass forgetClient=true to also drop the registered client and
+   * force fresh dynamic client registration.
+   */
+  clearStoredAuth(forgetClient: boolean = false): void {
+    const data = readAuthFile(this.file);
+    data.tokens = undefined;
+    data.codeVerifier = undefined;
+    if (forgetClient) data.clientInformation = undefined;
+    writeAuthFile(this.file, data);
   }
 
   get redirectUrl(): string {
@@ -176,6 +202,7 @@ export class FigmaOAuthProvider implements OAuthClientProvider {
   }
 
   redirectToAuthorization(authorizationUrl: URL): void {
+    this.lastAuthUrl = authorizationUrl.toString();
     // stderr only — stdout is the MCP protocol stream
     process.stderr.write(
       `\nFigma authorization required. Open this URL in your browser:\n\n  ${authorizationUrl.toString()}\n\n` +
