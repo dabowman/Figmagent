@@ -449,41 +449,56 @@ async function processNode(op, styleCache, ctx) {
   if (op.counterAxisSpacing !== undefined && "counterAxisSpacing" in node) {
     node.counterAxisSpacing = toNumber(op.counterAxisSpacing, 0);
   }
-  // FILL sizing requires an auto-layout parent — pre-check instead of letting
-  // Figma throw mid-op (warn + skip; the rest of the op still applies).
-  const fillBlocked =
-    (op.layoutSizingHorizontal === "FILL" || op.layoutSizingVertical === "FILL") && !parentHasAutoLayout(node);
-  if (fillBlocked) {
+  // layoutSizing* (FILL/HUG/FIXED) only takes effect when the node lives in an
+  // auto-layout context — its PARENT must be an auto-layout frame. Set
+  // otherwise it is a silent no-op (Figma reports success but nothing changes)
+  // — issues #50/#53. layoutMode is applied earlier (Phase 1), so a combined
+  // { layoutMode, layoutSizing* } call on a parent works; but layoutSizing* on
+  // a child whose parent isn't auto-layout (yet) is the wasted-call trap.
+  // Pre-check the parent so we warn + skip instead of letting the no-op (or a
+  // mid-op throw) masquerade as success.
+  const wantsSizing = op.layoutSizingHorizontal !== undefined || op.layoutSizingVertical !== undefined;
+  const sizingContextMissing = wantsSizing && !parentHasAutoLayout(node);
+  if (sizingContextMissing) {
     const blockedParent = prop(node, "parent");
     const parentLabel = blockedParent ? blockedParent.id + ' ("' + blockedParent.name + '")' : "the parent";
+    const requested = [];
+    if (op.layoutSizingHorizontal !== undefined) requested.push("layoutSizingHorizontal");
+    if (op.layoutSizingVertical !== undefined) requested.push("layoutSizingVertical");
     warnings.push({
       nodeId: op.nodeId,
       check: "fill_not_applied",
       message:
-        "FILL sizing on " +
+        requested.join("/") +
+        " on " +
         op.nodeId +
         " skipped — parent " +
         parentLabel +
-        " has no auto-layout. Fix: edit the parent with layoutMode: 'HORIZONTAL' or 'VERTICAL' first, or give " +
+        " has no auto-layout, so the sizing is a silent no-op. Fix: edit the parent with layoutMode: 'HORIZONTAL' " +
+        "or 'VERTICAL' first (combine layoutMode + layoutSizing* in one apply on the parent), or give " +
         op.nodeId +
         " an explicit width/height.",
     });
   }
-  if (op.layoutSizingHorizontal !== undefined && "layoutSizingHorizontal" in node) {
-    if (!(op.layoutSizingHorizontal === "FILL" && fillBlocked)) {
-      node.layoutSizingHorizontal = op.layoutSizingHorizontal;
-      if (op.layoutSizingHorizontal === "FILL" && ctx) {
-        ctx.fillRequests.push({ id: node.id, horizontal: true, vertical: false });
-      }
-    }
+  // Snapshot dimensions before applying sizing so a post-write assertion can
+  // tell whether a FILL request actually changed the dimension (vs. a no-op
+  // that left an already-collapsed width-0 TEXT node at 0 — issue #50).
+  const priorWidth = prop(node, "width");
+  const priorHeight = prop(node, "height");
+  if (op.layoutSizingHorizontal !== undefined && "layoutSizingHorizontal" in node && !sizingContextMissing) {
+    node.layoutSizingHorizontal = op.layoutSizingHorizontal;
   }
-  if (op.layoutSizingVertical !== undefined && "layoutSizingVertical" in node) {
-    if (!(op.layoutSizingVertical === "FILL" && fillBlocked)) {
-      node.layoutSizingVertical = op.layoutSizingVertical;
-      if (op.layoutSizingVertical === "FILL" && ctx) {
-        ctx.fillRequests.push({ id: node.id, horizontal: false, vertical: true });
-      }
-    }
+  if (op.layoutSizingVertical !== undefined && "layoutSizingVertical" in node && !sizingContextMissing) {
+    node.layoutSizingVertical = op.layoutSizingVertical;
+  }
+  if (wantsSizing && !sizingContextMissing && ctx) {
+    ctx.sizingRequests.push({
+      id: node.id,
+      horizontal: op.layoutSizingHorizontal,
+      vertical: op.layoutSizingVertical,
+      priorWidth: typeof priorWidth === "number" ? priorWidth : null,
+      priorHeight: typeof priorHeight === "number" ? priorHeight : null,
+    });
   }
 
   // Phase 2.8: Text content (font-safe replacement via setcharacters.js —
@@ -633,7 +648,7 @@ export async function apply(params) {
   const ctx = {
     modifiedIds: [],
     explicitHeightIds: [],
-    fillRequests: [],
+    sizingRequests: [],
     fontRequests: [],
     rawSets: [],
   };
@@ -704,7 +719,7 @@ export async function apply(params) {
     const assertionWarnings = await runPostWriteAssertions({
       nodeIds: ctx.modifiedIds,
       explicitHeightIds: ctx.explicitHeightIds,
-      fillRequests: ctx.fillRequests,
+      sizingRequests: ctx.sizingRequests,
       fontRequests: ctx.fontRequests,
     });
     for (let wi = 0; wi < assertionWarnings.length; wi++) warnings.push(assertionWarnings[wi]);
