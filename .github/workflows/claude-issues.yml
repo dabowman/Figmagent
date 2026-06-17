@@ -27,10 +27,10 @@ jobs:
           {
             echo "context<<SKILLS_EOF"
             echo "=== Figma Plugin API Reference ==="
-            cat .claude/skills/figma-plugins/SKILL.md
+            cat skills/figma-plugins/SKILL.md
             echo ""
             echo "=== Adding MCP Tools Guide ==="
-            cat .claude/skills/add-mcp-tool/SKILL.md
+            cat skills/add-mcp-tool/SKILL.md
             echo "SKILLS_EOF"
           } >> "$GITHUB_OUTPUT"
 

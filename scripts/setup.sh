@@ -18,11 +18,12 @@ MCP_CONFIG="{
 
 bun install
 
-# Cursor: write .cursor/mcp.json
+# Cursor: write .cursor/mcp.json (Cursor has no plugin system — needs an absolute path here)
 mkdir -p .cursor
 echo "$MCP_CONFIG" > .cursor/mcp.json
 echo "✓ Cursor MCP config written to .cursor/mcp.json"
 
-# Claude Code: write .mcp.json in project root
-echo "$MCP_CONFIG" > .mcp.json
-echo "✓ Claude Code MCP config written to .mcp.json"
+# Claude Code: the MCP server ships inside the Figmagent plugin (tracked .mcp.json at the
+# repo root uses ${CLAUDE_PLUGIN_ROOT}). Install the plugin instead of writing a
+# project-level .mcp.json — see README "Install as a Claude Code plugin".
+echo "✓ Claude Code: install the Figmagent plugin (see README) — no project .mcp.json needed"

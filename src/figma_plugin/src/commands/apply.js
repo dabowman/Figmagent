@@ -88,6 +88,9 @@ function applyStrokeColor(node, colorSpec) {
 // Binds a variable to a node field. Returns a warning object (and skips the
 // bind) when the variable's declared scopes don't cover this field on this
 // node type — Figma's API would accept the bind silently, so we surface it.
+// The warning carries `message` (what happened) and `fix` (how to resolve) as
+// separate structured fields, so consumers (apply.js batch path, the stdlib
+// fig.bindVariable throw path) never have to parse a fix back out of a string.
 export async function bindVariableToNode(node, field, variableId) {
   const variable = await figma.variables.getVariableByIdAsync(variableId);
   if (!variable)
@@ -123,7 +126,8 @@ export async function bindVariableToNode(node, field, variableId) {
           scopes.join(", ") +
           "], which don't cover this field (needs one of: " +
           requiredScopes.join(", ") +
-          "). Fix: bind a variable scoped for this field, or widen the variable's scopes with update_variables.",
+          ")",
+        fix: "bind a variable scoped for this field, or widen the variable's scopes with update_variables",
       };
     }
   }
@@ -400,6 +404,15 @@ async function processNode(op, styleCache, ctx) {
     }
   }
 
+  // Snapshot dimensions BEFORE the width-0 TEXT recovery (below) or any sizing
+  // mutation runs, so a post-write assertion can tell whether a FILL request
+  // actually changed the dimension (vs. a no-op that left an already-collapsed
+  // width-0 TEXT at 0 — issue #50). Captured here, not just before
+  // layoutSizing*, because the recovery resizes 0→100 and would mask the
+  // collapse the assertion exists to catch.
+  const priorWidth = prop(node, "width");
+  const priorHeight = prop(node, "height");
+
   // Text layout/resize properties (applies to any TEXT node — not gated on font props).
   // Ordered BEFORE layoutSizingHorizontal so coercion and width-recovery happen before
   // FILL is applied: setting FILL on a TEXT node with WIDTH_AND_HEIGHT collapses width to 0,
@@ -449,41 +462,51 @@ async function processNode(op, styleCache, ctx) {
   if (op.counterAxisSpacing !== undefined && "counterAxisSpacing" in node) {
     node.counterAxisSpacing = toNumber(op.counterAxisSpacing, 0);
   }
-  // FILL sizing requires an auto-layout parent — pre-check instead of letting
-  // Figma throw mid-op (warn + skip; the rest of the op still applies).
-  const fillBlocked =
-    (op.layoutSizingHorizontal === "FILL" || op.layoutSizingVertical === "FILL") && !parentHasAutoLayout(node);
-  if (fillBlocked) {
+  // layoutSizing* (FILL/HUG/FIXED) only takes effect when the node lives in an
+  // auto-layout context — its PARENT must be an auto-layout frame. Set
+  // otherwise it is a silent no-op (Figma reports success but nothing changes)
+  // — issues #50/#53. layoutMode is applied earlier (Phase 1), so a combined
+  // { layoutMode, layoutSizing* } call on a parent works; but layoutSizing* on
+  // a child whose parent isn't auto-layout (yet) is the wasted-call trap.
+  // Pre-check the parent so we warn + skip instead of letting the no-op (or a
+  // mid-op throw) masquerade as success.
+  const wantsSizing = op.layoutSizingHorizontal !== undefined || op.layoutSizingVertical !== undefined;
+  const sizingContextMissing = wantsSizing && !parentHasAutoLayout(node);
+  if (sizingContextMissing) {
     const blockedParent = prop(node, "parent");
     const parentLabel = blockedParent ? blockedParent.id + ' ("' + blockedParent.name + '")' : "the parent";
+    const requested = [];
+    if (op.layoutSizingHorizontal !== undefined) requested.push("layoutSizingHorizontal");
+    if (op.layoutSizingVertical !== undefined) requested.push("layoutSizingVertical");
     warnings.push({
       nodeId: op.nodeId,
       check: "fill_not_applied",
       message:
-        "FILL sizing on " +
+        requested.join("/") +
+        " on " +
         op.nodeId +
         " skipped — parent " +
         parentLabel +
-        " has no auto-layout. Fix: edit the parent with layoutMode: 'HORIZONTAL' or 'VERTICAL' first, or give " +
+        " has no auto-layout, so the sizing is a silent no-op. Fix: edit the parent with layoutMode: 'HORIZONTAL' " +
+        "or 'VERTICAL' first (combine layoutMode + layoutSizing* in one apply on the parent), or give " +
         op.nodeId +
         " an explicit width/height.",
     });
   }
-  if (op.layoutSizingHorizontal !== undefined && "layoutSizingHorizontal" in node) {
-    if (!(op.layoutSizingHorizontal === "FILL" && fillBlocked)) {
-      node.layoutSizingHorizontal = op.layoutSizingHorizontal;
-      if (op.layoutSizingHorizontal === "FILL" && ctx) {
-        ctx.fillRequests.push({ id: node.id, horizontal: true, vertical: false });
-      }
-    }
+  if (op.layoutSizingHorizontal !== undefined && "layoutSizingHorizontal" in node && !sizingContextMissing) {
+    node.layoutSizingHorizontal = op.layoutSizingHorizontal;
   }
-  if (op.layoutSizingVertical !== undefined && "layoutSizingVertical" in node) {
-    if (!(op.layoutSizingVertical === "FILL" && fillBlocked)) {
-      node.layoutSizingVertical = op.layoutSizingVertical;
-      if (op.layoutSizingVertical === "FILL" && ctx) {
-        ctx.fillRequests.push({ id: node.id, horizontal: false, vertical: true });
-      }
-    }
+  if (op.layoutSizingVertical !== undefined && "layoutSizingVertical" in node && !sizingContextMissing) {
+    node.layoutSizingVertical = op.layoutSizingVertical;
+  }
+  if (wantsSizing && !sizingContextMissing && ctx) {
+    ctx.sizingRequests.push({
+      id: node.id,
+      horizontal: op.layoutSizingHorizontal,
+      vertical: op.layoutSizingVertical,
+      priorWidth: typeof priorWidth === "number" ? priorWidth : null,
+      priorHeight: typeof priorHeight === "number" ? priorHeight : null,
+    });
   }
 
   // Phase 2.8: Text content (font-safe replacement via setcharacters.js —
@@ -504,7 +527,15 @@ async function processNode(op, styleCache, ctx) {
     const fields = Object.keys(op.variables);
     for (let i = 0; i < fields.length; i++) {
       const bindWarning = await bindVariableToNode(node, fields[i], op.variables[fields[i]]);
-      if (bindWarning) warnings.push(bindWarning);
+      if (bindWarning) {
+        // Fold the structured `fix` back into `message` for the warnings block,
+        // which renders `message` only (formatWarningsBlock in utils.ts).
+        if (bindWarning.fix) {
+          bindWarning.message = bindWarning.message + ". Fix: " + bindWarning.fix;
+          delete bindWarning.fix;
+        }
+        warnings.push(bindWarning);
+      }
     }
   }
 
@@ -633,7 +664,7 @@ export async function apply(params) {
   const ctx = {
     modifiedIds: [],
     explicitHeightIds: [],
-    fillRequests: [],
+    sizingRequests: [],
     fontRequests: [],
     rawSets: [],
   };
@@ -704,7 +735,7 @@ export async function apply(params) {
     const assertionWarnings = await runPostWriteAssertions({
       nodeIds: ctx.modifiedIds,
       explicitHeightIds: ctx.explicitHeightIds,
-      fillRequests: ctx.fillRequests,
+      sizingRequests: ctx.sizingRequests,
       fontRequests: ctx.fontRequests,
     });
     for (let wi = 0; wi < assertionWarnings.length; wi++) warnings.push(assertionWarnings[wi]);

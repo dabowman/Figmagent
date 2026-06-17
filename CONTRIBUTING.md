@@ -73,7 +73,7 @@ See [CLAUDE.md](CLAUDE.md) for detailed patterns and gotchas.
 
 ## Adding a New Tool
 
-The project has a skill file at `.claude/skills/add-mcp-tool/` that walks through the full process. In short:
+The project has a skill file at `skills/add-mcp-tool/` (bundled in the Figmagent plugin) that walks through the full process. In short:
 
 1. Add the command handler in the plugin (`src/figma_plugin/src/commands/`)
 2. Register the command in the dispatcher (`src/figma_plugin/src/main.js`)
