@@ -47,7 +47,7 @@ Runs inside Figma. Source lives in `src/figma_plugin/src/` as ES modules, bundle
 - `src/setcharacters.js` — font-safe text replacement (handles mixed fonts)
 - `src/commands/document.js` — getDocumentInfo, getSelection, getNodeTree (FSGN traversal), exportNodeAsImage
 - `src/commands/create.js` — create (single nodes and nested trees, including COMPONENT and INSTANCE types)
-- `src/commands/apply.js` — unified node modification (backs the `edit` tool): fill, stroke, corner radius, opacity, font properties, layout, move/rename/reorder, text content (via setcharacters.js), variables, text styles, variant swapping, exposed instances, delete
+- `src/commands/apply.js` — unified node modification (backs the `edit` tool): fill, stroke, corner radius, opacity, font properties, layout, move/rename/reorder, text content (via setcharacters.js), variables, text styles, variant swapping, exposed instances, instance component-property values (`componentProperties` → `instance.setProperties`), delete
 - `src/commands/modify.js` — moveNode, resizeNode, renameNode, deleteNode, cloneNode, cloneAndModify, reorderChildren
 - `src/commands/text.js` — setTextContent, setMultipleTextContents
 - `src/commands/components.js` — createComponent, combineAsVariants, instance overrides, component properties, exposed instances, etc.
@@ -79,6 +79,7 @@ Tool descriptions (`src/figmagent_mcp/tools/*.ts`) are the source of truth for p
 - **Comments & annotations**: comments are REST-API based (`get_comments`/`post_comment`/`delete_comment`, require `FIGMA_API_TOKEN` with `file_comments:*` scopes; `fileKey` from the Figma URL). Annotations: search with `grep` (`hasAnnotation: true` or `annotation: "regex"`), batch-read with `get_annotations(nodeIds)`, replace by index with `set_annotation`.
 - **Libraries**: `import_library_components` and `get_component_variants` are batch tools for **published library** files (require a fileKey). For local/unpublished component sets, `read(nodeId)` on the set returns property definitions and variant IDs directly.
 - **Exposed instances vs INSTANCE_SWAP vs Slots**: `edit`'s `isExposedInstance` surfaces a nested instance's own properties on the parent — it does NOT create a swap picker (use a `component_properties` INSTANCE_SWAP property for that). Figma's newer "Slot" feature has no plugin API support — UI only.
+- **Setting component-property values on an instance**: `edit`'s `componentProperties` field sets BOOLEAN/VARIANT/TEXT/INSTANCE_SWAP property *values* on an existing INSTANCE (maps to `instance.setProperties`) — e.g. toggle an imported WPDS Notice's `Actions?` boolean off. Distinct from `component_properties` (defines props on a local COMPONENT) and `set_instance_overrides` (copies overrides between instances). BOOLEAN/TEXT/INSTANCE_SWAP keys carry an id suffix (`Actions?#123:4`); VARIANT keys are bare (`Size`). A bare name resolves to the unique suffixed key when unambiguous; unknown/ambiguous names and type mismatches fail with the fix. `read` the instance to discover exact keys.
 
 ## Figma Design Patterns
 
