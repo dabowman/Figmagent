@@ -168,10 +168,27 @@ describe("paginateGroups", () => {
     expect(result.items.map((g) => g.id)).toEqual([4]);
   });
 
+  test("flags an out-of-range page request as outOfRange", () => {
+    const result = paginateGroups(groups(5), sizeOf, { maxChars: 300, page: 99 });
+    expect(result.outOfRange).toBe(true);
+  });
+
+  test("does not flag an in-range page request as outOfRange", () => {
+    const result = paginateGroups(groups(5), sizeOf, { maxChars: 300, page: 2 });
+    expect(result.outOfRange).toBe(false);
+  });
+
+  test("does not flag the default (no explicit page) as outOfRange", () => {
+    const result = paginateGroups(groups(5), sizeOf, { maxChars: 300 });
+    expect(result.outOfRange).toBe(false);
+  });
+
   test("clamps page below 1 to the first page", () => {
     const result = paginateGroups(groups(5), sizeOf, { maxChars: 300, page: 0 });
     expect(result.page).toBe(1);
     expect(result.items.map((g) => g.id)).toEqual([0, 1]);
+    // page 0 clamps up to 1, which is in range — not "out of range" (overshoot).
+    expect(result.outOfRange).toBe(false);
   });
 
   test("a single oversized group still occupies its own page", () => {

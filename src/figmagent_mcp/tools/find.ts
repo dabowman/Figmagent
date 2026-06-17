@@ -202,30 +202,67 @@ Large text extractions (e.g. enumerating every TEXT node in a multi-slide deck) 
       });
       const metaReserve = serializeYaml({ meta: metaSample, groups: [] }).length + 200;
       const groupBudget = Math.max(1, budget - metaReserve);
-      // Measure each group as it renders nested under `groups:` (indent level 1),
-      // not standalone, so the packed page reflects the real output size.
+      // Measure each group as it renders nested under `groups:` (indent level 1).
+      // `serializeYaml({ groups: [group] })` includes the top-level `groups:\n`
+      // line, but on the real page all groups share one such header — subtract
+      // it once per group so summing per-group sizes doesn't over-count the
+      // shared wrapper and split into more pages than necessary. The header is
+      // `groups:` + newline (a populated array renders as a block, not inline).
+      const groupsHeaderLen = "groups:\n".length;
       const measure = (group: (typeof typedResult.groups)[number]) =>
-        serializeYaml({ groups: [group] }).length;
+        Math.max(0, serializeYaml({ groups: [group] }).length - groupsHeaderLen);
       const paged = paginateGroups(typedResult.groups, measure, { maxChars: groupBudget, page });
 
+      // Will this single page exceed the budget on its own? That happens when a
+      // lone group is larger than the budget and can't be split further. In that
+      // case `guardOutput` below truncates the body to a narrowing message, so
+      // the pagination hint must NOT tell the agent to advance to the next page
+      // (that would skip past this group's matches and silently drop them —
+      // breaking the "pagination never drops a group" invariant). Measure the
+      // group body against the same budget the guard uses.
+      const guardBudget = maxOutputChars ?? DEFAULT_MAX_OUTPUT_CHARS;
+      const pageBodyYaml = serializeYaml({ groups: paged.items });
+      const pageOverBudget = pageBodyYaml.length > guardBudget;
+
+      let next: string;
+      if (pageOverBudget) {
+        // This page's single group is itself over budget — advancing would skip
+        // it. Tell the agent to narrow this group's query (or raise the budget)
+        // rather than walk to page N+1.
+        next =
+          `page ${paged.page} exceeds the budget on a single group — its matches can't be paginated further. ` +
+          `Narrow this group's query (lower maxResults, add criteria, or search a subtree), ` +
+          `or pass maxOutputChars to fetch it whole. Do NOT advance the page.`;
+      } else if (paged.outOfRange) {
+        // Explicit page request was beyond pageCount — surface the clamp instead
+        // of returning the last page as if it were the requested one.
+        next = `requested page ${page} is out of range (only ${paged.pageCount} page(s) exist) — returned the last page`;
+      } else if (paged.page < paged.pageCount) {
+        next = `call grep again with page: ${paged.page + 1} for the next page`;
+      } else {
+        next = "last page";
+      }
+
       const pagedMeta = Object.assign({}, baseMeta, {
-        pagination: {
-          page: paged.page,
-          pageCount: paged.pageCount,
-          totalGroups: paged.totalGroups,
-          groupsOnPage: paged.items.length,
-          next:
-            paged.page < paged.pageCount
-              ? `call grep again with page: ${paged.page + 1} for the next page`
-              : "last page",
-        },
+        pagination: Object.assign(
+          {
+            page: paged.page,
+            pageCount: paged.pageCount,
+            totalGroups: paged.totalGroups,
+            groupsOnPage: paged.items.length,
+            next,
+          },
+          paged.outOfRange ? { outOfRange: true } : {},
+        ),
       });
 
       const pagedYaml = serializeYaml({ meta: pagedMeta, groups: paged.items });
 
       // Safety net: a single group can exceed the budget on its own (can't be
       // split further here). Guard the rendered page so a runaway group still
-      // returns a narrowing message instead of an oversized blob.
+      // returns a narrowing message instead of an oversized blob. The preserved
+      // meta now carries a `next` that says "narrow", not "advance" (see above),
+      // so the truncation message and pagination hint agree.
       const guarded = guardOutput(pagedYaml, {
         maxChars: maxOutputChars,
         metaExtractor: extractYamlMeta,

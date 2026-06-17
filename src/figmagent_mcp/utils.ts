@@ -105,6 +105,12 @@ export interface PaginateResult<T> {
   totalGroups: number;
   /** True when more than one page is required. */
   paginated: boolean;
+  /**
+   * True when the requested page was beyond `pageCount` and got clamped to the
+   * last page (so the caller knows the returned data isn't the page it asked
+   * for). False when no page was requested or the request was in range.
+   */
+  outOfRange: boolean;
 }
 
 /**
@@ -148,14 +154,18 @@ export function paginateGroups<T>(
   if (pages.length === 0) pages.push([]);
 
   const pageCount = pages.length;
-  const requested = Math.min(Math.max(1, Math.floor(options.page ?? 1)), pageCount);
+  const askedFor = Math.max(1, Math.floor(options.page ?? 1));
+  const clamped = Math.min(askedFor, pageCount);
 
   return {
-    items: pages[requested - 1],
-    page: requested,
+    items: pages[clamped - 1],
+    page: clamped,
     pageCount,
     totalGroups: groups.length,
     paginated: pageCount > 1,
+    // Only an explicit page request can be out of range; the default (page 1)
+    // never overshoots since pageCount >= 1.
+    outOfRange: options.page !== undefined && askedFor > pageCount,
   };
 }
 
