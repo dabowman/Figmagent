@@ -91,5 +91,7 @@ export type FigmaCommand =
   | "update_variables"
   | "create_styles"
   | "update_styles"
+  | "get_enabled_library_variables"
+  | "import_library_variable"
   | "lint_design"
   | "find";

@@ -59,6 +59,8 @@ export const COMMAND_DOMAINS: Record<string, string> = {
   update_variables: "styles",
   create_styles: "styles",
   update_styles: "styles",
+  get_enabled_library_variables: "styles",
+  import_library_variable: "styles",
   // lint
   lint_design: "lint",
   // connections & navigation
@@ -82,6 +84,7 @@ export const REMOTE_READ_COMMANDS = new Set<string>([
   "get_styles",
   "get_local_variables",
   "get_local_components",
+  "get_enabled_library_variables",
   "get_annotations",
   "get_reactions",
   "scan_text_nodes",
