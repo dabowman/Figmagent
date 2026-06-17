@@ -16,6 +16,44 @@ async function loadFontOrFail(family, style) {
   }
 }
 
+// Load a TEXT style's CURRENT font before writing any property. Figma
+// re-renders the style on any write — even a non-font prop like lineHeight —
+// and rejects writes when the already-assigned font is not loaded (#52).
+// A TextStyle normally carries a single fontName; the figma.mixed guard is
+// defensive (mixed fonts have no single name to load, so there is nothing to
+// pre-load — the per-field write that needs them will surface its own error).
+async function loadCurrentStyleFont(style) {
+  const current = style.fontName;
+  if (current && current !== figma.mixed) {
+    await figma.loadFontAsync({ family: current.family, style: current.style });
+  }
+}
+
+// Load every available style of a font family. Setting a FONT_FAMILY variable
+// re-renders any text bound to it, which throws if the family is not loaded
+// (#52). We don't know which style(s) the bound text uses, so load them all —
+// the family string is all the variable value gives us. Best-effort: an
+// unresolvable family is left to the setValueForMode write to report.
+async function loadFontFamily(family) {
+  if (typeof family !== "string" || family.length === 0) return;
+  let fonts;
+  try {
+    fonts = await figma.listAvailableFontsAsync();
+  } catch (_listErr) {
+    return;
+  }
+  for (let i = 0; i < fonts.length; i++) {
+    const fn = fonts[i].fontName;
+    if (fn && fn.family === family) {
+      try {
+        await figma.loadFontAsync({ family: fn.family, style: fn.style });
+      } catch (_loadErr) {
+        // Ignore individual style load failures; bound text may not use them.
+      }
+    }
+  }
+}
+
 // Coerce a lineHeight value into Figma's { value, unit } format.
 // - "AUTO" → { unit: "AUTO" }
 // - { value, unit } → pass through (already Figma format)
@@ -565,6 +603,14 @@ export async function updateVariables(params) {
             modeByName[collection.modes[m].name] = collection.modes[m].modeId;
           }
 
+          // A FONT_FAMILY variable re-renders bound text on value change, so
+          // both the OLD and NEW font families must be loaded before writing
+          // (#52). Scope detection covers font-family STRING variables.
+          const isFontFamilyVar =
+            variable.resolvedType === "STRING" &&
+            variable.scopes &&
+            variable.scopes.indexOf("FONT_FAMILY") !== -1;
+
           const valueKeys = Object.keys(update.values);
           for (let j = 0; j < valueKeys.length; j++) {
             const modeName = valueKeys[j];
@@ -578,6 +624,11 @@ export async function updateVariables(params) {
               if (!aliasVar) throw new Error("Alias variable not found: " + value.alias);
               variable.setValueForMode(modeId, { type: "VARIABLE_ALIAS", id: aliasVar.id });
             } else {
+              if (isFontFamilyVar) {
+                const oldFamily = variable.valuesByMode ? variable.valuesByMode[modeId] : undefined;
+                if (typeof oldFamily === "string") await loadFontFamily(oldFamily);
+                await loadFontFamily(value);
+              }
               variable.setValueForMode(modeId, value);
             }
           }
@@ -889,7 +940,11 @@ export async function updateStyles(params) {
           style.paints = [paint];
         }
       } else if (styleType === "TEXT") {
-        // Font name change requires loading the font
+        // Writing ANY text-style property re-renders the style, which requires
+        // its current font to be loaded — even non-font props like lineHeight.
+        // (#52) Load the style's existing fontName before touching anything.
+        await loadCurrentStyleFont(style);
+        // Font name change requires loading the new font too.
         if (update.fontFamily !== undefined || update.fontStyle !== undefined) {
           const family = update.fontFamily || style.fontName.family;
           const fStyle = update.fontStyle || style.fontName.style;
