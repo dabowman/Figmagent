@@ -222,8 +222,12 @@ function resolveComponentPropertyKey(node, userKey) {
 }
 
 // Coerce and validate a value for a component property of the given type.
-// Returns { value } on success or { error, fix } on mismatch.
-function coerceComponentPropertyValue(key, propType, rawValue, defs) {
+// Returns { value } on success or { error, fix } on mismatch. `defDefs` is the
+// MAIN component's componentPropertyDefinitions (the only place VARIANT options
+// and INSTANCE_SWAP preferredValues live — an instance's componentProperties
+// never carries variantOptions). Async because INSTANCE_SWAP validation looks
+// the target node up.
+async function coerceComponentPropertyValue(key, propType, rawValue, defDefs) {
   if (propType === "BOOLEAN") {
     if (typeof rawValue !== "boolean") {
       return {
@@ -249,6 +253,22 @@ function coerceComponentPropertyValue(key, propType, rawValue, defs) {
         fix: "pass the target COMPONENT node id (find it with grep or read)",
       };
     }
+    // Verify the value is a real COMPONENT / COMPONENT_SET node id — a typo, a
+    // deleted node, or a library *key* mistaken for a node id would otherwise
+    // surface as a generic setProperties failure.
+    const target = await figma.getNodeByIdAsync(rawValue);
+    if (!target) {
+      return {
+        error: "INSTANCE_SWAP property '" + key + "' references node '" + rawValue + "' which does not exist",
+        fix: "pass the node id of a local COMPONENT or COMPONENT_SET (grep/read to find it); a library component key is not a node id — import it first",
+      };
+    }
+    if (target.type !== "COMPONENT" && target.type !== "COMPONENT_SET") {
+      return {
+        error: "INSTANCE_SWAP property '" + key + "' references " + rawValue + " (type: " + target.type + "), not a component",
+        fix: "pass the node id of a COMPONENT or COMPONENT_SET",
+      };
+    }
     return { value: rawValue };
   }
   if (propType === "VARIANT") {
@@ -258,8 +278,8 @@ function coerceComponentPropertyValue(key, propType, rawValue, defs) {
         fix: "pass one of the variant option values",
       };
     }
-    // Validate against declared options when available.
-    const def = defs[key];
+    // Validate against declared options from the MAIN component's definitions.
+    const def = defDefs ? defDefs[key] : undefined;
     const options = def && Array.isArray(def.variantOptions) ? def.variantOptions : null;
     if (options && options.indexOf(rawValue) === -1) {
       return {
@@ -280,7 +300,7 @@ function coerceComponentPropertyValue(key, propType, rawValue, defs) {
 // user-supplied name to the instance's actual key, type-checks the value, and
 // applies the whole batch atomically. Throws (with a stated fix) on any
 // unknown/ambiguous name or type mismatch so nothing is half-applied.
-function applyComponentProperties(node, componentProperties) {
+async function applyComponentProperties(node, componentProperties) {
   if (node.type !== "INSTANCE") {
     fail(
       "componentProperties requires an INSTANCE node: " + node.id + " (type: " + node.type + ")",
@@ -289,13 +309,31 @@ function applyComponentProperties(node, componentProperties) {
   }
   const defs = node.componentProperties || {};
   const userKeys = Object.keys(componentProperties);
+  if (userKeys.length === 0) {
+    fail(
+      "componentProperties is empty on instance " + node.id,
+      "pass at least one property — read the instance to list its keys, then set { \"<key>\": <value> }",
+    );
+  }
+  // VARIANT options (and INSTANCE_SWAP preferred values) live on the MAIN
+  // component's componentPropertyDefinitions, never on the instance's
+  // componentProperties. Resolve them once so VARIANT validation isn't dead code.
+  const mainComponent = await node.getMainComponentAsync();
+  let defDefs = {};
+  if (mainComponent) {
+    if (mainComponent.parent && mainComponent.parent.type === "COMPONENT_SET") {
+      defDefs = mainComponent.parent.componentPropertyDefinitions || {};
+    } else if ("componentPropertyDefinitions" in mainComponent) {
+      defDefs = mainComponent.componentPropertyDefinitions || {};
+    }
+  }
   const resolved = {};
   for (let i = 0; i < userKeys.length; i++) {
     const userKey = userKeys[i];
     const r = resolveComponentPropertyKey(node, userKey);
     if (r.error) fail(r.error, r.fix);
     const propType = defs[r.key] ? defs[r.key].type : undefined;
-    const c = coerceComponentPropertyValue(r.key, propType, componentProperties[userKey], defs);
+    const c = await coerceComponentPropertyValue(r.key, propType, componentProperties[userKey], defDefs);
     if (c.error) fail(c.error, c.fix);
     resolved[r.key] = c.value;
   }
@@ -434,7 +472,7 @@ async function processNode(op, styleCache, ctx) {
 
   // Set component-property values on an instance (BOOLEAN/VARIANT/TEXT/INSTANCE_SWAP).
   if (op.componentProperties && typeof op.componentProperties === "object") {
-    applyComponentProperties(node, op.componentProperties);
+    await applyComponentProperties(node, op.componentProperties);
   }
 
   // Phase 1: Layout mode (must come first — enables padding/alignment/sizing)

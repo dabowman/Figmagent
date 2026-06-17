@@ -209,13 +209,19 @@ describe("apply: boundary warnings instead of silent skips", () => {
 });
 
 describe("apply: componentProperties (set values on an instance)", () => {
-  function makeInstance(id: string, defs: Record<string, any>) {
+  // `defs` is the instance's componentProperties (no variantOptions — Figma
+  // never puts them there). `mainDefs`, when given, is the MAIN component's
+  // componentPropertyDefinitions where variantOptions actually live; it backs
+  // getMainComponentAsync so VARIANT validation exercises the real path.
+  function makeInstance(id: string, defs: Record<string, any>, mainDefs?: Record<string, any>) {
     let applied: any = null;
     const node: any = {
       id,
       type: "INSTANCE",
       name: "inst",
       componentProperties: defs,
+      getMainComponentAsync: async () =>
+        mainDefs ? { id: id + ":main", type: "COMPONENT", parent: null, componentPropertyDefinitions: mainDefs } : null,
       setProperties: (props: any) => {
         applied = props;
       },
@@ -235,9 +241,13 @@ describe("apply: componentProperties (set values on an instance)", () => {
   });
 
   test("sets a VARIANT (bare name) and validates against options", async () => {
-    fakeNodes["i1"] = makeInstance("i1", {
-      Size: { type: "VARIANT", value: "MD", variantOptions: ["SM", "MD", "LG"] },
-    });
+    fakeNodes["i1"] = makeInstance(
+      "i1",
+      // Instance side: no variantOptions, matching real Figma.
+      { Size: { type: "VARIANT", value: "MD" } },
+      // Main component definitions carry the options.
+      { Size: { type: "VARIANT", variantOptions: ["SM", "MD", "LG"] } },
+    );
     const ok = await apply({ nodes: [{ nodeId: "i1", componentProperties: { Size: "LG" } }] });
     expect(ok.successCount).toBe(1);
     expect(fakeNodes["i1"].getApplied()).toEqual({ Size: "LG" });
@@ -254,9 +264,14 @@ describe("apply: componentProperties (set values on an instance)", () => {
   });
 
   test("rejects an invalid VARIANT option with the valid options", async () => {
-    fakeNodes["i1"] = makeInstance("i1", {
-      Size: { type: "VARIANT", value: "MD", variantOptions: ["SM", "MD", "LG"] },
-    });
+    // Options live ONLY on the main component's definitions — the instance's
+    // componentProperties carries no variantOptions (real Figma shape). The
+    // reject must come from getMainComponentAsync, not the instance.
+    fakeNodes["i1"] = makeInstance(
+      "i1",
+      { Size: { type: "VARIANT", value: "MD" } },
+      { Size: { type: "VARIANT", variantOptions: ["SM", "MD", "LG"] } },
+    );
     const result = await apply({ nodes: [{ nodeId: "i1", componentProperties: { Size: "XL" } }] });
     expect(result.failureCount).toBe(1);
     const failedOp = result.results.find((r: any) => !r.success);
@@ -292,6 +307,55 @@ describe("apply: componentProperties (set values on an instance)", () => {
     const failedOp = result.results.find((r: any) => !r.success);
     expect(failedOp.error).toContain("Ambiguous");
     expect(failedOp.error).toContain("Label#1:1");
+  });
+
+  test("sets an INSTANCE_SWAP to a valid COMPONENT node id", async () => {
+    fakeNodes["c9"] = { id: "c9", type: "COMPONENT", name: "Icon" };
+    fakeNodes["i1"] = makeInstance("i1", { "Icon#9:9": { type: "INSTANCE_SWAP", value: "c0" } });
+    const result = await apply({ nodes: [{ nodeId: "i1", componentProperties: { Icon: "c9" } }] });
+    expect(result.successCount).toBe(1);
+    expect(fakeNodes["i1"].getApplied()).toEqual({ "Icon#9:9": "c9" });
+  });
+
+  test("rejects an INSTANCE_SWAP given a non-string value", async () => {
+    fakeNodes["i1"] = makeInstance("i1", { "Icon#9:9": { type: "INSTANCE_SWAP", value: "c0" } });
+    const result = await apply({ nodes: [{ nodeId: "i1", componentProperties: { Icon: 42 as any } }] });
+    expect(result.failureCount).toBe(1);
+    const failedOp = result.results.find((r: any) => !r.success);
+    expect(failedOp.error).toContain("COMPONENT node id string");
+    expect(failedOp.error).toContain("Fix:");
+    expect(fakeNodes["i1"].getApplied()).toBeNull();
+  });
+
+  test("rejects an INSTANCE_SWAP whose node id does not exist", async () => {
+    fakeNodes["i1"] = makeInstance("i1", { "Icon#9:9": { type: "INSTANCE_SWAP", value: "c0" } });
+    const result = await apply({ nodes: [{ nodeId: "i1", componentProperties: { Icon: "missing" } }] });
+    expect(result.failureCount).toBe(1);
+    const failedOp = result.results.find((r: any) => !r.success);
+    expect(failedOp.error).toContain("does not exist");
+    expect(failedOp.error).toContain("Fix:");
+    expect(fakeNodes["i1"].getApplied()).toBeNull();
+  });
+
+  test("rejects an INSTANCE_SWAP pointing at a non-component node", async () => {
+    fakeNodes["f9"] = { id: "f9", type: "FRAME", name: "frame" };
+    fakeNodes["i1"] = makeInstance("i1", { "Icon#9:9": { type: "INSTANCE_SWAP", value: "c0" } });
+    const result = await apply({ nodes: [{ nodeId: "i1", componentProperties: { Icon: "f9" } }] });
+    expect(result.failureCount).toBe(1);
+    const failedOp = result.results.find((r: any) => !r.success);
+    expect(failedOp.error).toContain("not a component");
+    expect(failedOp.error).toContain("Fix:");
+    expect(fakeNodes["i1"].getApplied()).toBeNull();
+  });
+
+  test("rejects an empty componentProperties object with a fix", async () => {
+    fakeNodes["i1"] = makeInstance("i1", { "Actions?#12:3": { type: "BOOLEAN", value: true } });
+    const result = await apply({ nodes: [{ nodeId: "i1", componentProperties: {} }] });
+    expect(result.failureCount).toBe(1);
+    const failedOp = result.results.find((r: any) => !r.success);
+    expect(failedOp.error).toContain("empty");
+    expect(failedOp.error).toContain("Fix:");
+    expect(fakeNodes["i1"].getApplied()).toBeNull();
   });
 });
 
