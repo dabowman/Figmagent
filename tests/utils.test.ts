@@ -64,6 +64,19 @@ describe("guardOutput", () => {
     expect(result.text).toContain("200000");
     expect(result.text).not.toContain("251000");
   });
+
+  test("filterInsteadOfRaising suppresses the maxOutputChars suggestion (issue #44)", () => {
+    const text = "x".repeat(50000);
+    const result = guardOutput(text, {
+      toolName: "get_design_system",
+      maxChars: 1000,
+      filterInsteadOfRaising: true,
+    });
+    expect(result.truncated).toBe(true);
+    expect(result.text).toContain("Raising maxOutputChars will not help");
+    expect(result.text).toContain("Filter to a subset instead");
+    expect(result.text).not.toContain("pass maxOutputChars:");
+  });
 });
 
 // ─── extractYamlMeta ─────────────────────────────────────────────────────────

@@ -44,6 +44,12 @@ export interface GuardOptions {
   toolName: string;
   /** Tool-specific hints for narrowing the query. */
   narrowingHints?: string[];
+  /**
+   * When true, the truncation message states that raising maxOutputChars does
+   * NOT help (the underlying data is intrinsically large — filter instead) and
+   * the "pass maxOutputChars: N" suggestion line is omitted.
+   */
+  filterInsteadOfRaising?: boolean;
 }
 
 export interface GuardResult {
@@ -71,10 +77,13 @@ export function guardOutput(text: string, options: GuardOptions): GuardResult {
 
   const hints = options.narrowingHints ?? [];
   const hintBlock = hints.length > 0 ? "\n" + hints.join("\n") + "\n" : "";
+  const lastLine = options.filterInsteadOfRaising
+    ? "Raising maxOutputChars will not help — this data is intrinsically large (it overflows the infra dump limit too). Filter to a subset instead."
+    : `To get full output, pass maxOutputChars: ${Math.min(text.length + 1000, 200_000)}.`;
   const msg = [
     `Output truncated: ${text.length.toLocaleString()} chars exceeds budget of ${max.toLocaleString()}.`,
     hintBlock,
-    `To get full output, pass maxOutputChars: ${Math.min(text.length + 1000, 200_000)}.`,
+    lastLine,
   ]
     .filter(Boolean)
     .join("\n");
