@@ -1,8 +1,30 @@
 // Create command: builds one or more nodes from a recursive spec
 
-import { toNumber, sendProgressUpdate, fail, FONT_WEIGHT_STYLES } from "../helpers.js";
+import { toNumber, sendProgressUpdate, fail, prop, FONT_WEIGHT_STYLES } from "../helpers.js";
 import { runPostWriteAssertions } from "../assertions.js";
 import { miniLint } from "./lint.js";
+
+// Collect override-path IDs for the TEXT descendants of a freshly created
+// INSTANCE so the agent can set text overrides without a follow-up scan.
+// Instance descendants already carry IDs in Figma's override-path format
+// (I<instanceId>;<componentNodeId>), so each child's own id is the path the
+// edit tool targets. Walks the live instance subtree, not the spec.
+function collectInstanceTextOverrides(instanceNode) {
+  const overrides = {};
+  function walk(node) {
+    const children = prop(node, "children");
+    if (!children) return;
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i];
+      if (child.type === "TEXT") {
+        overrides[child.id] = { name: child.name, characters: prop(child, "characters") };
+      }
+      walk(child);
+    }
+  }
+  walk(instanceNode);
+  return overrides;
+}
 
 export async function create(params) {
   const parentId = params.parentId;
@@ -368,6 +390,15 @@ export async function create(params) {
     const result = { id: node.id, name: node.name, type: node.type };
     if (childResults.length > 0) {
       result.children = childResults;
+    }
+    // For INSTANCE nodes, surface the override paths for TEXT descendants so the
+    // agent can set text overrides directly (edit's nodeId accepts these paths)
+    // without a follow-up read/scan to discover them.
+    if (nodeType === "INSTANCE") {
+      const textOverrides = collectInstanceTextOverrides(node);
+      if (Object.keys(textOverrides).length > 0) {
+        result.textOverrides = textOverrides;
+      }
     }
     return result;
   }

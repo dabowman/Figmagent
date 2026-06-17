@@ -1,5 +1,6 @@
 // Plugin-side `create` handler tests against a mocked figma global.
-// Covers issue #47 (TEXT defaults to FILL + HEIGHT in auto-layout parents).
+// Covers issue #47 (TEXT defaults to FILL + HEIGHT in auto-layout parents)
+// and issue #43 (INSTANCE results carry override paths for TEXT children).
 
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { create } from "../src/figma_plugin/src/commands/create.js";
@@ -165,5 +166,66 @@ describe("create: TEXT defaults in auto-layout parents (#47)", () => {
     const text = nodesById[res.tree.children[0].id];
     expect(text.layoutSizingHorizontal).toBeUndefined();
     expect(text.textAutoResize).toBe("WIDTH_AND_HEIGHT");
+  });
+});
+
+// ─── Issue #43: INSTANCE override paths ─────────────────────────────────────
+
+describe("create: INSTANCE override paths for TEXT children (#43)", () => {
+  test("textOverrides maps each TEXT descendant id to { name, characters }", async () => {
+    // A fake COMPONENT whose createInstance() yields an INSTANCE with TEXT
+    // descendants whose ids are already in override-path format.
+    const label = {
+      id: "I58:128;4:60",
+      type: "TEXT",
+      name: "Label",
+      characters: "Submit",
+      children: [],
+    };
+    const nestedFrame = { id: "I58:128;4:59", type: "FRAME", name: "row", children: [label] };
+    const instance = {
+      id: "58:128",
+      type: "INSTANCE",
+      name: "Button",
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 40,
+      fills: [],
+      children: [nestedFrame],
+      resize() {},
+      appendChild() {},
+    };
+    nodesById["comp1"] = {
+      id: "comp1",
+      type: "COMPONENT",
+      createInstance: () => instance,
+    };
+
+    const res = await create({ tree: { type: "INSTANCE", componentId: "comp1" } });
+    expect(res.tree.type).toBe("INSTANCE");
+    expect(res.tree.textOverrides).toBeDefined();
+    expect(res.tree.textOverrides["I58:128;4:60"]).toEqual({ name: "Label", characters: "Submit" });
+    // Only TEXT descendants appear — the nested frame is not in the map.
+    expect(Object.keys(res.tree.textOverrides)).toEqual(["I58:128;4:60"]);
+  });
+
+  test("an INSTANCE with no TEXT descendants omits textOverrides", async () => {
+    const instance = {
+      id: "59:1",
+      type: "INSTANCE",
+      name: "Icon",
+      x: 0,
+      y: 0,
+      width: 24,
+      height: 24,
+      fills: [],
+      children: [{ id: "I59:1;1:1", type: "VECTOR", name: "vec", children: [] }],
+      resize() {},
+      appendChild() {},
+    };
+    nodesById["comp2"] = { id: "comp2", type: "COMPONENT", createInstance: () => instance };
+    const res = await create({ tree: { type: "INSTANCE", componentId: "comp2" } });
+    expect(res.tree.textOverrides).toBeUndefined();
   });
 });
