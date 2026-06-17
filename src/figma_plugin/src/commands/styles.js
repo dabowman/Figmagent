@@ -1027,6 +1027,7 @@ export async function getLibraryVariables(params) {
   let collections;
   try {
     collections = await figma.teamLibrary.getAvailableLibraryVariableCollectionsAsync();
+    if (!Array.isArray(collections)) collections = [];
   } catch (e) {
     fail(
       "Failed to list library variable collections: " + (e && e.message ? e.message : String(e)),
@@ -1040,7 +1041,7 @@ export async function getLibraryVariables(params) {
     if (!match) {
       fail(
         "No enabled library variable collection found with key " + collectionKey,
-        "call get_library_variables with no collectionKey to list available collection keys, then retry with one of those",
+        "call get_enabled_library_variables with no collectionKey to list available collection keys, then retry with one of those",
       );
     }
     let vars;
@@ -1049,7 +1050,7 @@ export async function getLibraryVariables(params) {
     } catch (e) {
       fail(
         "Failed to list variables in collection " + match.name + ": " + (e && e.message ? e.message : String(e)),
-        "verify the collectionKey came from get_library_variables and the library is still enabled",
+        "verify the collectionKey came from get_enabled_library_variables and the library is still enabled",
       );
     }
     let variables = vars.map((v) => ({ key: v.key, name: v.name, resolvedType: v.resolvedType }));
@@ -1065,23 +1066,24 @@ export async function getLibraryVariables(params) {
 
   // Otherwise return a collections overview. With a query, also surface matching
   // variables across collections so a single call can locate a variable's key.
-  const result = [];
-  for (let i = 0; i < collections.length; i++) {
-    const c = collections[i];
-    const entry = { key: c.key, name: c.name, libraryName: c.libraryName };
-    if (query) {
-      let vars;
-      try {
-        vars = await figma.teamLibrary.getVariablesInLibraryCollectionAsync(c.key);
-      } catch (_e) {
-        vars = [];
+  // read-locked op: per-collection queries are independent, so fan them out concurrently.
+  const result = await Promise.all(
+    collections.map(async (c) => {
+      const entry = { key: c.key, name: c.name, libraryName: c.libraryName };
+      if (query) {
+        let vars;
+        try {
+          vars = await figma.teamLibrary.getVariablesInLibraryCollectionAsync(c.key);
+        } catch (_e) {
+          vars = [];
+        }
+        entry.variables = vars
+          .filter((v) => v.name.toLowerCase().indexOf(query) !== -1)
+          .map((v) => ({ key: v.key, name: v.name, resolvedType: v.resolvedType }));
       }
-      entry.variables = vars
-        .filter((v) => v.name.toLowerCase().indexOf(query) !== -1)
-        .map((v) => ({ key: v.key, name: v.name, resolvedType: v.resolvedType }));
-    }
-    result.push(entry);
-  }
+      return entry;
+    }),
+  );
 
   return {
     collectionCount: result.length,
@@ -1104,7 +1106,7 @@ export async function importLibraryVariable(params) {
   if (keys.length === 0) {
     fail(
       "Missing variableKey (or variableKeys)",
-      "pass variableKey (or variableKeys: [...]) — get keys from get_library_variables",
+      "pass variableKey (or variableKeys: [...]) — get keys from get_enabled_library_variables",
     );
   }
 
@@ -1124,7 +1126,7 @@ export async function importLibraryVariable(params) {
     } catch (e) {
       fail(
         "Failed to import library variable with key " + key + ": " + (e && e.message ? e.message : String(e)),
-        "verify the key came from get_library_variables and its library is enabled in the current file",
+        "verify the key came from get_enabled_library_variables and its library is enabled in the current file",
       );
     }
     let collectionName;

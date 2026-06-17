@@ -100,9 +100,14 @@ describe("getLibraryVariables — drill into a collection", () => {
     expect(result.variables[0]).toEqual({ key: "vk1", name: "color/blue/500", resolvedType: "COLOR" });
   });
 
-  test("unknown collectionKey fails with a stated fix", async () => {
+  test("unknown collectionKey fails with a stated fix naming the right enumerator tool", async () => {
     installFigmaMock({ collections: [{ key: "ck1", name: "Color", libraryName: "DS" }] });
     await expect(getLibraryVariables({ collectionKey: "nope" })).rejects.toThrow(/Fix:/);
+    // Regression guard: the fix must point at the Plugin-API enumerator
+    // (get_enabled_library_variables), not the REST tool get_library_variables.
+    await expect(getLibraryVariables({ collectionKey: "nope" })).rejects.toThrow(
+      /get_enabled_library_variables/,
+    );
   });
 });
 
@@ -140,8 +145,11 @@ describe("importLibraryVariable", () => {
     expect(result.variables.map((v: any) => v.id)).toEqual(["VariableID:1", "VariableID:2"]);
   });
 
-  test("missing key fails with a stated fix", async () => {
+  test("missing key fails with a stated fix naming the right enumerator tool", async () => {
     await expect(importLibraryVariable({})).rejects.toThrow(/Fix:/);
+    // Regression guard: the fix must name get_enabled_library_variables (the source of
+    // importable keys), not the REST tool get_library_variables.
+    await expect(importLibraryVariable({})).rejects.toThrow(/get_enabled_library_variables/);
   });
 
   test("a bad key fails with a stated fix naming the key", async () => {
