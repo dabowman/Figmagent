@@ -318,6 +318,22 @@ If the MCP provides batch or composite tools (e.g., creating a frame with auto l
 
 When the user asks for a complex design, ask for screenshots, design specs, or reference components if the context is unclear. Don't guess at spacing, colors, or typography — ask.
 
+### Design-to-Code: Read a Figma Component, Build It in Code
+
+When the task is to implement an existing Figma component in code (not edit the canvas), inspect read-only and translate — don't over-fetch:
+
+1. **Locate** — `get_selection` (plugin transport) or read the node ID from the user's link. On the **remote transport** there's no live selection, so use the link's node ID.
+2. **Orient** — `read`/`get` with `detail: structure, depth: 2–3` first (cheap, ~5 tokens/node) to understand the tree before pulling heavy detail.
+3. **Drill in** — `read`/`get` with `detail: full` only on the specific variants/nodes you'll build (e.g. `Spacing=Default`, `Spacing=Condensed`), not the whole COMPONENT_SET.
+4. **Visual checkpoint** — `screenshot`/`export_node_as_image` for a reference image when layout/visual fidelity matters.
+5. **Translate, preserving design-system tokens** — map Figma values to existing code tokens (e.g. `radius-s` → `--wpds-border-radius-sm`) rather than hardcoding pixels/colors lifted from the design.
+6. **Verify the result** — screenshot the built code (Playwright, Storybook, the running app) and compare against the design.
+
+This read-only flow is typically 3–6 Figma calls total — far cheaper than canvas building. Two access notes:
+
+- **View-only files on the remote transport:** `read` requires *editor* access there and fails with "you don't have edit access to this file" on view-only files. Fall back to the official `figma` MCP (`get_metadata` / `get_design_context`), which reads view-only files, or switch to the plugin transport.
+- **First call on remote:** call `use_file` (URL/fileKey) before the first `read` — the remote transport has no auto-selected file.
+
 ---
 
 ## Reference Files
