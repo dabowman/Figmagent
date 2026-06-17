@@ -15,23 +15,32 @@ Returns:
 Use this to discover the design system before applying styles/tokens with the edit tool.
 Works on any Figma plan — no Enterprise required.
 
-For large design systems, use filtering params to reduce output:
+For large design systems (88K+ chars is common), FILTER instead of raising maxOutputChars — a big design system overflows the infra dump limit too. Filtering params:
 - collection: filter variables to specific collection(s) by name (ignored when includeVariables is false)
+- namePattern: regex matched (case-insensitive) against variable AND style names — e.g. "^font/" for font tokens, "primary" for anything containing "primary". Note: unlike grep's name search (case-SENSITIVE), this is case-INSENSITIVE; an invalid regex errors here rather than falling back to a literal substring match.
 - styleType: filter styles to specific type(s): "colors", "texts", "effects", "grids"
 - includeVariables/includeStyles: skip entire sections (omitted keys are absent from the response, not null)
-- includeScopes: include each variable's scopes array (e.g. ["TEXT_FILL","STROKE_COLOR"]) to verify what update_variables set`,
+- includeScopes: include each variable's scopes array (e.g. ["TEXT_FILL","STROKE_COLOR"]) to verify what update_variables set
+
+A truncated response lists the available collection names so you can pick one in a single follow-up call.`,
   {
     maxOutputChars: z.coerce
       .number()
       .int()
       .min(1000)
       .optional()
-      .describe("Max response size in characters. Default: 30000. Raise for large design systems."),
+      .describe("Max response size in characters. Default: 30000. For large design systems, FILTER instead of raising this."),
     collection: z
       .union([z.string().min(1), z.array(z.string().min(1))])
       .optional()
       .describe(
         "Filter variables to specific collection name(s). String or array of strings. Ignored when includeVariables is false.",
+      ),
+    namePattern: z
+      .string()
+      .optional()
+      .describe(
+        'Regex (case-INSENSITIVE — differs from grep, which is case-sensitive) matched against variable and style names. E.g. "^font/" for font tokens, "primary" for names containing "primary". Invalid regex errors (with a fix). Combines with collection/styleType.',
       ),
     styleType: z
       .union([
@@ -60,6 +69,7 @@ For large design systems, use filtering params to reduce output:
   async (params: {
     maxOutputChars?: number;
     collection?: string | string[];
+    namePattern?: string;
     styleType?: string | string[];
     includeVariables?: boolean;
     includeStyles?: boolean;
@@ -68,19 +78,35 @@ For large design systems, use filtering params to reduce output:
     try {
       const filterParams: Record<string, unknown> = {};
       if (params.collection !== undefined) filterParams.collection = params.collection;
+      if (params.namePattern !== undefined) filterParams.namePattern = params.namePattern;
       if (params.styleType !== undefined) filterParams.styleType = params.styleType;
       if (params.includeVariables !== undefined) filterParams.includeVariables = params.includeVariables;
       if (params.includeStyles !== undefined) filterParams.includeStyles = params.includeStyles;
       if (params.includeScopes !== undefined) filterParams.includeScopes = params.includeScopes;
       const result = await sendCommandToFigma("get_design_system", filterParams);
+
+      // The plugin always returns a top-level `collections` array of every
+      // variable collection name. Surface it in the truncation message so a
+      // single filtered follow-up call suffices (issue #44).
+      const collectionNames =
+        result && typeof result === "object" && Array.isArray((result as { collections?: unknown }).collections)
+          ? ((result as { collections: unknown[] }).collections.filter((c) => typeof c === "string") as string[])
+          : [];
+      const collectionsHint =
+        collectionNames.length > 0
+          ? `  • Available collections: ${JSON.stringify(collectionNames)} — pass one to the \`collection\` param`
+          : "  • Use `collection` param to filter variables to specific collection(s)";
+
       const jsonText = JSON.stringify(result);
       const guarded = guardOutput(jsonText, {
         maxChars: params.maxOutputChars,
         metaExtractor: extractJsonSummary,
         toolName: "get_design_system",
+        filterInsteadOfRaising: true,
         narrowingHints: [
           "  • This file has a large design system",
-          "  • Use `collection` param to filter variables to specific collection(s)",
+          collectionsHint,
+          "  • Use `namePattern` (regex) to filter variables/styles by name, e.g. namePattern: \"^font/\"",
           "  • Use `styleType` param to filter styles to specific type(s)",
           "  • Use `includeVariables: false` or `includeStyles: false` to skip sections",
           "  • Use grep() to locate specific tokens by name or usage",

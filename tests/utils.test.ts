@@ -65,6 +65,20 @@ describe("guardOutput", () => {
     expect(result.text).toContain("200000");
     expect(result.text).not.toContain("251000");
   });
+
+  test("filterInsteadOfRaising recommends filtering but keeps maxOutputChars as an escape hatch (issue #44)", () => {
+    const text = "x".repeat(50000);
+    const result = guardOutput(text, {
+      toolName: "get_design_system",
+      maxChars: 1000,
+      filterInsteadOfRaising: true,
+    });
+    expect(result.truncated).toBe(true);
+    // Recommends filtering first…
+    expect(result.text).toContain("Prefer filtering");
+    // …but still offers maxOutputChars (it works for moderate overflows like this 50K one).
+    expect(result.text).toContain("maxOutputChars: 51000");
+  });
 });
 
 // ─── extractYamlMeta ─────────────────────────────────────────────────────────

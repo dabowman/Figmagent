@@ -303,7 +303,9 @@ export async function getLocalComponents() {
 
 // Combined design system discovery — returns styles + variables in one call
 // Supports filtering: collection (string|string[]), styleType (string|string[]),
-// includeVariables (bool), includeStyles (bool)
+// namePattern (regex on variable/style names), includeVariables (bool), includeStyles (bool).
+// Always returns a top-level `collections` array of every variable collection name
+// (cheap — names are short) so the MCP server can list them when output is truncated.
 export async function getDesignSystem(params) {
   const includeVariables = !(params && params.includeVariables === false);
   const includeStyles = !(params && params.includeStyles === false);
@@ -316,10 +318,24 @@ export async function getDesignSystem(params) {
 
   const [styles, variables] = await Promise.all(promises);
 
+  // Compile namePattern once — applied to both variable and per-style names.
+  let nameRe = null;
+  if (params && params.namePattern) {
+    try {
+      nameRe = new RegExp(params.namePattern, "i");
+    } catch (e) {
+      fail(
+        'namePattern "' + params.namePattern + '" is not a valid regular expression: ' + e.message,
+        'Pass a valid JavaScript regex string (e.g. namePattern: "^font/" for tokens whose name starts with font/).',
+      );
+    }
+  }
+
   const result = {};
 
-  // Filter styles by styleType if provided
+  // Filter styles by styleType (group) then namePattern (per-style name).
   if (styles) {
+    let stylesObj = styles;
     if (params && params.styleType) {
       const types = Array.isArray(params.styleType) ? params.styleType : [params.styleType];
       const filtered = {};
@@ -329,14 +345,32 @@ export async function getDesignSystem(params) {
           filtered[t] = styles[t];
         }
       }
-      result.styles = filtered;
-    } else {
-      result.styles = styles;
+      stylesObj = filtered;
     }
+    if (nameRe) {
+      const byName = {};
+      const groups = Object.keys(stylesObj);
+      for (let g = 0; g < groups.length; g++) {
+        const group = groups[g];
+        const arr = stylesObj[group];
+        if (Array.isArray(arr)) {
+          const kept = [];
+          for (let i = 0; i < arr.length; i++) {
+            if (arr[i] && nameRe.test(prop(arr[i], "name") || "")) kept.push(arr[i]);
+          }
+          byName[group] = kept;
+        } else {
+          byName[group] = arr;
+        }
+      }
+      stylesObj = byName;
+    }
+    result.styles = stylesObj;
   }
 
-  // Filter variables by collection name if provided
+  // Filter variables by collection name then namePattern (per-variable name).
   if (variables) {
+    let varList = variables;
     if (params && params.collection) {
       const names = Array.isArray(params.collection) ? params.collection : [params.collection];
       const namesLower = [];
@@ -344,15 +378,42 @@ export async function getDesignSystem(params) {
         namesLower.push(names[i].toLowerCase());
       }
       const filtered = [];
-      for (let i = 0; i < variables.length; i++) {
-        if (namesLower.indexOf(variables[i].name.toLowerCase()) !== -1) {
-          filtered.push(variables[i]);
+      for (let i = 0; i < varList.length; i++) {
+        if (namesLower.indexOf(varList[i].name.toLowerCase()) !== -1) {
+          filtered.push(varList[i]);
         }
       }
-      result.variables = filtered;
-    } else {
-      result.variables = variables;
+      varList = filtered;
     }
+    if (nameRe) {
+      const filtered = [];
+      for (let i = 0; i < varList.length; i++) {
+        const coll = Object.assign({}, varList[i]);
+        const keptVars = [];
+        const vars = coll.variables || [];
+        for (let j = 0; j < vars.length; j++) {
+          if (nameRe.test(vars[j].name || "")) keptVars.push(vars[j]);
+        }
+        coll.variables = keptVars;
+        coll.variableCount = keptVars.length;
+        // Drop collections with no matches — keeping empty shells defeats the
+        // output reduction this filter exists for. The top-level `collections`
+        // array already advertises every collection name (issue #28/#44).
+        if (keptVars.length > 0) filtered.push(coll);
+      }
+      varList = filtered;
+    }
+    result.variables = varList;
+  }
+
+  // Always surface the full set of collection names so a truncated response
+  // can tell the agent exactly what to pass to `collection` (issue #44).
+  if (variables) {
+    const collNames = [];
+    for (let i = 0; i < variables.length; i++) {
+      collNames.push(variables[i].name);
+    }
+    result.collections = collNames;
   }
 
   return result;
