@@ -399,8 +399,9 @@ export function checkColorProperty(node, propName, spec, indexes, nodeContext) {
   // Guard: a node may have no paints, or paints may be figma.mixed (a Symbol —
   // common on root frames / sections / mixed-fill nodes). Indexing a Symbol
   // yields undefined, which then crashes on `paint.type` ("cannot read property
-  // 'type' of undefined"). Bail out cleanly instead of dereferencing.
-  if (!paints || typeof paints === "symbol" || !Array.isArray(paints) || paints.length === 0) return null;
+  // 'type' of undefined"). `!Array.isArray(paints)` rejects null/undefined and
+  // the figma.mixed Symbol alike (neither is an array), so it covers issue #62.
+  if (!Array.isArray(paints) || paints.length === 0) return null;
 
   const paint = paints[0];
   if (!paint || typeof paint !== "object") return null;

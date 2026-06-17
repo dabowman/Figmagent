@@ -85,9 +85,16 @@ describe("matchVariable", () => {
 });
 
 // Issue #62: lint_design crashed with "cannot read property 'type' of undefined"
-// on root frames / pages / sections whose fills are gradients or figma.mixed.
-// checkColorProperty must tolerate every non-SOLID paint shape without throwing.
-describe("checkColorProperty (issue #62 — gradient / mixed / undefined fills)", () => {
+// on root frames / pages / sections whose fills are `figma.mixed` (a Symbol).
+// Indexing a Symbol yields `undefined`, and the old code then read `.type` off it.
+//
+// NOTE on coverage: the GRADIENT_LINEAR / IMAGE tests below do NOT reproduce #62 —
+// those paints carry a `.type`, so the pre-fix `paint.type !== "SOLID"` check
+// already returned null for them. They guard the SOLID-only contract, not the
+// crash. The genuine #62 regression guard is the `figma.mixed (a Symbol)` test,
+// which asserts both that checkColorProperty no longer throws AND that the
+// pre-fix idiom (indexing the Symbol, then reading `.type`) is what crashed.
+describe("checkColorProperty (issue #62 — figma.mixed Symbol fills; also non-SOLID paints)", () => {
   const fillsSpec = { type: "color", field: "fills" };
   const vars = indexes([colorEntry({ r: 0.96, g: 0.96, b: 0.98 })]);
   const ctx = { nodeType: "FRAME", threshold: 5.0 };
@@ -109,10 +116,15 @@ describe("checkColorProperty (issue #62 — gradient / mixed / undefined fills)"
     expect(checkColorProperty(node, "fills", fillsSpec, vars, ctx)).toBeNull();
   });
 
-  test("figma.mixed fills (a Symbol) is skipped, not indexed into", () => {
+  test("figma.mixed fills (a Symbol) is skipped, not indexed into — the genuine #62 guard", () => {
     const node = { type: "FRAME", fills: Symbol("figma.mixed") };
     expect(() => checkColorProperty(node, "fills", fillsSpec, vars, ctx)).not.toThrow();
     expect(checkColorProperty(node, "fills", fillsSpec, vars, ctx)).toBeNull();
+    // Pin the exact pre-fix crash this guard prevents: indexing the Symbol gives
+    // `undefined`, and reading `.type` off it throws. If a future refactor drops
+    // the guard and re-indexes, the not-throw assertion above starts failing.
+    const paints = node.fills as unknown as { type: string }[];
+    expect(() => paints[0].type).toThrow();
   });
 
   test("missing fills field returns null", () => {
