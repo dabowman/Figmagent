@@ -18,64 +18,64 @@ Run each prompt from a clean Figma file (or a designated test page). Record: too
 > Create a frame called "Card" that is 320×240px on the current page.
 
 **Category:** Node creation
-**Key tools:** `create`
+**Key tools:** `write`
 **Pass criteria:** Frame exists with correct name and dimensions.
 
 ### 1.2 Create text
 > Add a text node inside the "Card" frame that says "Hello World" in 16px font.
 
 **Category:** Text creation
-**Key tools:** `create`
+**Key tools:** `write`
 **Pass criteria:** Text node is a child of Card, content and size correct.
 
 ### 1.3 Set fill color
 > Set the Card frame's background to #2563EB with 100% opacity.
 
 **Category:** Styling
-**Key tools:** `apply`
+**Key tools:** `edit`
 **Pass criteria:** Fill color matches hex value. Verify alpha=1.
 
 ### 1.4 Set corner radius
 > Round the corners of the Card frame to 12px.
 
 **Category:** Styling
-**Key tools:** `apply`
+**Key tools:** `edit`
 **Pass criteria:** All four corners = 12. Agent passes number, not string.
 
 ### 1.5 Get node info
 > Inspect the Card frame and tell me its current properties — dimensions, fill, corner radius, and children.
 
 **Category:** Inspection
-**Key tools:** `get`
+**Key tools:** `read`
 **Pass criteria:** Agent returns accurate properties in one call (detail="layout", depth ≥ 2). Does NOT make multiple escalating-detail calls.
 
 ### 1.6 Clone a node
 > Duplicate the Card frame. Name the copy "Card Copy".
 
 **Category:** Node manipulation
-**Key tools:** `clone_node`, `rename_node`
+**Key tools:** `write` (fromNodeId), `edit` (name)
 **Pass criteria:** Clone exists as sibling with correct name.
 
 ### 1.7 Delete nodes
 > Delete both the Card and Card Copy frames.
 
 **Category:** Node manipulation
-**Key tools:** `delete_multiple_nodes`
+**Key tools:** `edit` (delete ops)
 **Pass criteria:** Both nodes removed in a single batch call, not two individual deletes.
 
 ### 1.8 Export a node
 > Export the Card frame as a PNG at 2x scale.
 
 **Category:** Export
-**Key tools:** `export_node_as_image`
+**Key tools:** `screenshot`
 **Pass criteria:** Export completes without error. Agent specifies format="PNG" and scale=2. Returns image data or file path.
 
 ### 1.9 Search by name
 > Find all nodes named "Card" on the current page.
 
 **Category:** Search
-**Key tools:** `find`
-**Pass criteria:** Agent uses `find` with `name: "Card"` criteria. Returns grouped results. Does NOT manually traverse the tree.
+**Key tools:** `grep`
+**Pass criteria:** Agent uses `grep` with `name: "Card"` criteria. Returns grouped results. Does NOT manually traverse the tree.
 
 ### 1.10 Focus viewport
 > Focus the viewport on the Card frame so I can see it.
@@ -92,35 +92,35 @@ Run each prompt from a clean Figma file (or a designated test page). Record: too
 > Create a vertical auto-layout frame called "Stack" with 16px gap, 24px padding on all sides, and hug contents on both axes.
 
 **Category:** Layout
-**Key tools:** `create` (with layout properties), optionally `apply` for sizing
+**Key tools:** `write` (with layout properties), optionally `edit` for sizing
 **Pass criteria:** layoutMode=VERTICAL, itemSpacing=16, padding=24, sizing=HUG on both axes. Ideally ≤ 2 tool calls.
 
 ### 2.2 Text with style
 > Create a text node that says "Section Title" and apply the text style "Heading MD" to it.
 
 **Category:** Text + styling
-**Key tools:** `create`, `get_design_system`, `apply` (with `textStyleId`)
+**Key tools:** `write`, `get_design_system`, `edit` (with `textStyleId`)
 **Pass criteria:** Text exists, style applied. Agent discovers styleId via `get_design_system` without excessive searching.
 
 ### 2.3 Fill + stroke + radius
 > Create a 48×48 frame called "Avatar". Give it a circular shape (corner radius 24), a #E5E7EB fill, and a 2px #D1D5DB stroke.
 
 **Category:** Styling composition
-**Key tools:** `create`, `apply` (fillColor + strokeColor + strokeWeight + cornerRadius)
-**Pass criteria:** All three visual properties applied. No type-mismatch errors (numbers not strings). Ideally `create` + one `apply` call.
+**Key tools:** `write`, `edit` (fillColor + strokeColor + strokeWeight + cornerRadius)
+**Pass criteria:** All three visual properties applied. No type-mismatch errors (numbers not strings). Ideally `write` + one `edit` call.
 
 ### 2.4 Bind a variable
 > Bind the fill color of the Avatar frame to the design token variable `colors/neutral/200`.
 
 **Category:** Variables
-**Key tools:** `get_design_system`, `apply` (with `variables` field)
-**Pass criteria:** Variable resolved by name, bound to correct field via `apply`. Agent doesn't hardcode a VariableID.
+**Key tools:** `get_design_system`, `edit` (with `variables` field)
+**Pass criteria:** Variable resolved by name, bound to correct field via `edit`. Agent doesn't hardcode a VariableID.
 
 ### 2.5 Swap component variant
 > I have a Button component set with variants Size=SM, MD, LG. Change the selected instance from MD to LG.
 
 **Category:** Components
-**Key tools:** `get_selection`, `apply` (with `swapVariantId`)
+**Key tools:** `get_selection`, `edit` (with `swapVariantId`)
 **Pass criteria:** Variant swapped correctly. Agent verifies it's an instance (not the main component) first.
 
 ### 2.6 Annotate a node
@@ -134,28 +134,28 @@ Run each prompt from a clean Figma file (or a designated test page). Record: too
 > Create a "Badge" component (not just a frame) with a text child that says "New" in 12px bold white text, with a #2563EB background fill, 4px vertical and 8px horizontal padding, and 9999px corner radius (pill shape).
 
 **Category:** Component creation
-**Key tools:** `create` (with `type: "COMPONENT"` and children)
-**Pass criteria:** Node type is COMPONENT (not FRAME). Text child exists with correct content. Styling applied. Ideally a single `create` call with nested tree.
+**Key tools:** `write` (with `type: "COMPONENT"` and children)
+**Pass criteria:** Node type is COMPONENT (not FRAME). Text child exists with correct content. Styling applied. Ideally a single `write` call with nested tree.
 
 ### 2.8 Discover the design system
 > Tell me what design tokens and styles are available in this file — how many color variables, text styles, and effect styles exist? List the variable collections and their modes.
 
 **Category:** Design system discovery
 **Key tools:** `get_design_system`
-**Pass criteria:** Agent calls `get_design_system` once and reports accurate counts. Does NOT call `get_styles` and `get_local_variables` separately.
+**Pass criteria:** Agent calls `get_design_system` once and reports accurate counts. Does NOT make separate style and variable discovery calls.
 
 ### 2.9 Clone and reparent
 > Move the "Title" text node from inside the "Card" frame into a different frame called "Header".
 
 **Category:** Reparenting
-**Key tools:** `clone_and_modify` (with `parentId`), `delete_node`
-**Pass criteria:** Agent uses the clone-and-modify + delete pattern (since `move_node` only changes x/y, not hierarchy). Text node ends up as child of Header with properties preserved.
+**Key tools:** `write` (fromNodeId + parentId), `edit` (delete: true)
+**Pass criteria:** Agent uses the write(fromNodeId, parentId) + edit(delete: true) pattern (since edit's x/y only changes coordinates, not hierarchy). Text node ends up as child of Header with properties preserved.
 
 ### 2.10 Apply effect style
 > Apply the "Shadow/MD" effect style to the Card frame.
 
 **Category:** Effect styles
-**Key tools:** `get_design_system`, `apply` (with `effectStyleId`)
+**Key tools:** `get_design_system`, `edit` (with `effectStyleId`)
 **Pass criteria:** Effect style discovered and applied. Agent uses `get_design_system` to find the style ID, not hardcoded.
 
 ---
@@ -172,21 +172,21 @@ Run each prompt from a clean Figma file (or a designated test page). Record: too
 > Make it hug height, fixed 320px width.
 
 **Category:** Component construction
-**Key tools:** `create` (nested tree with `type: "COMPONENT"`), `get_design_system`, `apply` (textStyleId + cornerRadius)
+**Key tools:** `write` (nested tree with `type: "COMPONENT"`), `get_design_system`, `edit` (textStyleId + cornerRadius)
 **Pass criteria:** Structurally correct component. Measure: total tool calls (target: ≤ 5 with batch tools).
 
 ### 3.2 Create variant set
 > Take the Card component and create a variant set with two variants: Default and Hover. The Hover variant should have a subtle drop shadow and a slightly darker background (#F9FAFB → #F3F4F6).
 
 **Category:** Components + variants
-**Key tools:** `clone_node`, `apply` (fillColor + effects), `combine_as_variants`
+**Key tools:** `write` (fromNodeId), `edit` (fillColor + effects), `combine_as_variants`
 **Pass criteria:** ComponentSet created with two named variants. Hover has correct shadow + fill delta.
 
 ### 3.3 Batch text content update
 > I have a table component with 6 rows. Update all the "Cell 1" text nodes to show: "Alice", "Bob", "Carol", "Dave", "Eve", "Frank".
 
 **Category:** Batch text
-**Key tools:** `find` (text criteria) or `scan_text_nodes`, `set_multiple_text_contents`
+**Key tools:** `grep` (text criteria), `edit` (characters ops)
 **Pass criteria:** All 6 updated in minimal calls. Agent uses find/scan to locate nodes, then batch-sets. Target: ≤ 3 tool calls.
 
 ### 3.4 Bind variables across a component
@@ -198,7 +198,7 @@ Run each prompt from a clean Figma file (or a designated test page). Record: too
 > - Outer frame padding → `spacing/md`
 
 **Category:** Variable binding (batch)
-**Key tools:** `get` (inspect component), `get_design_system`, `apply` (with `variables` on multiple nodes)
+**Key tools:** `read` (inspect component), `get_design_system`, `edit` (with `variables` on multiple nodes)
 **Pass criteria:** All 5 bindings applied correctly. Agent binds on the COMPONENT, not instances. Measure call count — target: ≤ 4 tool calls.
 
 ### 3.5 Clone-and-modify workflow
@@ -208,7 +208,7 @@ Run each prompt from a clean Figma file (or a designated test page). Record: too
 > - Disabled: set opacity to 0.5 on the outer frame
 
 **Category:** Variant creation via cloning
-**Key tools:** `clone_node`, `rename_node`, `apply` (fillColor, strokeColor, strokeWeight, opacity, variables)
+**Key tools:** `write` (fromNodeId), `edit` (name, fillColor, strokeColor, strokeWeight, opacity, variables)
 **Pass criteria:** Three new variants with correct modifications. Agent clones rather than building from scratch.
 
 ### 3.6 Create design tokens
@@ -226,7 +226,7 @@ Run each prompt from a clean Figma file (or a designated test page). Record: too
 > Run a design lint on the selected frame. Report which properties are hardcoded (not bound to design tokens). Then auto-fix any exact matches.
 
 **Category:** Design linting
-**Key tools:** `lint_design` (first without autoFix to report), `lint_design` (with `autoFix: true`)
+**Key tools:** `lint` (first without autoFix to report), `lint` (with `autoFix: true`)
 **Pass criteria:** Agent reports findings with severities (exact_match, near_match, no_match, ambiguous). Auto-fix binds exact matches only. Two calls total.
 
 ### 3.8 Batch annotate
@@ -238,7 +238,7 @@ Run each prompt from a clean Figma file (or a designated test page). Record: too
 > - The CTA button: "interaction" category, label "Primary action"
 
 **Category:** Batch annotations
-**Key tools:** `get` (inspect structure), `set_multiple_annotations`
+**Key tools:** `read` (inspect structure), `set_multiple_annotations`
 **Pass criteria:** All 5 annotations set in a single batch call. Agent inspects the component first to get node IDs. Target: ≤ 3 tool calls.
 
 ### 3.9 Component property definitions
@@ -248,7 +248,7 @@ Run each prompt from a clean Figma file (or a designated test page). Record: too
 > - An INSTANCE_SWAP property "Icon" (default: the current icon instance)
 
 **Category:** Component properties
-**Key tools:** `get` (inspect component), `component_properties` (batch add)
+**Key tools:** `read` (inspect component), `component_properties` (batch add)
 **Pass criteria:** All 3 properties added in a single `component_properties` call. Agent uses correct types (BOOLEAN default is `true` not `"true"`).
 
 ### 3.10 Transfer instance overrides
@@ -302,14 +302,14 @@ Run each prompt from a clean Figma file (or a designated test page). Record: too
 > Wrap each group in an auto-layout frame without changing the visual output.
 
 **Category:** Restructuring
-**Key tools:** `get` (inspect structure), `create`, `clone_and_modify` (reparent), `delete_multiple_nodes`, `reorder_children`
+**Key tools:** `read` (inspect structure), `write` (incl. fromNodeId reparent), `edit` (delete + index ops)
 **Pass criteria:** Three new wrapper frames, children moved correctly, no visual regression. Tests agent's ability to inspect then restructure.
 
 ### 4.4 Import and compose library components
 > From the team library, import the "Button/Primary/MD" and "Avatar" components. Create a "UserAction" component that places an Avatar on the left and a Button on the right, with 12px gap and centered vertical alignment.
 
 **Category:** Remote library + composition
-**Key tools:** `search_library_components`, `import_library_component`, `create` (type COMPONENT with INSTANCE children)
+**Key tools:** `search_library_components`, `import_library_component`, `write` (type COMPONENT with INSTANCE children)
 **Pass criteria:** Library components imported and instantiated. Composition frame has correct layout. Tests the full remote-library pipeline.
 
 ### 4.5 Responsive layout with constraints
@@ -326,14 +326,14 @@ Run each prompt from a clean Figma file (or a designated test page). Record: too
 > Inspect all text nodes in the selected frame. Report which ones are missing a text style, and which are using a font size that doesn't match any defined text style. Then fix them by applying the closest matching text style.
 
 **Category:** Inspection + analysis + batch fix
-**Key tools:** `find` (type: TEXT) or `scan_text_nodes`, `get_design_system`, `apply` (with `textStyleId`)
+**Key tools:** `grep` (type: TEXT), `get_design_system`, `edit` (with `textStyleId`)
 **Pass criteria:** Agent reports findings accurately, then applies fixes. Tests analytical reasoning + batch operations.
 
 ### 4.7 Skeleton loading state
 > Take the selected "Card" component and create a "Loading" variant. Replace all text nodes with skeleton placeholder rectangles (rounded, light gray fill, matching the approximate width and height of each text node). Replace the image placeholder with a skeleton rectangle too.
 
 **Category:** State variant creation
-**Key tools:** `clone_node`, `get` (inspect structure at detail="layout"), `delete_multiple_nodes`, `create` (skeleton shapes), `apply`
+**Key tools:** `write` (fromNodeId), `read` (inspect structure at detail="layout"), `edit` (delete ops), `write` (skeleton shapes), `edit`
 **Pass criteria:** Loading variant has skeleton shapes matching the layout positions of the original content. Tests nested tree creation for repetitive skeleton shapes.
 
 ### 4.8 Build a design token system
@@ -344,22 +344,22 @@ Run each prompt from a clean Figma file (or a designated test page). Record: too
 > 4. Apply the "Primary" paint style to an existing button frame's fill
 
 **Category:** Full design token pipeline
-**Key tools:** `create_variables` (×2), `create_styles` (with variable bindings), `apply`
+**Key tools:** `create_variables` (×2), `create_styles` (with variable bindings), `edit`
 **Pass criteria:** Two collections created with correct aliases. Paint styles created and bound to semantic tokens. Style applied to node. Tests the full token pipeline: primitives → semantics → styles → nodes.
 
 ### 4.9 Prototype flow visualization
 > Read the prototype reactions from all frames on the current page. Then create connector lines between frames that have navigation actions, so I can see the flow visually.
 
 **Category:** Prototyping + connections
-**Key tools:** `get_document_info`, `get_reactions`, `set_default_connector`, `create_connections`
+**Key tools:** `read` (document overview), `get_reactions`, `set_default_connector`, `create_connections`
 **Pass criteria:** Agent reads prototype reactions first, identifies navigation targets, then creates connectors. Does not guess at connections. Tests the reaction-to-connector workflow.
 
 ### 4.10 Document-wide design audit
 > Search the entire document (all pages) for all instances of the "Button" component. For each instance found, check whether its fill and text colors are bound to design token variables. Report a summary of which instances are fully tokenized vs. which have hardcoded values.
 
 **Category:** Cross-page search + lint
-**Key tools:** `find` (with `componentId`, `scope: "DOCUMENT"`), `lint_design` (on found instances)
-**Pass criteria:** Agent uses `find` with document scope to locate instances, then lints. Reports findings grouped by page. Does NOT manually traverse each page.
+**Key tools:** `grep` (with `componentId`, `scope: "DOCUMENT"`), `lint` (on found instances)
+**Pass criteria:** Agent uses `grep` with document scope to locate instances, then lints. Reports findings grouped by page. Does NOT manually traverse each page.
 
 ### 4.11 Component with full property system
 > Build a "Button" component with the complete property system:
@@ -370,7 +370,7 @@ Run each prompt from a clean Figma file (or a designated test page). Record: too
 > - Use auto-layout on all variants with appropriate sizing
 
 **Category:** Full component property system
-**Key tools:** `create` (COMPONENT type), `clone_node`, `combine_as_variants`, `component_properties`, `apply`
+**Key tools:** `write` (COMPONENT type, fromNodeId clones), `combine_as_variants`, `component_properties`, `edit`
 **Pass criteria:** Component set with 6 variants (3 sizes × 2 styles). BOOLEAN and TEXT properties defined. All variants have correct auto-layout. Tests the complete component authoring workflow.
 
 ---
@@ -387,7 +387,7 @@ Run each prompt from a clean Figma file (or a designated test page). Record: too
 > (Disconnect the Figma plugin mid-task)
 > Continue building the component.
 
-**Pass criteria:** Agent detects timeout within 2 failed calls, calls `join_channel` to reconnect, then retries. Does not make 5+ timeout calls.
+**Pass criteria:** Agent detects timeout within 2 failed calls, calls `use_file` to reconnect, then retries. Does not make 5+ timeout calls.
 
 ### E3 — Oversized response handling
 > Run `get_design_system` on a file with 500+ variables.
@@ -414,14 +414,14 @@ Run each prompt from a clean Figma file (or a designated test page). Record: too
 > (Open two Figma files with the plugin running in both)
 > Create a frame in the "Design System" file.
 
-**Pass criteria:** Agent detects multiple channels, asks user to confirm or calls `join_channel` with the correct file name. Does not blindly operate on whichever channel auto-joined.
+**Pass criteria:** Agent detects multiple channels, asks user to confirm or calls `use_file` with the correct file name. Does not blindly operate on whichever channel auto-joined.
 
 ### E8 — Empty search results
 > Find all instances of a component called "NonExistentComponent_XYZ" in this file.
 
-**Pass criteria:** Agent uses `find`, gets zero results, and reports "none found" clearly. Does NOT retry with different search strategies or make 3+ attempts to find something that doesn't exist.
+**Pass criteria:** Agent uses `grep`, gets zero results, and reports "none found" clearly. Does NOT retry with different search strategies or make 3+ attempts to find something that doesn't exist.
 
-### E9 — Output budget overflow on `get`
+### E9 — Output budget overflow on `read`
 > Inspect the top-level page frame at detail="full" with depth=10.
 
 **Pass criteria:** Agent either starts with `detail="structure"` + low depth (correct behavior), or if it gets a budget overflow error, narrows the query. Does NOT repeat the same over-broad call.

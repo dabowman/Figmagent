@@ -1,9 +1,54 @@
 // Apply command: unified property application for existing nodes.
-// Handles direct values, layout properties, variable bindings, text styles,
-// and effect styles in a single call. Accepts a flat list or nested tree of node references.
+// Handles direct values, layout properties, rename/move/reorder, text content,
+// variable bindings, text styles, effect styles, and deletion in a single call.
+// Accepts a flat list or nested tree of node references.
 
-import { toNumber, sendProgressUpdate } from "../helpers.js";
+import { toNumber, sendProgressUpdate, findNodeByIdInTree, prop, fail } from "../helpers.js";
+import { setCharacters } from "../setcharacters.js";
 import { FIELD_MAP } from "./styles.js";
+import { runPostWriteAssertions } from "../assertions.js";
+import { miniLint, getCompatibleScopes, isScopeCompatible } from "./lint.js";
+
+// Maps variables-map field names to lint property names for scope validation.
+// Fields without a lint scope mapping (width, visible, characters, ...) skip the check.
+const SCOPE_CHECK_FIELDS = {
+  fill: "fills",
+  fills: "fills",
+  stroke: "strokes",
+  strokes: "strokes",
+  opacity: "opacity",
+  cornerRadius: "cornerRadius",
+  topLeftRadius: "cornerRadius",
+  topRightRadius: "cornerRadius",
+  bottomLeftRadius: "cornerRadius",
+  bottomRightRadius: "cornerRadius",
+  paddingTop: "paddingTop",
+  paddingRight: "paddingRight",
+  paddingBottom: "paddingBottom",
+  paddingLeft: "paddingLeft",
+  itemSpacing: "itemSpacing",
+  counterAxisSpacing: "counterAxisSpacing",
+  fontSize: "fontSize",
+  fontFamily: "fontFamily",
+};
+
+// Walk parents to detect nodes living inside an INSTANCE (their structure is
+// owned by the main component — structural mutations fail or are reverted).
+function isInsideInstance(node) {
+  let parent = prop(node, "parent");
+  while (parent) {
+    if (parent.type === "INSTANCE") return true;
+    parent = prop(parent, "parent");
+  }
+  return false;
+}
+
+function parentHasAutoLayout(node) {
+  const parent = prop(node, "parent");
+  if (!parent) return false;
+  const layoutMode = prop(parent, "layoutMode");
+  return !!layoutMode && layoutMode !== "NONE";
+}
 
 // Flatten a potentially nested node list into a flat array of operations
 function flattenNodes(nodeList) {
@@ -40,18 +85,55 @@ function applyStrokeColor(node, colorSpec) {
   ];
 }
 
-async function bindVariableToNode(node, field, variableId) {
+// Binds a variable to a node field. Returns a warning object (and skips the
+// bind) when the variable's declared scopes don't cover this field on this
+// node type — Figma's API would accept the bind silently, so we surface it.
+export async function bindVariableToNode(node, field, variableId) {
   const variable = await figma.variables.getVariableByIdAsync(variableId);
-  if (!variable) throw new Error("Variable not found: " + variableId);
+  if (!variable)
+    fail(
+      "Variable not found: " + variableId,
+      "list variables with get_design_system and pass the full VariableID:xxx id (or the short v1/v2 id from a read result's defs)",
+    );
 
   const figmaField = FIELD_MAP[field];
   if (!figmaField) {
-    throw new Error("Unsupported variable field: " + field + ". Supported: " + Object.keys(FIELD_MAP).join(", "));
+    fail("Unsupported variable field: " + field, "use one of: " + Object.keys(FIELD_MAP).join(", "));
+  }
+
+  // Boundary validation: variable scope must cover this field on this node type
+  const lintProp = SCOPE_CHECK_FIELDS[field];
+  if (lintProp) {
+    const scopes = variable.scopes || [];
+    const requiredScopes = getCompatibleScopes(lintProp, node.type);
+    if (!isScopeCompatible(scopes, requiredScopes)) {
+      return {
+        nodeId: node.id,
+        check: "scope_mismatch",
+        message:
+          "Skipped binding " +
+          field +
+          " on " +
+          node.id +
+          " (" +
+          node.type +
+          "): variable " +
+          variable.name +
+          " has scopes [" +
+          scopes.join(", ") +
+          "], which don't cover this field (needs one of: " +
+          requiredScopes.join(", ") +
+          "). Fix: bind a variable scoped for this field, or widen the variable's scopes with update_variables.",
+      };
+    }
   }
 
   if (figmaField === "fills" || figmaField === "strokes") {
     if (!(figmaField in node)) {
-      throw new Error("Node does not support " + figmaField + ": " + node.id);
+      fail(
+        "Node does not support " + figmaField + ": " + node.id + " (type: " + node.type + ")",
+        "bind " + field + " on a node type that has " + figmaField + " (FRAME, RECTANGLE, TEXT, ...)",
+      );
     }
     let paints = JSON.parse(JSON.stringify(node[figmaField]));
     if (!paints || paints.length === 0) {
@@ -64,6 +146,7 @@ async function bindVariableToNode(node, field, variableId) {
   } else {
     node.setBoundVariable(figmaField, variable);
   }
+  return null;
 }
 
 async function applyTextStyle(node, styleId, styleCache) {
@@ -101,16 +184,120 @@ async function applyEffectStyle(node, styleId, styleCache) {
   await node.setEffectStyleIdAsync(styleId);
 }
 
-async function processNode(op, styleCache) {
-  const node = await figma.getNodeByIdAsync(op.nodeId);
-  if (!node) throw new Error("Node not found: " + op.nodeId);
+async function processNode(op, styleCache, ctx) {
+  const warnings = [];
+  let node = await figma.getNodeByIdAsync(op.nodeId);
+  if (!node) {
+    // Fallback for instance-internal paths (I<instance>;<node>) — same
+    // resolution chain commands/text.js uses for text overrides.
+    node = findNodeByIdInTree(op.nodeId);
+  }
+  if (!node)
+    fail(
+      "Node not found: " + op.nodeId,
+      "verify the ID with read or search with grep — it may have been deleted or belong to another page",
+    );
+
+  // ── Boundary validation (Phase 4.3): reject-or-warn BEFORE mutating ──────
+
+  // Structural mutations on instance children fail or revert — point at the main component.
+  if ((op.delete === true || op.index !== undefined) && isInsideInstance(node)) {
+    fail(
+      "Cannot " + (op.delete === true ? "delete" : "reorder") + " " + op.nodeId + " — it is inside an instance",
+      "edit the main component instead (read the instance to get its componentRef / main component id)",
+    );
+  }
+
+  // Text props on non-TEXT nodes are silently impossible — warn instead of absorbing.
+  if (node.type !== "TEXT") {
+    const TEXT_PROPS = [
+      "fontFamily",
+      "fontWeight",
+      "fontSize",
+      "fontColor",
+      "textAutoResize",
+      "textTruncation",
+      "maxLines",
+    ];
+    const requested = [];
+    for (let tp = 0; tp < TEXT_PROPS.length; tp++) {
+      if (op[TEXT_PROPS[tp]] !== undefined) requested.push(TEXT_PROPS[tp]);
+    }
+    if (requested.length > 0) {
+      warnings.push({
+        nodeId: op.nodeId,
+        check: "inapplicable_property",
+        message:
+          requested.join(", ") +
+          " ignored on " +
+          op.nodeId +
+          " — it is a " +
+          node.type +
+          ", not TEXT. Fix: target a TEXT node instead (grep with type: ['TEXT'] under " +
+          op.nodeId +
+          " to find one).",
+      });
+    }
+  }
+
+  // clipsContent only exists on frame-like nodes.
+  if (op.clipsContent !== undefined && !("clipsContent" in node)) {
+    warnings.push({
+      nodeId: op.nodeId,
+      check: "inapplicable_property",
+      message:
+        "clipsContent ignored on " +
+        op.nodeId +
+        " — " +
+        node.type +
+        " nodes don't clip. Fix: apply clipsContent to a FRAME or COMPONENT node.",
+    });
+  }
 
   // Phase 0: Component operations (swap variant, set exposed instance)
   if (op.swapVariantId) {
-    if (node.type !== "INSTANCE") throw new Error("swapVariantId requires an INSTANCE node: " + op.nodeId);
+    if (node.type !== "INSTANCE")
+      fail(
+        "swapVariantId requires an INSTANCE node: " + op.nodeId + " (type: " + node.type + ")",
+        "target an instance of the component set — find instances with grep ({ componentId: [...] })",
+      );
     const newVariant = await figma.getNodeByIdAsync(op.swapVariantId);
-    if (!newVariant) throw new Error("Variant component not found: " + op.swapVariantId);
-    if (newVariant.type !== "COMPONENT") throw new Error("Target is not a COMPONENT: " + op.swapVariantId);
+    if (!newVariant)
+      fail(
+        "Variant component not found: " + op.swapVariantId,
+        "read the instance's component set to list its variant ids",
+      );
+    if (newVariant.type !== "COMPONENT")
+      fail(
+        "Target is not a COMPONENT: " + op.swapVariantId + " (type: " + newVariant.type + ")",
+        newVariant.type === "COMPONENT_SET"
+          ? "pass the id of one variant inside the set (read " + op.swapVariantId + " to list them)"
+          : "pass a variant COMPONENT id from the instance's component set",
+      );
+    // Boundary validation: the target must be a sibling variant in the same set.
+    let mainComp = null;
+    try {
+      if (typeof node.getMainComponentAsync === "function") {
+        mainComp = await node.getMainComponentAsync();
+      }
+    } catch (_mcErr) {}
+    if (mainComp && mainComp.parent && mainComp.parent.type === "COMPONENT_SET") {
+      const targetParent = prop(newVariant, "parent");
+      if (!targetParent || targetParent.id !== mainComp.parent.id) {
+        fail(
+          "swapVariantId " +
+            op.swapVariantId +
+            " is not a sibling variant of instance " +
+            op.nodeId +
+            " — its component set is '" +
+            mainComp.parent.name +
+            "' (" +
+            mainComp.parent.id +
+            ")",
+          "pass a COMPONENT id from that set (read " + mainComp.parent.id + " to list its variants)",
+        );
+      }
+    }
     node.swapComponent(newVariant);
   }
 
@@ -123,6 +310,24 @@ async function processNode(op, styleCache) {
   if (op.layoutMode !== undefined && "layoutMode" in node) {
     node.layoutMode = op.layoutMode;
     if (op.layoutWrap !== undefined) node.layoutWrap = op.layoutWrap;
+  }
+
+  // Phase 1.5: Rename / move / reorder
+  if (op.name !== undefined) {
+    node.name = op.name;
+  }
+  if (op.x !== undefined && "x" in node) node.x = toNumber(op.x, 0);
+  if (op.y !== undefined && "y" in node) node.y = toNumber(op.y, 0);
+  if (op.index !== undefined) {
+    const parent = node.parent;
+    if (!parent || !("insertChild" in parent)) {
+      throw new Error("Cannot reorder node " + op.nodeId + ": parent does not support children");
+    }
+    let targetIndex = toNumber(op.index, 0);
+    if (targetIndex < 0) targetIndex = 0;
+    const maxIndex = parent.children.length - 1;
+    if (targetIndex > maxIndex) targetIndex = maxIndex;
+    parent.insertChild(targetIndex, node);
   }
 
   // Phase 2: Direct values
@@ -244,18 +449,62 @@ async function processNode(op, styleCache) {
   if (op.counterAxisSpacing !== undefined && "counterAxisSpacing" in node) {
     node.counterAxisSpacing = toNumber(op.counterAxisSpacing, 0);
   }
+  // FILL sizing requires an auto-layout parent — pre-check instead of letting
+  // Figma throw mid-op (warn + skip; the rest of the op still applies).
+  const fillBlocked =
+    (op.layoutSizingHorizontal === "FILL" || op.layoutSizingVertical === "FILL") && !parentHasAutoLayout(node);
+  if (fillBlocked) {
+    const blockedParent = prop(node, "parent");
+    const parentLabel = blockedParent ? blockedParent.id + ' ("' + blockedParent.name + '")' : "the parent";
+    warnings.push({
+      nodeId: op.nodeId,
+      check: "fill_not_applied",
+      message:
+        "FILL sizing on " +
+        op.nodeId +
+        " skipped — parent " +
+        parentLabel +
+        " has no auto-layout. Fix: edit the parent with layoutMode: 'HORIZONTAL' or 'VERTICAL' first, or give " +
+        op.nodeId +
+        " an explicit width/height.",
+    });
+  }
   if (op.layoutSizingHorizontal !== undefined && "layoutSizingHorizontal" in node) {
-    node.layoutSizingHorizontal = op.layoutSizingHorizontal;
+    if (!(op.layoutSizingHorizontal === "FILL" && fillBlocked)) {
+      node.layoutSizingHorizontal = op.layoutSizingHorizontal;
+      if (op.layoutSizingHorizontal === "FILL" && ctx) {
+        ctx.fillRequests.push({ id: node.id, horizontal: true, vertical: false });
+      }
+    }
   }
   if (op.layoutSizingVertical !== undefined && "layoutSizingVertical" in node) {
-    node.layoutSizingVertical = op.layoutSizingVertical;
+    if (!(op.layoutSizingVertical === "FILL" && fillBlocked)) {
+      node.layoutSizingVertical = op.layoutSizingVertical;
+      if (op.layoutSizingVertical === "FILL" && ctx) {
+        ctx.fillRequests.push({ id: node.id, horizontal: false, vertical: true });
+      }
+    }
   }
 
-  // Phase 3: Variable bindings (override direct values with token refs)
+  // Phase 2.8: Text content (font-safe replacement via setcharacters.js —
+  // handles mixed fonts, same path as the set_text_content command)
+  if (op.characters !== undefined) {
+    if (node.type !== "TEXT") {
+      fail(
+        "characters requires a TEXT node: " + op.nodeId + " (type: " + node.type + ")",
+        "target the TEXT child instead — find it with grep ({ type: ['TEXT'] }) under " + op.nodeId,
+      );
+    }
+    await setCharacters(node, op.characters);
+  }
+
+  // Phase 3: Variable bindings (override direct values with token refs).
+  // Scope mismatches come back as warnings (bind skipped, op continues).
   if (op.variables && typeof op.variables === "object") {
     const fields = Object.keys(op.variables);
     for (let i = 0; i < fields.length; i++) {
-      await bindVariableToNode(node, fields[i], op.variables[fields[i]]);
+      const bindWarning = await bindVariableToNode(node, fields[i], op.variables[fields[i]]);
+      if (bindWarning) warnings.push(bindWarning);
     }
   }
 
@@ -269,7 +518,76 @@ async function processNode(op, styleCache) {
     await applyEffectStyle(node, op.effectStyleId, styleCache);
   }
 
-  return { success: true, nodeId: op.nodeId, nodeName: node.name };
+  // Phase 6: Delete — always runs LAST so any other ops on this node complete first
+  if (op.delete === true) {
+    const deletedName = node.name;
+    node.remove();
+    const delResult = { success: true, nodeId: op.nodeId, nodeName: deletedName, deleted: true };
+    if (warnings.length > 0) delResult.warnings = warnings;
+    return delResult;
+  }
+
+  // Record post-write validation context (deleted nodes never get here)
+  if (ctx) {
+    ctx.modifiedIds.push(node.id);
+    if (op.height !== undefined) ctx.explicitHeightIds.push(node.id);
+    if (node.type === "TEXT" && op.fontFamily !== undefined) {
+      ctx.fontRequests.push({ id: node.id, family: op.fontFamily });
+    }
+    // Raw values eligible for the write-time mini-lint — skipped when the op
+    // already binds the same field via variables.
+    const vars = op.variables && typeof op.variables === "object" ? op.variables : {};
+    if (op.fillColor && !vars.fill && "fills" in node) {
+      ctx.rawSets.push({ nodeId: node.id, property: "fills", field: "fill", value: op.fillColor, nodeType: node.type });
+    }
+    if (node.type === "TEXT" && op.fontColor && !vars.fill) {
+      ctx.rawSets.push({ nodeId: node.id, property: "fills", field: "fill", value: op.fontColor, nodeType: node.type });
+    }
+    if (op.cornerRadius !== undefined && !vars.cornerRadius && "cornerRadius" in node) {
+      ctx.rawSets.push({
+        nodeId: node.id,
+        property: "cornerRadius",
+        field: "cornerRadius",
+        value: toNumber(op.cornerRadius, 0),
+        nodeType: node.type,
+      });
+    }
+    if (op.itemSpacing !== undefined && !vars.itemSpacing && "itemSpacing" in node) {
+      ctx.rawSets.push({
+        nodeId: node.id,
+        property: "itemSpacing",
+        field: "itemSpacing",
+        value: toNumber(op.itemSpacing, 0),
+        nodeType: node.type,
+      });
+    }
+    const paddingFields = ["paddingTop", "paddingRight", "paddingBottom", "paddingLeft"];
+    for (let pf = 0; pf < paddingFields.length; pf++) {
+      const pField = paddingFields[pf];
+      if (op[pField] !== undefined && !vars[pField] && pField in node) {
+        ctx.rawSets.push({
+          nodeId: node.id,
+          property: pField,
+          field: pField,
+          value: toNumber(op[pField], 0),
+          nodeType: node.type,
+        });
+      }
+    }
+    if (node.type === "TEXT" && op.fontSize !== undefined && !vars.fontSize) {
+      ctx.rawSets.push({
+        nodeId: node.id,
+        property: "fontSize",
+        field: "fontSize",
+        value: toNumber(op.fontSize, 14),
+        nodeType: node.type,
+      });
+    }
+  }
+
+  const result = { success: true, nodeId: op.nodeId, nodeName: node.name };
+  if (warnings.length > 0) result.warnings = warnings;
+  return result;
 }
 
 export async function apply(params) {
@@ -310,6 +628,16 @@ export async function apply(params) {
     }
   }
 
+  // Post-write validation context (Phase 4.1/4.2) — shared across all ops in
+  // this command invocation.
+  const ctx = {
+    modifiedIds: [],
+    explicitHeightIds: [],
+    fillRequests: [],
+    fontRequests: [],
+    rawSets: [],
+  };
+
   // Process nodes in chunks
   const CHUNK_SIZE = 5;
   const totalChunks = Math.ceil(totalOps / CHUNK_SIZE);
@@ -323,7 +651,17 @@ export async function apply(params) {
     const chunk = allOps.slice(start, end);
 
     const chunkPromises = chunk.map((op) =>
-      processNode(op, styleCache).catch((e) => ({ success: false, nodeId: op.nodeId, error: e.message || String(e) })),
+      processNode(op, styleCache, ctx).catch((e) => {
+        // Per-op error entry — one bad op never aborts the batch.
+        let message = e.message || String(e);
+        // Mixed-value failures (figma.mixed symbols) get a stated fix.
+        if (message.indexOf("Fix:") === -1 && (message.indexOf("symbol") !== -1 || message.indexOf("mixed") !== -1)) {
+          message =
+            message +
+            ". Fix: the node has mixed text properties — set characters via edit (font-safe) or apply a textStyleId to unify ranges, then retry.";
+        }
+        return { success: false, nodeId: op.nodeId, error: message };
+      }),
     );
 
     const chunkResults = await Promise.all(chunkPromises);
@@ -352,11 +690,37 @@ export async function apply(params) {
     sendProgressUpdate(commandId, "apply", "completed", 100, totalOps, totalOps, "Property application completed");
   }
 
-  return {
+  // Aggregate per-op boundary warnings, then run post-write assertions and
+  // mini-lint over the nodes this command actually touched (deleted nodes
+  // excluded). Advisory only — never fails the write.
+  const warnings = [];
+  for (let ri = 0; ri < results.length; ri++) {
+    if (results[ri].warnings) {
+      for (let wi = 0; wi < results[ri].warnings.length; wi++) warnings.push(results[ri].warnings[wi]);
+      delete results[ri].warnings;
+    }
+  }
+  try {
+    const assertionWarnings = await runPostWriteAssertions({
+      nodeIds: ctx.modifiedIds,
+      explicitHeightIds: ctx.explicitHeightIds,
+      fillRequests: ctx.fillRequests,
+      fontRequests: ctx.fontRequests,
+    });
+    for (let wi = 0; wi < assertionWarnings.length; wi++) warnings.push(assertionWarnings[wi]);
+    const lintWarnings = await miniLint(ctx.rawSets);
+    for (let wi = 0; wi < lintWarnings.length; wi++) warnings.push(lintWarnings[wi]);
+  } catch (_assertErr) {
+    // assertions are best-effort
+  }
+
+  const response = {
     success: failureCount === 0,
     totalNodes: totalOps,
     successCount: successCount,
     failureCount: failureCount,
     results: results,
   };
+  if (warnings.length > 0) response.warnings = warnings;
+  return response;
 }

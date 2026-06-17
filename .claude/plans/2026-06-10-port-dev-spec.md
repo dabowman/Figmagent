@@ -1,0 +1,745 @@
+# Dev Spec: Official-MCP Port — Phases 1–6
+
+Date: 2026-06-10
+Status: Spec — validated against the codebase and live probes (see §Validation log at end).
+Parent plan: `.claude/plans/2026-06-10-official-mcp-port.md` (decisions D1–D8, validation §9).
+Assessment: `.claude/analysis/figma-official-mcp-assessment.md` (probe + spike evidence).
+
+Conventions used below: each task lists Files, Depends on, Parallelizable, Details,
+and Tests — same format as `2026-03-13-find-tool.md`. "Remote" = Figma's official MCP
+(`use_figma` executor). "Plugin" = existing websocket relay + Figma plugin path.
+
+Cross-phase invariants:
+
+- **Wire protocol command names never change.** Renames (Phase 3) happen at the MCP
+  tool layer only; `src/figma_plugin/src/commands/*` handler names and command strings
+  stay stable so plugin and remote backends share one implementation with no version
+  skew.
+- **Shared command modules stay lowest-common-denominator JS** (no object spread, no
+  `?.`/`??`) — they must run in both the desktop plugin VM and the remote VM (D1).
+- **Plugin path stays green**: `bun test` and `bun run build:plugin` must pass after
+  every phase.
+
+---
+
+## Phase 1 — Transport abstraction + remote reads
+
+Goal: `FIGMA_TRANSPORT=remote` serves every read tool against a Figma file with no
+relay, no plugin, no open Figma client. Plugin path untouched.
+
+- [x] **Task 1.1: Transport interface + plugin refactor**
+  - Files: `src/figmagent_mcp/transport.ts` (new), `src/figmagent_mcp/connection.ts`
+    (edit), `src/figmagent_mcp/server.ts` (edit)
+  - Depends on: none
+  - Parallelizable: yes (with 1.2, 1.4)
+  - Details:
+    - `transport.ts` exports:
+      ```ts
+      interface FigmaTransport {
+        name: "plugin" | "remote";
+        sendCommand(command: FigmaCommand, params: unknown, timeoutMs?: number): Promise<unknown>;
+      }
+      function getTransport(): FigmaTransport;   // selected once at startup
+      ```
+    - Selection: `FIGMA_TRANSPORT` env — `plugin` (default through Phase 5), `remote`,
+      or `auto` (remote if cached OAuth token exists, else plugin; becomes default in
+      Phase 6).
+    - `connection.ts`: existing `sendCommandToFigma` body becomes the
+      `PluginTransport` implementation. **Keep `sendCommandToFigma` exported from
+      `connection.ts` with the same signature**, delegating to
+      `getTransport().sendCommand(...)` — all 14 `tools/*.ts` files keep their
+      imports unchanged. `connectToFigma()` call in `server.ts` becomes conditional
+      on plugin transport.
+    - Server-side-only tools (`prepare_figma_variables`, `export_session`, comments
+      via `figma_rest_api.ts`) never touch the transport — unaffected.
+  - Tests: existing suite passes with `FIGMA_TRANSPORT=plugin` (default); unit test
+    that `getTransport` honors the env var.
+
+- [x] **Task 1.2: Remote MCP client + OAuth**
+  - Files: `src/figmagent_mcp/remote/client.ts` (new),
+    `src/figmagent_mcp/remote/auth.ts` (new)
+  - Depends on: none
+  - Parallelizable: yes (with 1.1, 1.4)
+  - Details:
+    - `@modelcontextprotocol/sdk` client side (verified present in v1.27.1):
+      `Client` from `client/index.js`, `StreamableHTTPClientTransport` from
+      `client/streamableHttp.js`, `OAuthClientProvider` interface from
+      `client/auth.js`.
+    - Endpoint `https://mcp.figma.com/mcp`, overridable via `FIGMA_MCP_URL`.
+    - `auth.ts` implements `OAuthClientProvider`: dynamic client registration,
+      tokens + client info persisted to `~/.figmagent/auth.json` (0600 perms,
+      same dir as session logs), refresh handled by the SDK. First-run interactive
+      flow: spin a loopback HTTP server on an ephemeral port for the redirect,
+      print the authorization URL to **stderr** (stdout is MCP protocol), open
+      browser if possible. Headless fallback: print URL + wait.
+    - On any auth failure with `FIGMA_TRANSPORT=auto`: log and fall back to plugin
+      transport (D1).
+    - Client wraps `callTool("use_figma", { fileKey, code, description })`; parse the
+      text content as JSON when the script returned `JSON.stringify(...)`; surface
+      `isError` results as thrown errors carrying Figma's message verbatim (their
+      messages already state fixes — never truncate them).
+  - Tests: unit-test token persistence round-trip with a mock provider; manual
+    first-run auth flow (documented in README); `whoami` smoke call.
+
+- [x] **Task 1.3: File context (replaces channels on remote)**
+  - Files: `src/figmagent_mcp/remote/filecontext.ts` (new),
+    `src/figmagent_mcp/tools/document.ts` (edit — `join_channel` tool)
+  - Depends on: 1.1
+  - Parallelizable: yes (with 1.2, 1.4)
+  - Details:
+    - Remote has no channels; it has fileKeys. Current fileKey resolution order:
+      (1) value set by the `join_channel` tool — on remote transport this tool
+      accepts a Figma URL or bare fileKey and stores it (tool description updated to
+      cover both transports; rename to `use_file` happens in Phase 3, not here);
+      (2) `FIGMA_FILE_KEY` env.
+    - No fileKey set → error that states the fix: "No Figma file selected. Pass a
+      file URL to join_channel (e.g. https://www.figma.com/design/<fileKey>/...) or
+      set FIGMA_FILE_KEY."
+    - `create_new_file` passthrough is **out of scope until Phase 2** (write).
+  - Tests: resolution order unit tests; error message snapshot.
+
+- [x] **Task 1.4: Command registry + remote entry shims + bundle cache**
+  - Files: `src/figma_plugin/src/registry.js` (new), `src/figma_plugin/src/main.js`
+    (edit), `src/figma_plugin/src/remote_entries/<domain>.js` (new, ~11 files),
+    `src/figmagent_mcp/remote/bundles.ts` (new)
+  - Depends on: none
+  - Parallelizable: yes (with 1.1, 1.2)
+  - Details:
+    - **Single source of truth**: `registry.js` exports
+      `COMMANDS = { get_document_info: { domain: "document", handler: getDocumentInfo }, ... }`
+      built from the same imports `main.js` uses today. `main.js`'s dispatcher
+      switch is replaced by a registry lookup (concurrency classification
+      `READ_OPS`/`GLOBAL_OPS` moves into registry entries:
+      `{ domain, handler, lock: "read" | "global" | "node" }`).
+    - **Arg-shape normalization** (validation finding): several dispatcher cases
+      pass positional args today (`getNodeInfo(params.nodeId)`,
+      `getNodesInfo(params.nodeIds)`, …). The registry contract is
+      `handler(params)` — wrap positional-arg handlers in the registry entry
+      (`handler: (p) => getNodeInfo(p.nodeId)`), including the params-presence
+      validation currently inlined in the switch. The remote executor depends on
+      this uniform shape.
+    - Per-domain entry shim, e.g. `remote_entries/document.js`:
+      ```js
+      import { getDocumentInfo, getSelection, getReactions, exportNodeAsImage, getNodeTree } from "../commands/document.js";
+      globalThis.__figmagent = Object.assign(globalThis.__figmagent || {}, {
+        getDocumentInfo, getSelection, getReactions, exportNodeAsImage, getNodeTree });
+      ```
+    - `bundles.ts`: runtime bundling with `Bun.build({ entrypoints, target:
+      "browser", format: "iife", minify: true })` reading output via
+      `outputs[0].text()` — no outdir, no build step (validated: Bun 1.3.x runtime
+      API + in-memory text output work; per-domain minified sizes 5–16KB, spike §6).
+      In-memory cache keyed by domain; invalidated by source mtime in dev
+      (`fs.statSync` over the domain's source files).
+  - Tests: registry covers every command `main.js` previously dispatched
+    (assert key-set equality in a unit test); bundle for each domain builds and is
+    < 40KB; dispatcher behavior unchanged on plugin path (`bun run build:plugin` +
+    existing tests).
+
+- [x] **Task 1.5: Remote executor (script assembly + per-file FIFO queue)**
+  - Files: `src/figmagent_mcp/remote/executor.ts` (new),
+    `src/figmagent_mcp/remote/transport.ts` (new — implements `FigmaTransport`)
+  - Depends on: 1.2, 1.3, 1.4
+  - Parallelizable: no
+  - Details:
+    - Script assembly for command `c` with params `p`:
+      ```
+      <domain bundle (IIFE)>
+      const __params = <JSON.stringify(p)>;
+      const __r = await globalThis.__figmagent.<handler>(__params);
+      return JSON.stringify(__r);
+      ```
+      Top-level `await`/`return` are supported by `use_figma` (verified in probes).
+    - 50KB guard: if assembled code > 49,000 chars, throw a descriptive error
+      naming the param that dominates (chunking lands in Phase 2.3).
+    - **Per-file FIFO queue** (plan §9.1: server serializes per file; parallelism
+      buys nothing): one in-flight `use_figma` call per fileKey; queue depth logged.
+      Replaces the plugin's 6-way concurrency on this transport.
+    - `sendProgressUpdate` is a no-op remotely (verified: `figma.ui.postMessage`
+      is safe). Timeout = the MCP call's own lifetime; map MCP timeout errors to
+      the existing "Request to Figma timed out" shape.
+    - Atomicity surface: a thrown script error means **nothing was applied**
+      (verified rollback). Wrap Figma's error verbatim and append
+      `"(atomic: no changes were applied; safe to retry)"` for write commands.
+    - Session logger (`session-logger.ts`): add `transport: "plugin" | "remote"`
+      field to every entry — feeds the Phase 6 A/B.
+  - Tests: assembly snapshot per domain; queue serialization unit test (two
+    concurrent commands, same fileKey → sequential); 50KB guard test.
+
+- [x] **Task 1.6: `prop()` strict-guard compat in serializers**
+  - Files: `src/figma_plugin/src/helpers.js` (edit), `src/figma_plugin/src/commands/`
+    `document.js`, `scan.js`, `find.js`, `lint.js`, `styles.js` (edit)
+  - Depends on: none
+  - Parallelizable: yes (with everything)
+  - Details:
+    - Add to `helpers.js`: `export function prop(node, name) { return name in node ? node[name] : undefined; }`
+      (`in` verified safe on both VMs, spike §6.2).
+    - Mechanical codemod at **serializer/read boundaries only** (write paths set
+      known-valid properties and are exempt): every `node.someOptionalProp` read in
+      `getNodeTree`, `filterFigmaNode`, scan/find walkers, lint property collectors,
+      and style readers where the property may not exist on the node type →
+      `prop(node, "someOptionalProp")`. The throw set is inconsistent per property
+      (spike §6.2), so do not hand-pick — convert all duck-typed reads in these
+      paths.
+  - Tests: plugin-path tests still green (the helper is a behavioral no-op on
+    desktop); remote smoke: `getNodeTree` at `detail: "full"` on a TEXT-bearing tree
+    no longer throws (this exact case failed in the spike).
+
+- [x] **Task 1.7: Wire read commands over remote + parity harness**
+  - Files: `src/figmagent_mcp/remote/transport.ts` (edit),
+    `scripts/parity-check.ts` (new)
+  - Depends on: 1.5, 1.6
+  - Parallelizable: no
+  - Details:
+    - Commands in scope: `get_document_info`, `get_node_tree` (`get`), `find`,
+      `get_design_system`, `get_styles`, `get_local_variables`,
+      `get_local_components`, `get_annotations`, `get_reactions`,
+      `scan_text_nodes`, `scan_nodes_by_types`, `lint_design` (read mode),
+      `export_node_as_image`, library reads, `get_selection` (returns empty with a
+      note on remote — headless has no selection).
+    - `find`/`lint_design` with `scope: "DOCUMENT"`: the **handler** loops
+      `figma.root.children` with `await page.loadAsync()` inside one script
+      (validated plan §9.7) — implement in the shared command modules guarded by
+      `typeof page.loadAsync === "function"` so desktop (dynamic-page access
+      already declared in manifest) takes the same path.
+    - `export_node_as_image`: keep `exportAsync` in-script; encode with
+      `figma.base64Encode` (verify availability remotely in first smoke — fallback:
+      manual base64 in helpers).
+    - `scripts/parity-check.ts`: runs a read suite against the same file on both
+      transports and diffs normalized outputs (ignore: timing fields, ordering
+      where unspecified). This is the Phase 1 acceptance gate and stays for
+      Phase 2.
+  - Tests: parity check passes on the scratch file for every in-scope command;
+    latency per command logged (expect ~4–7s/call overhead, §9.3 — record actuals).
+
+**Phase 1 acceptance:** parity harness green for all reads; plugin suite green;
+first-run OAuth documented; per-command remote latency recorded in the session log.
+
+> **Execution log (2026-06-11):** Tasks 1.1–1.7 landed. Remote side
+> live-validated against the scratch file (`39H3zGBDrKOzYWvBo0kqFG`) by running
+> the executor-assembled scripts through `use_figma`: get_document_info,
+> get_node_tree (`detail:"full"` — the pre-`prop()` failure case), get_selection,
+> find (`scope:"DOCUMENT"`, multi-page loadAsync), get_design_system,
+> lint_design (page scope), export_node_as_image (PNG 8,164 base64 chars) — all
+> 7 pass, zero strict-property errors. Script sizes 6.0–15.8KB, all 11 domain
+> bundles < 40KB. The dual-transport `parity-check.ts` run (plugin side needs a
+> live desktop plugin + relay) remains to be executed on a dev machine —
+> remote-side outputs were verified structurally instead. First-run OAuth flow
+> implemented + documented in README but not yet exercised end-to-end against
+> mcp.figma.com (headless container; carry as a checklist item alongside the
+> §9.2 token-lifetime test).
+
+---
+
+## Phase 2 — Remote writes
+
+Goal: every write tool works atomically over remote; legacy JSON_REST_V1 reads retired.
+
+- [x] **Task 2.1: Wire write commands**
+  - Files: `src/figmagent_mcp/remote/transport.ts` (edit)
+  - Depends on: Phase 1
+  - Parallelizable: partially (command groups independent)
+  - Details: enable `create`, `apply`, `set_text_content`,
+    `set_multiple_text_contents`, modify group (`move_node`, `resize_node`,
+    `rename_node`, `delete_node`, `delete_multiple_nodes`, `reorder_children`,
+    `clone_node`, `clone_and_modify`), components group, variables/styles CRUD,
+    annotation writes, `set_focus`/`set_selections` (no-op + note on remote),
+    connector tools (FigJam-gated as today). Spike verdict: these run
+    near-verbatim; the work is enabling + testing, not porting.
+    `create_new_file` proxies the official tool and sets file context (1.3).
+  - Tests: per-group smoke on scratch file; atomicity test — `create` a tree with a
+    deliberately invalid trailing node, assert zero nodes created and error message
+    carries Figma's fix text + our atomic-retry suffix.
+
+- [x] **Task 2.2: Retire JSON_REST_V1 legacy reads**
+  - Files: `src/figmagent_mcp/tools/document.ts` (edit),
+    `src/figma_plugin/src/commands/document.js` (edit), `registry.js` (edit)
+  - Depends on: 1.4
+  - Parallelizable: yes
+  - Details: `get_node_info`, `get_nodes_info`, `read_my_design` depend on
+    `exportAsync({format: "JSON_REST_V1"})`, unsupported remotely (spike §6.1) and
+    fully subsumed by `get`. Remove their MCP registrations and plugin handlers;
+    tool descriptions for `get` already cover the use cases. (Their absence from
+    CLAUDE.md's recommended flows means no skill updates needed before Phase 5.)
+  - Tests: registry key-set test updated; grep for dangling references.
+
+- [x] **Task 2.3: >50KB chunking for large creates**
+  - Files: `src/figmagent_mcp/remote/executor.ts` (edit)
+  - Depends on: 2.1
+  - Parallelizable: no
+  - Details: params dominate script size (bundles ≤16KB). When `create` payload
+    exceeds the guard: split `nodes[]` arrays across sequential scripts; for a
+    single oversized `node` tree, split at depth-1 children — script N creates the
+    root + first slice and returns the root ID, scripts N+1… create remaining
+    slices with `parentId` = root. Document the atomicity caveat in the response
+    (`chunked: true, chunks: N` — rollback is per-chunk, not whole-call) so the
+    agent knows a mid-chunk failure leaves a partial tree with the root ID to
+    clean up.
+  - Tests: synthetic 80KB tree creates successfully; chunk-boundary failure leaves
+    documented state.
+
+- [x] **Task 2.4: Representative-build A/B battery (acceptance gate)**
+  - Files: `scripts/parity-check.ts` (extend)
+  - Depends on: 2.1–2.3
+  - Parallelizable: no
+  - Details: scripted battery on both transports: 8-variant component set
+    (`create` ×8 via `nodes[]` → `combine_as_variants` → `component_properties` →
+    `apply` variable bindings → `lint_design`). Compare: resulting node counts,
+    lint issue counts, total tool calls, wall time per transport.
+  - Tests: the battery is the test. Record results in the session log for Phase 6.
+
+**Phase 2 acceptance:** full suite + parity harness green on both transports;
+battery completes remotely with ≥ equal correctness (lint parity) — call count and
+wall time recorded, not gated (remote wins on calls, plugin on per-call latency).
+
+> **Execution log (2026-06-11):** Tasks 2.1–2.4 landed; remote side
+> live-validated on the scratch file (38 `use_figma` calls, 1 intentional
+> failure, 0 unexpected errors):
+> - **All 7 write groups PASS**: create / apply (incl. variable fill binding) /
+>   text (single + multiple) / modify (rename, move, resize, clone, delete) /
+>   components (2-variant combine + `component_properties` add) / variables &
+>   styles CRUD (create, rename via update) / `set_annotation`.
+> - **Atomicity confirmed**: a create tree with an invalid trailing INSTANCE
+>   threw `INSTANCE type requires componentId or componentKey`; page child
+>   count and names unchanged after the error — full-script rollback, zero
+>   residue.
+> - **Battery (remote side)**: 13 calls, 0 errors — 8 variants (16 nodes) →
+>   COMPONENT_SET with Size×State axes + Label TEXT prop → variable bound →
+>   lint scanned 17 nodes / 55 `no_match` issues and correctly skipped the
+>   bound fill. Plugin-side baseline for the A/B comparison still needs a dev
+>   machine with the desktop plugin (Phase 6).
+> - Domain bundle sizes in production assembly: 6.6–16KB, all far under budget.
+> - Chunked-create execution paths covered by unit tests with a mocked remote
+>   client (live 80KB chunk run deferred — split/merge/failure logic verified).
+
+---
+
+## Phase 3 — Surface reshape (head/tail split + renames)
+
+Goal: core tool count ≤15; names/call shapes mirror Claude Code primitives (D3).
+Wire protocol unchanged.
+
+- [x] **Task 3.1: Session-log frequency analysis → final disposition table**
+
+  > **Execution note (2026-06-11):** no `~/.figmagent/sessions/` history exists
+  > in the execution environment (fresh container), so the frequency analysis
+  > cannot run here. Proceeding with the provisional disposition below as the
+  > working table, per the rules already stated. **Re-run
+  > `scripts/extract-sessions.ts` on a machine with real session history before
+  > Phase 6 sign-off** — any demotion/retirement the data contradicts is cheap
+  > to reverse at the MCP layer (wire protocol unchanged).
+  - Files: analysis only (`scripts/extract-sessions.ts` exists); output table into
+    this spec
+  - Depends on: none (run against existing `~/.figmagent/sessions/` history)
+  - Parallelizable: yes
+  - Details: confirm/adjust the provisional disposition below with real call
+    frequencies. Rules: most-sessions tools stay core; sub-monthly tools demote to
+    stdlib (Phase 4) or retire.
+  - **Provisional disposition (subject to 3.1 data):**
+
+    | Disposition | Tools |
+    |---|---|
+    | Core, renamed | `get`→`read` · `find`→`grep` · `apply`→`edit` · `create`→`write` · `lint_design`→`lint` · `export_node_as_image`→`screenshot` · `join_channel`→`use_file` |
+    | Core, kept | `get_design_system` · `get_document_info` (absorbed into `read` with no nodeId → document overview; drop standalone) |
+    | **Folded into `edit`** (ops on existing nodes) | `move_node` (x/y) · `resize_node` · `rename_node` · `delete_node` · `delete_multiple_nodes` · `reorder_children` · `set_text_content` · `set_multiple_text_contents` (as `characters` op, reusing setcharacters.js) |
+    | **Folded into `write`** | `clone_node` / `clone_and_modify` (as `fromNodeId` source — also the documented reparent recipe) |
+    | Domain tier, kept | `create_variables` · `update_variables` · `create_styles` · `update_styles` · `prepare_figma_variables` · `component_properties` · `combine_as_variants` · `import_library_components` · `get_component_variants` · `search_library_components` · comments (3) · `export_session` |
+    | Demote to stdlib (Phase 4) | `get_selection` · `set_focus` · `set_selections` · connector tools (2) · `get_instance_overrides` / `set_instance_overrides` · `get_reactions` · `set_annotation` / `set_multiple_annotations` / `get_annotations` (grep covers search; rare writes via stdlib) · `import_library_component` (singular) · `get_library_components` / `get_library_variables` / `get_local_components` |
+    | Retire | `scan_text_nodes` · `scan_nodes_by_types` (grep covers) · `get_node_info` / `get_nodes_info` / `read_my_design` (gone in 2.2) · `get_styles` / `get_local_variables` (get_design_system covers) |
+
+    Net: 9 core + ~13 domain ≈ **22 first-class**, trending to ~15 as 3.1 data
+    confirms demotions. (Plan target ≤15 core is met; domain tier is additional by
+    design.)
+  - Tests: n/a (analysis).
+
+- [x] **Task 3.2: Implement folds (`edit` ops, `write` clone source)**
+  - Files: `src/figmagent_mcp/tools/apply.ts`, `create.ts`, `text.ts`, `modify.ts`
+    (edit/delete); `src/figma_plugin/src/commands/apply.js`, `create.js` (edit)
+  - Depends on: 3.1
+  - Parallelizable: yes (with 3.3)
+  - Details: `edit` node-op gains `x`/`y`, `name`, `delete: true`, `index`
+    (reorder), `characters` (routes through `setcharacters.js` for mixed-font
+    safety; instance text path format `I<instance>;<textNode>` unchanged).
+    Plugin side: `apply.js` dispatches these to the existing modify/text handlers —
+    **no logic moves**, only the entry point. `write` gains `fromNodeId` mapped to
+    `cloneAndModify` (with `parentId` = reparent recipe, now first-class).
+    Execution-order doc in tool description updated (component ops → layout →
+    rename/move/reorder → values → fonts → characters → variables → styles →
+    delete last).
+  - Tests: each folded op via `edit`/`write` on both transports; old tools removed
+    from registry key-set test.
+
+- [x] **Task 3.3: Renames + param alignment**
+  - Files: all `src/figmagent_mcp/tools/*.ts`; `src/figmagent_mcp/prompts/*`;
+    `CLAUDE.md`; `.claude/agents/figma-discovery.md`; `.claude/skills/` (figma
+    skills that name tools); `README.md`
+  - Depends on: 3.2
+  - Parallelizable: no (atomic rename pass)
+  - Details:
+    - MCP-layer renames per 3.1 table. Param alignment: `grep`'s `text`/`name`
+      stay but description leads with "regex pattern" (matching Grep's `pattern`
+      vocabulary); `read` keeps `detail`/`depth` (our offset/limit analog).
+    - **Naming-collision decision (plan §9.6)**: keep the bare names
+      `read`/`grep`/`edit`/`write` — MCP namespacing disambiguates mechanically;
+      every description's first sentence starts "…a Figma node/subtree" to steer
+      the agent. Revisit only if Phase 6 logs show built-in/MCP confusion.
+    - One atomic commit; grep the whole repo (including `.claude/`) for old names.
+  - Tests: full suite; `bun run check`; repo-wide grep for stale tool names is
+    clean (except wire-protocol strings and historical docs under
+    `.claude/analysis/`, `.claude/plans/`, `.claude/transcripts/`).
+
+**Phase 3 acceptance:** ≤15 core tools registered + domain tier; all renames atomic;
+both transports green; CLAUDE.md/skills/agents reference only new names.
+
+> **Execution log (2026-06-11):** Tasks 3.2 + 3.3 landed in one commit. Final
+> surface: **38 registrations** — 7 core renames (read [absorbs
+> get_document_info], grep, edit [+8 folded modify/text ops], write [+clone via
+> fromNodeId], lint, screenshot, use_file) + get_design_system + domain tier +
+> the Phase-4 demotion candidates (still registered until run_script/stdlib
+> exist). scan_text_nodes / scan_nodes_by_types retired; get_styles /
+> get_local_variables were already wire-only. edit op order: component ops →
+> layout → rename/move/reorder → values → fonts → characters → variables →
+> styles → delete last. Wire protocol untouched (registry key-set test passes
+> unchanged). 146 tests green; stale-name sweep clean outside wire code +
+> historical docs.
+
+---
+
+## Phase 4 — Validation layer + `run_script` + error audit
+
+Goal: write responses carry the verdict (D5); escape hatch with stdlib (D4); errors
+state fixes.
+
+- [x] **Task 4.1: Post-write structural assertions**
+  - Files: `src/figma_plugin/src/assertions.js` (new), `commands/create.js`,
+    `apply.js` (edit), `src/figmagent_mcp/utils.ts` (edit — warnings formatting)
+  - Depends on: Phase 3 (final response shapes)
+  - Parallelizable: yes (with 4.4)
+  - Details:
+    - `assertions.js` exports `checkNodes(nodeIds) → warnings[]`, run at the end of
+      `create`/`apply` handlers **in the same execution** (same script remotely —
+      zero extra round trips; same command invocation on plugin).
+    - Checks (each = the known failure class it kills, sourced from CLAUDE.md
+      patterns + improvement tracker): zero/near-zero-width TEXT
+      (width < 2px); 100px-balloon (auto-layout frame, defaulted height exactly
+      100, HUG not set); FILL-requested-but-not-applied (op asked for FILL sizing,
+      node reports FIXED — parent lacked auto-layout); font fallback occurred
+      (resolved family ≠ requested); overlapping siblings in a non-auto-layout
+      parent (AABB check, only when the op created/moved those siblings).
+    - Warning shape: `{ nodeId, check, message }` where message states the fix in
+      Figma's voice ("Set layoutSizingVertical: 'HUG' on 12:7 or give it an
+      explicit height — it ballooned to the 100px default.").
+    - Response: `warnings` block appended by `utils.ts` formatter; empty array
+      omitted.
+  - Tests: one fixture per check on the plugin path (deterministic); remote smoke
+    for the same fixtures.
+
+- [x] **Task 4.2: Inline mini-lint at write time**
+  - Files: `src/figma_plugin/src/commands/lint.js` (export matcher),
+    `create.js`/`apply.js` (edit)
+  - Depends on: 4.1
+  - Parallelizable: no (same files as 4.1)
+  - Details: extract lint.js's single-value matcher
+    (`matchVariable(value, property, nodeContext) → { severity, variable }`) and
+    run it over **only the raw values this op just set** (fills, cornerRadius,
+    spacing, fontSize…). `exact_match` hits append to `warnings`:
+    `"fill #F5F5FA matches variable color/bg/subtle — pass variables: { fill: 'v1' } to bind"`.
+    Variables list fetched once per command invocation, skipped when the op
+    already binds that field. Full `lint` is unchanged.
+  - Tests: write a raw value that exactly matches a seeded variable → warning
+    present; bound write → no warning.
+
+- [x] **Task 4.3: Boundary validation (Edit semantics)**
+  - Files: `src/figmagent_mcp/tools/apply.ts` (Zod refinements), `apply.js` (edit)
+  - Depends on: Phase 3
+  - Parallelizable: yes
+  - Details: reject-or-warn **before** mutating when the request can't take
+    effect: text props on non-TEXT, `clipsContent` on non-frame, FILL sizing under
+    a non-auto-layout parent (error names the parent and the fix), unknown
+    variable scope for the bound field, `swapVariantId` not a sibling variant.
+    Each message states the fix. Where the plugin already silently skips, convert
+    to warning (don't break batch ops with hard errors mid-list — per-op error
+    entries, batch continues, summary reports per-op status).
+  - Tests: one test per rejection path; batch-continues-on-per-op-error test.
+
+- [x] **Task 4.4: `run_script` tool (remote transport only)**
+  - Files: `src/figmagent_mcp/tools/script.ts` (new),
+    `src/figma_plugin/src/remote_entries/stdlib.js` (new),
+    `src/figmagent_mcp/remote/executor.ts` (edit)
+  - Depends on: 1.4, 1.5
+  - Parallelizable: yes (with 4.1–4.3)
+  - Details:
+    - Params: `{ code: string, mode: "read" | "write" (default "read"), description: string }`.
+      `mode: "read"` enforcement is a **server-side static deny-list scan** of the
+      script text (regex over mutating API names: `create[A-Z]\w+`, `\.remove\(`,
+      `\.appendChild\(`, `setProperties`, `setBoundVariable`, `loadFontAsync`
+      paired with assignment, …) that rejects before execution with
+      `"This script calls <name> but mode is 'read'; rerun with mode: 'write'."`
+      Runtime monkey-patching is **not possible** — validation confirmed `figma.*`
+      properties are read-only on the remote global
+      (`figma.createRectangle = …` throws). Best-effort guard, documented as such —
+      the real protection is per-script rollback.
+    - stdlib bundle = helpers + setcharacters + assertions + FSGN serializer +
+      apply's FIELD_MAP binding helpers, exposed as `fig.*`:
+      `fig.prop(node, name)`, `fig.setCharacters(node, text)`,
+      `fig.loadFont(family, weightOrStyle)`, `fig.serialize(node, detail)`,
+      `fig.bindVariable(node, field, variableId)`, `fig.check(nodeIds)`
+      (assertions), `fig.createNode(spec)` (the `create` handler). Tool
+      description enumerates the API — this replaces Figma's 4,700-line skills
+      corpus with ~30 lines of API listing.
+    - Post-run: `mode: "write"` scripts get `fig.check` run over
+      `figma.currentPage.selection.length ? selection : returned ids` when the
+      script returns `{ nodeIds: [...] }` (documented convention).
+    - Session logging: full script text logged (D4 — recurring scripts are the
+      tool roadmap). Plugin transport: tool returns "run_script requires the
+      remote transport" with the fix (set `FIGMA_TRANSPORT=remote`).
+  - Tests: read-mode guard blocks `createRectangle`; write-mode round trip;
+    stdlib functions callable; script text appears in session log.
+
+- [x] **Task 4.5: Error-message audit**
+  - Files: `src/figma_plugin/src/helpers.js` (error helper), all `commands/*.js`
+    (touch error paths), `src/figmagent_mcp/utils.ts`
+  - Depends on: none (can start any time)
+  - Parallelizable: yes
+  - Details: add `fail(message, fix)` helper → `"<message>. Fix: <fix>"`. Convert
+    the top failure modes (source: improvement tracker + CLAUDE.md gotchas):
+    unknown node ID (suggest `grep`/`read`), font-load failure (name the exact
+    `fontFamily`/`fontStyle` to pass), variant-name format, scope-invalid variable
+    binding (list valid scopes for the type — table already in styles.js),
+    instance-child mutation (point at the main component), mixed-value reads
+    (suggest per-range or `setcharacters` path). Rule going forward (add to
+    CLAUDE.md in Phase 5): no user-facing error without a stated fix.
+  - Tests: snapshot the rewritten messages; grep that no `throw new Error` in
+    command modules lacks fix text (lint rule or test walking the AST is
+    overkill — a review checklist line suffices).
+
+**Phase 4 acceptance:** the five assertion classes are caught in tests; mini-lint
+fires on exact matches; `run_script` works with stdlib + logging; audited errors
+all state fixes.
+
+> **Execution log (2026-06-11):** all five tasks landed. Assertions, mini-lint,
+> boundary checks, and error rewrites: 196→212 tests. run_script: stdlib bundle
+> 29.4KB (fig.prop/setCharacters/loadFont/serialize/bindVariable/check/
+> createNode), read-mode deny-list with the spec's message shape, write-mode
+> { nodeIds } post-check wrapper in the same script, full script text in the
+> session log, per-file FIFO reused via executeRawScript. Live remote
+> round-trip of a run_script write deferred with the OAuth items (headless
+> container). 39 tools registered.
+
+> **Execution log (2026-06-11):** Tasks 4.1, 4.2, 4.3, 4.5 landed (4.4
+> `run_script` is a follow-up). `assertions.js` exports pure predicates
+> (aabbOverlap, isNearZeroWidthText, isBalloonFrame, checkFillRequested,
+> checkFontFallback) plus thin figma-touching wrappers `checkNodes`/
+> `runPostWriteAssertions`, wired into the end of the create and apply
+> handlers — same execution, warnings on the command result, deleted nodes
+> skipped. Mini-lint: lint.js's matcher extracted as `matchVariable(value,
+> property, nodeContext, variables)` (lintDesign's check*Property functions
+> now route through it) + `miniLint(rawSets)` runs at write time, one
+> variable fetch per command, skipped when the op binds the field. Boundary
+> validation: Zod superRefines (text props on known non-TEXT spec in write;
+> delete+children conflict in edit) + plugin-side pre-checks in apply.js
+> (text props/clipsContent → warnings, FILL-under-no-auto-layout → warn+skip
+> naming the parent, scope-mismatched bind → warn+skip, non-sibling
+> swapVariantId and instance-child delete/reorder → per-op errors; batch
+> always continues). Error audit: `fail(message, fix)` in helpers.js;
+> converted unknown-node-id (apply/modify/text/lint/create/components),
+> font-load (styles.js text styles), variant-name format
+> (combine_as_variants pre-check), scope-invalid binding, instance-child
+> mutation, mixed-value enrichment in apply's per-op catch. Server side:
+> `formatWarningsBlock` in utils.ts appends a "warnings:" block to write/edit
+> responses (omitted when empty). 196 tests green (50 new), build:plugin +
+> biome clean. The "100px-balloon defaulted height" detection uses the pure
+> heuristic (layoutMode active, height-axis sizing FIXED, height === 100)
+> with ops that explicitly set height exempted via op context.
+
+---
+
+## Phase 5 — Knowledge migration
+
+Goal: CLAUDE.md shrinks; every pattern lives in code, error, or assertion first.
+
+- [x] **Task 5.1: Pattern-by-pattern disposition of CLAUDE.md "Figma Design Patterns"**
+  - Files: `CLAUDE.md`, tool descriptions in `tools/*.ts`
+  - Depends on: Phase 4 complete (destinations must exist)
+  - Parallelizable: yes
+  - Details — disposition per section:
+    | CLAUDE.md pattern | Destination |
+    |---|---|
+    | Sizing sequencing | already in `write` two-pass code → delete prose, one line in tool description |
+    | FRAME-not-RECTANGLE for stretchy | boundary validation 4.3 (error states it) → delete prose |
+    | Auto-layout sizing defaults checklist | assertions 4.1 (balloon + FILL checks) → shrink to one line |
+    | Variant naming convention | `combine_as_variants` error message (4.5) + keep two lines |
+    | Reparenting recipe | first-class in `write fromNodeId` (3.2) → delete prose |
+    | Instance text override format | `edit` tool description → delete prose |
+    | Bind-on-COMPONENT-not-instance | mini-lint warning when binding on instance child (4.2) + keep one line |
+    | Connection drops / channel recovery | plugin-transport-only appendix section |
+    | Tool-usage guidance (get/find/apply flows) | rewritten for new names, halved — descriptions carry the detail |
+  - Tests: n/a; acceptance = diff shows net deletion.
+
+- [x] **Task 5.2: Skills + agent defs update**
+  - Files: `.claude/skills/figma-guidelines/`, `.claude/skills/figma-sub-agents/`,
+    `.claude/agents/figma-discovery.md`, `.claude/skills/add-mcp-tool/`
+  - Depends on: 5.1
+  - Parallelizable: yes
+  - Details: new tool names; sub-agent concurrency guidance updated for per-file
+    FIFO on remote (parallel agents still help on *plugin* transport only — note
+    explicitly); `add-mcp-tool` skill gains the registry.js + remote_entries step;
+    discovery agent's tool list updated.
+  - Tests: skill dry-run on a small Figma task.
+
+**Phase 5 acceptance:** CLAUDE.md line count materially down (target: Patterns
+section ≥60% smaller); no pattern that merely restates enforced behavior.
+
+> **Execution log (2026-06-11):** Patterns section 40→9 lines (−77.5%); full
+> CLAUDE.md 166→139; Key Patterns bullets halved (27→14); plugin-transport
+> material moved to an appendix; skills/agents updated (per-file FIFO
+> parallelism guidance, add-mcp-tool rewritten for the registry architecture).
+> Two enforcement gaps found and deferred as follow-ups: (1) no pre-mutation
+> boundary error names the "use a FRAME with fillColor" fix for RECTANGLE+FILL
+> (post-write assertion + write description carry it); (2) mini-lint does not
+> yet warn when `variables` binds on a node inside an INSTANCE (edit
+> description + one CLAUDE.md line carry the rule).
+
+---
+
+## Phase 6 — Measure & switch
+
+> **Status (2026-06-11, second pass): COMPLETE — executed on the dev machine.**
+> See the execution log after Task 6.2.
+
+> **Status (2026-06-11): pending — requires a dev machine.** Phases 1–5 are
+> implemented and pushed; Phase 6 needs three things this execution
+> environment cannot provide: a running desktop plugin + relay (plugin side
+> of the A/B), a completed first-run OAuth against mcp.figma.com (remote
+> side via Figmagent's own client — the remote *code path* was already
+> live-validated through the official MCP in Phases 1–2), and real
+> `~/.figmagent/sessions/` history for the pre-port baseline.
+>
+> **Runbook:**
+> 1. `bun socket` + connect the plugin to the target scratch file.
+> 2. `FIGMA_TRANSPORT=remote` once to complete first-run OAuth (URL on
+>    stderr); confirms §9.2 token lifetime along the way.
+> 3. `bun scripts/parity-check.ts --file <scratchUrl> --channel <channel>` —
+>    read-suite parity + per-command latency record.
+> 4. Same command with `--battery` — the 2.4 build A/B on both transports.
+> 5. One read-heavy audit + one build-heavy real task per transport;
+>    `bun scripts/extract-sessions.ts` + the analyze-session skill for the
+>    metric report (calls/task, errors/task, wall-clock, escape-hatch share,
+>    warning-acted-on rate) vs. pre-port baselines.
+> 6. Re-run the Task 3.1 frequency analysis on the real history to confirm
+>    the provisional disposition (demotions are cheap to reverse).
+> 7. If acceptance holds, Task 6.2: flip `FIGMA_TRANSPORT` default to
+>    `auto`, move relay/plugin setup to the local-fallback README section.
+
+- [x] **Task 6.1: A/B battery + metric report**
+  - Files: `scripts/parity-check.ts` (extend), analysis via `analyze-session` skill
+  - Depends on: Phases 1–5
+  - Details: run the Phase 2.4 battery + two real tasks (one read-heavy audit, one
+    build-heavy) on each transport. Metrics per plan §6: calls/task, errors/task,
+    wall-clock/task, escape-hatch share, warning-acted-on rate. Compare against
+    pre-port session-log baselines (extract with `scripts/extract-sessions.ts`).
+  - Acceptance: remote ≤ plugin on calls/task and errors/task. Wall-clock reported
+    honestly — §9.3 predicts remote loses per-call; the bet is fewer calls ×
+    fewer retries nets out. If it doesn't, remote stays opt-in and the plan's D1
+    hedge becomes the default — that is a legitimate outcome, not a failure.
+
+- [x] **Task 6.2: Flip defaults + docs**
+  - Files: `transport.ts` (default `auto`), `README.md`, `CLAUDE.md`, `scripts/setup.sh`
+  - Depends on: 6.1 passes
+  - Details: `FIGMA_TRANSPORT=auto` default (remote when authed); setup docs lead
+    with OAuth flow, relay/plugin moves to "local fallback" section; relay +
+    plugin stay in CI permanently (D1).
+
+> **Execution log (2026-06-11, dev machine — Phase 6 runbook):**
+>
+> 1. **First-run OAuth (runbook step 2): completed, after a live fix.** Figma's
+>    dynamic client registration endpoint (`api.figma.com/v1/oauth/mcp/register`)
+>    allowlists `client_name` by known-client prefix — bare `"Figmagent"` → 403
+>    `Forbidden` (raw text, which the SDK surfaced as "Invalid OAuth error
+>    response"); `"Claude Code (Figmagent)"` registers fine (isolated by
+>    swapping name/UA independently; UA is irrelevant). `auth.ts` updated.
+>    Tokens persisted to `~/.figmagent/auth.json`; the §9.2 lifetime clock runs
+>    from 2026-06-11.
+> 2. **Read-suite parity (step 3): all 13 commands green** against the scratch
+>    file (`39H3zGBDrKOzYWvBo0kqFG` / channel
+>    `figmagent-mcp-assessment-scratch`), identical normalized outputs. Latency
+>    record: plugin 5–75ms/call; remote 0.8–2.5s/call — far better than the
+>    §9.3 prediction of 4–7s.
+> 3. **Battery A/B (step 4): identical correctness, plugin wins wall-clock.**
+>    Both transports: 14 calls, 0 errors, 16 nodes created, 70 lint issues.
+>    Wall: plugin 1.1s, remote 40.0s (~35×). Task 6.1 acceptance (remote ≤
+>    plugin on calls and errors) met — as equality, not improvement: the same
+>    command surface yields the same call count, so the "fewer calls" bet did
+>    not materialize; the per-call latency gap is the whole story.
+> 4. **Fixes shaken out by the live run:** (a) `getLocalComponents` used
+>    `figma.loadAllPagesAsync()` — unsupported on the remote VM; rewritten to
+>    per-page `loadAsync` + per-page `findAllWithCriteria` (root-level
+>    `findAllWithCriteria` is also rejected under desktop dynamic-page access
+>    unless loadAllPagesAsync ran, so per-page is the only shape both VMs
+>    accept). (b) `main.js`'s catch-all now serializes message-less errors via
+>    `String(error)` — a Figma-internal failure had surfaced as the blank
+>    generic "Error executing command".
+> 5. **Incident (desktop-only, not ours):** mid-run, every `figma.variables.*`
+>    call in the desktop plugin began failing with Figma's internal "Unable to
+>    establish connection to Figma after 10 seconds" while the same commands
+>    succeeded remotely. Restarting the Figma desktop app cleared it. Worth
+>    remembering as a diagnosis: variables-API timeouts on plugin + healthy
+>    remote = desktop client sync-backend state, not Figmagent.
+> 6. **Task 3.1 frequency re-run (step 6) on real history** (33 sessions,
+>    1,552 calls): provisional disposition confirmed — apply 204/19 sessions,
+>    get 193/25, create 142/14, lint 62/10, design-system 46/13 anchor the
+>    core; folded ops were heavily used (set_text_content 151,
+>    clone_and_modify 113, move_node 58) so the folds preserve real traffic;
+>    demotion candidates are sub-monthly (set_focus 3 sessions,
+>    get_library_variables 3, set_multiple_annotations 2). **One exception:
+>    `get_selection` appears in 11/33 sessions — keep it first-class, not
+>    stdlib.** Pre-port baseline: 47 calls/session avg, 0 logged errors.
+> 7. **Default flipped (Task 6.2) with a data-informed refinement:** measured
+>    equality on correctness + a 35× wall-clock gap means `auto` should prefer
+>    a *running relay*, not a cached token. `initTransport()` (async, called
+>    at server startup) probes `localhost:3055/channels` (750ms timeout):
+>    relay up → plugin; else token → remote; else plugin. Sync callers that
+>    skip the probe fall back to the token-based choice. README/CLAUDE.md
+>    updated; relay + plugin remain first-class (D1) as the fast path, not a
+>    fallback.
+> 8. **Not run as specced:** the step-5 "real task per transport" A/B —
+>    the scripted battery + parity suite carry the acceptance metrics, and
+>    session logs now tag `transport`, so real-task comparisons accumulate
+>    naturally post-flip. Suite: 214 tests green; `bun run check` clean;
+>    `build:plugin` clean.
+
+---
+
+## Validation log (2026-06-10)
+
+Spec-level claims verified against the codebase and live remote VM before this spec
+was committed:
+
+1. **SDK client surface**: `@modelcontextprotocol/sdk@1.27.1` (installed) ships
+   `client/index.js` (Client), `client/streamableHttp.js`
+   (`StreamableHTTPClientTransport`), `client/auth.js` (`OAuthClientProvider`). ✓
+2. **End-to-end executor PoC (1.4 + 1.5)**: `Bun.build` runtime API (Bun 1.3.11),
+   in-memory `outputs[0].text()`, entry shim assigning `getNodeTree` to
+   `globalThis.__figmagent`, assembled script (6.6KB) with JSON params executed
+   live via `use_figma` → correct FSGN raw-tree JSON returned for the scratch
+   page. The exact script shape `executor.ts` will emit, proven working. ✓
+3. **Strict guard hit live (1.6 is mandatory, not defensive)**: the unpatched
+   bundle threw `no such property 'visible' on PAGE node` mid-traversal — even
+   "safe-looking" properties throw on some node types. A `'visible' in node`
+   patch fixed it; rerun passed. Confirms the codemod must cover *all* duck-typed
+   serializer reads, per spike §6.2. ✓
+4. **Tool import seam**: 13 of 14 `tools/*.ts` import `sendCommandToFigma` from
+   `../connection.js` (exception: `session.ts`, server-side only — consistent
+   with 1.1's "server-side tools never touch the transport"). Delegate shim
+   avoids touching them. ✓
+5. **Registry feasibility**: `main.js` dispatch is thin but some cases pass
+   positional args + inline validation — registry needs `handler(params)`
+   wrappers (folded into Task 1.4 details). ✓ (with caveat)
+6. **Existing scripts**: `scripts/extract-sessions.ts` exists (3.1, 6.1);
+   `session-logger.ts` exists (1.5 transport tag). ✓
+7. **`figma.base64Encode` on remote VM**: verified live (encoded a PNG export,
+   8,164 chars) — `export_node_as_image` ports as specced (1.7). ✓
+8. **Read-mode guard (4.4): runtime wrapping REFUTED.** `figma.createRectangle`
+   is a read-only property on the remote global — assignment throws. Task 4.4
+   rewritten to a server-side static deny-list scan. ✗→ design corrected
+9. **Multi-page single-script traversal** (1.7): verified live (plan §9.7). ✓
+10. **Test baseline**: `bun test` green on fresh install — 104 pass, 0 fail. ✓

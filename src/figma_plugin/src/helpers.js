@@ -44,6 +44,53 @@ export function sendProgressUpdate(
   return update;
 }
 
+// Strict-property-guard compat: the remote VM throws on reading properties that
+// don't exist on a node type; the desktop VM returns undefined. `in` is safe on both.
+export function prop(node, name) {
+  return name in node ? node[name] : undefined;
+}
+
+// Error helper: every user-facing error states its fix.
+// Rule (CLAUDE.md Agent Notes): no user-facing error without a stated fix.
+export function fail(message, fix) {
+  throw new Error(message + ". Fix: " + fix);
+}
+
+// Font weight number → Figma style name. Shared by create.js and the
+// run_script stdlib (fig.loadFont).
+export var FONT_WEIGHT_STYLES = {
+  100: "Thin",
+  200: "Extra Light",
+  300: "Light",
+  400: "Regular",
+  500: "Medium",
+  600: "Semi Bold",
+  700: "Bold",
+  800: "Extra Bold",
+  900: "Black",
+};
+
+// Resolve and load a font. weightOrStyle: a numeric weight (600 → "Semi Bold"),
+// a style name ("Italic"), or undefined (→ "Regular"). Fallback chain mirrors
+// create.js: requested family+style → Inter Regular. Returns the FontName
+// that was actually loaded — assign it to node.fontName before setting characters.
+export async function loadFontWithFallback(family, weightOrStyle) {
+  var fam = family || "Inter";
+  var style = "Regular";
+  if (typeof weightOrStyle === "number" || /^\d+$/.test(String(weightOrStyle))) {
+    style = FONT_WEIGHT_STYLES[toNumber(weightOrStyle, 400)] || "Regular";
+  } else if (weightOrStyle) {
+    style = String(weightOrStyle);
+  }
+  try {
+    await figma.loadFontAsync({ family: fam, style: style });
+    return { family: fam, style: style };
+  } catch (_e) {
+    await figma.loadFontAsync({ family: "Inter", style: "Regular" });
+    return { family: "Inter", style: "Regular" };
+  }
+}
+
 // Coerce value to number with fallback (handles string "4" → 4)
 export function toNumber(val, fallback) {
   if (val === undefined || val === null) return fallback;
@@ -98,9 +145,10 @@ export function findNodeByIdInTree(nodeId) {
       found = node;
       return;
     }
-    if (node.children) {
-      for (let i = 0; i < node.children.length; i++) {
-        walk(node.children[i]);
+    const children = prop(node, "children");
+    if (children) {
+      for (let i = 0; i < children.length; i++) {
+        walk(children[i]);
       }
     }
   }
@@ -167,123 +215,4 @@ export function sanitizeSymbols(obj) {
     return out;
   }
   return obj;
-}
-
-// Filter a Figma node tree for serializable output (strips vectors, bindings, image refs)
-export function filterFigmaNode(node) {
-  if (node.type === "VECTOR") {
-    return null;
-  }
-
-  var filtered = {
-    id: node.id,
-    name: node.name,
-    type: node.type,
-  };
-
-  if (node.fills && node.fills.length > 0) {
-    filtered.fills = node.fills.map((fill) => {
-      var processedFill = Object.assign({}, fill);
-      delete processedFill.boundVariables;
-      delete processedFill.imageRef;
-
-      if (processedFill.gradientStops) {
-        processedFill.gradientStops = processedFill.gradientStops.map((stop) => {
-          var processedStop = Object.assign({}, stop);
-          if (processedStop.color) {
-            processedStop.color = rgbaToHex(processedStop.color);
-          }
-          delete processedStop.boundVariables;
-          return processedStop;
-        });
-      }
-
-      if (processedFill.color) {
-        processedFill.color = rgbaToHex(processedFill.color);
-      }
-
-      return processedFill;
-    });
-  }
-
-  if (node.strokes && node.strokes.length > 0) {
-    filtered.strokes = node.strokes.map((stroke) => {
-      var processedStroke = Object.assign({}, stroke);
-      delete processedStroke.boundVariables;
-      if (processedStroke.color) {
-        processedStroke.color = rgbaToHex(processedStroke.color);
-      }
-      return processedStroke;
-    });
-  }
-
-  if (node.cornerRadius !== undefined) {
-    filtered.cornerRadius = node.cornerRadius;
-  }
-
-  if (node.absoluteBoundingBox) {
-    filtered.absoluteBoundingBox = node.absoluteBoundingBox;
-  }
-
-  if (node.characters) {
-    filtered.characters = node.characters;
-  }
-
-  if (node.style) {
-    filtered.style = {
-      fontFamily: node.style.fontFamily,
-      fontStyle: node.style.fontStyle,
-      fontWeight: node.style.fontWeight,
-      fontSize: node.style.fontSize,
-      textAlignHorizontal: node.style.textAlignHorizontal,
-      letterSpacing: node.style.letterSpacing,
-      lineHeightPx: node.style.lineHeightPx,
-    };
-  }
-
-  // Auto-layout properties
-  if (node.layoutMode && node.layoutMode !== "NONE") {
-    filtered.layoutMode = node.layoutMode;
-    filtered.primaryAxisSizingMode = node.primaryAxisSizingMode;
-    filtered.counterAxisSizingMode = node.counterAxisSizingMode;
-    if (node.primaryAxisAlignItems && node.primaryAxisAlignItems !== "MIN") {
-      filtered.primaryAxisAlignItems = node.primaryAxisAlignItems;
-    }
-    if (node.counterAxisAlignItems && node.counterAxisAlignItems !== "MIN") {
-      filtered.counterAxisAlignItems = node.counterAxisAlignItems;
-    }
-    if (node.itemSpacing > 0) {
-      filtered.itemSpacing = node.itemSpacing;
-    }
-    if (node.counterAxisSpacing > 0) {
-      filtered.counterAxisSpacing = node.counterAxisSpacing;
-    }
-    if (node.paddingLeft > 0) {
-      filtered.paddingLeft = node.paddingLeft;
-    }
-    if (node.paddingRight > 0) {
-      filtered.paddingRight = node.paddingRight;
-    }
-    if (node.paddingTop > 0) {
-      filtered.paddingTop = node.paddingTop;
-    }
-    if (node.paddingBottom > 0) {
-      filtered.paddingBottom = node.paddingBottom;
-    }
-    if (node.layoutWrap === "WRAP") {
-      filtered.layoutWrap = node.layoutWrap;
-    }
-  }
-
-  if (node.children) {
-    filtered.children = node.children
-      .map((child) => {
-        return filterFigmaNode(child);
-      })
-      .filter((child) => {
-        return child !== null;
-      });
-  }
-
-  return filtered;
 }
