@@ -25,7 +25,9 @@ async function loadFontOrFail(family, style) {
 async function loadCurrentStyleFont(style) {
   const current = style.fontName;
   if (current && current !== figma.mixed) {
-    await figma.loadFontAsync({ family: current.family, style: current.style });
+    // Use loadFontOrFail so an uninstalled current font yields a fix-stating
+    // message (repo rule) instead of Figma's opaque load error.
+    await loadFontOrFail(current.family, current.style);
   }
 }
 
@@ -34,13 +36,15 @@ async function loadCurrentStyleFont(style) {
 // (#52). We don't know which style(s) the bound text uses, so load them all —
 // the family string is all the variable value gives us. Best-effort: an
 // unresolvable family is left to the setValueForMode write to report.
-async function loadFontFamily(family) {
+async function loadFontFamily(family, fontList) {
   if (typeof family !== "string" || family.length === 0) return;
-  let fonts;
-  try {
-    fonts = await figma.listAvailableFontsAsync();
-  } catch (_listErr) {
-    return;
+  let fonts = fontList;
+  if (!fonts) {
+    try {
+      fonts = await figma.listAvailableFontsAsync();
+    } catch (_listErr) {
+      return;
+    }
   }
   for (let i = 0; i < fonts.length; i++) {
     const fn = fonts[i].fontName;
@@ -605,11 +609,28 @@ export async function updateVariables(params) {
 
           // A FONT_FAMILY variable re-renders bound text on value change, so
           // both the OLD and NEW font families must be loaded before writing
-          // (#52). Scope detection covers font-family STRING variables.
+          // (#52). Scope detection covers font-family STRING variables. An empty
+          // scopes array is Figma's default and is treated as ALL_SCOPES (same
+          // rule as lint.js isScopeCompatible), so a default-scoped STRING
+          // variable still preloads — otherwise the common case (no explicit
+          // scopes) would miss the preload and reproduce #52.
+          const fontScopes =
+            variable.scopes && variable.scopes.length > 0 ? variable.scopes : ["ALL_SCOPES"];
           const isFontFamilyVar =
             variable.resolvedType === "STRING" &&
-            variable.scopes &&
-            variable.scopes.indexOf("FONT_FAMILY") !== -1;
+            (fontScopes.indexOf("FONT_FAMILY") !== -1 || fontScopes.indexOf("ALL_SCOPES") !== -1);
+
+          // Enumerate the installed font list once per update — it is invariant
+          // for the whole call, so loadFontFamily reuses it instead of calling
+          // figma.listAvailableFontsAsync() per family/mode (#52 review).
+          let availableFonts = null;
+          if (isFontFamilyVar) {
+            try {
+              availableFonts = await figma.listAvailableFontsAsync();
+            } catch (_listErr) {
+              availableFonts = null;
+            }
+          }
 
           const valueKeys = Object.keys(update.values);
           for (let j = 0; j < valueKeys.length; j++) {
@@ -622,12 +643,21 @@ export async function updateVariables(params) {
             if (value && typeof value === "object" && value.alias) {
               const aliasVar = await figma.variables.getVariableByIdAsync(value.alias);
               if (!aliasVar) throw new Error("Alias variable not found: " + value.alias);
+              // An alias change re-renders bound text just like a raw-string
+              // change (#52). Preload the OLD family and the alias's resolved
+              // NEW family so setValueForMode doesn't throw on an unloaded font.
+              if (isFontFamilyVar) {
+                const oldFamily = variable.valuesByMode ? variable.valuesByMode[modeId] : undefined;
+                if (typeof oldFamily === "string") await loadFontFamily(oldFamily, availableFonts);
+                const aliasValue = aliasVar.valuesByMode ? aliasVar.valuesByMode[modeId] : undefined;
+                if (typeof aliasValue === "string") await loadFontFamily(aliasValue, availableFonts);
+              }
               variable.setValueForMode(modeId, { type: "VARIABLE_ALIAS", id: aliasVar.id });
             } else {
               if (isFontFamilyVar) {
                 const oldFamily = variable.valuesByMode ? variable.valuesByMode[modeId] : undefined;
-                if (typeof oldFamily === "string") await loadFontFamily(oldFamily);
-                await loadFontFamily(value);
+                if (typeof oldFamily === "string") await loadFontFamily(oldFamily, availableFonts);
+                await loadFontFamily(value, availableFonts);
               }
               variable.setValueForMode(modeId, value);
             }
@@ -946,6 +976,15 @@ export async function updateStyles(params) {
         await loadCurrentStyleFont(style);
         // Font name change requires loading the new font too.
         if (update.fontFamily !== undefined || update.fontStyle !== undefined) {
+          // A mixed-font style has no single fontName to fall back on, so a
+          // partial change (only family OR only style) would leave the other
+          // half undefined. Require both fields in that case.
+          if (style.fontName === figma.mixed && (update.fontFamily === undefined || update.fontStyle === undefined)) {
+            fail(
+              "Style '" + style.name + "' has mixed fonts; a partial font change leaves the other half undefined",
+              "pass BOTH fontFamily and fontStyle to set a single font on a mixed-font text style",
+            );
+          }
           const family = update.fontFamily || style.fontName.family;
           const fStyle = update.fontStyle || style.fontName.style;
           await loadFontOrFail(family, fStyle);
