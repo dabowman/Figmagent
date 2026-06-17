@@ -200,6 +200,7 @@ Colors use RGBA 0-1 range (e.g. { r: 0.2, g: 0.4, b: 1.0 }), not 0-255.`,
       if (fromNodeId) {
         if (nodes) {
           return {
+            isError: true,
             content: [{ type: "text" as const, text: "Error: 'fromNodeId' cannot be combined with 'nodes'." }],
           };
         }
@@ -218,6 +219,7 @@ Colors use RGBA 0-1 range (e.g. { r: 0.2, g: 0.4, b: 1.0 }), not 0-255.`,
           60000,
         );
         return {
+          isError: (result as { success?: boolean }).success === false,
           content: [{ type: "text" as const, text: JSON.stringify(result) }],
         };
       }
@@ -225,11 +227,13 @@ Colors use RGBA 0-1 range (e.g. { r: 0.2, g: 0.4, b: 1.0 }), not 0-255.`,
       // Validate mutual exclusivity
       if (node && nodes) {
         return {
+          isError: true,
           content: [{ type: "text" as const, text: "Error: provide either 'node' or 'nodes', not both." }],
         };
       }
       if (!node && !nodes) {
         return {
+          isError: true,
           content: [
             {
               type: "text" as const,
@@ -267,6 +271,7 @@ Colors use RGBA 0-1 range (e.g. { r: 0.2, g: 0.4, b: 1.0 }), not 0-255.`,
       };
     } catch (error) {
       return {
+        isError: true,
         content: [
           {
             type: "text" as const,

@@ -93,8 +93,18 @@ export const REMOTE_READ_COMMANDS = new Set<string>([
   "get_component_properties",
 ]);
 
+/**
+ * Plugin-only navigation/control commands. These don't mutate the file (no
+ * atomic rollback applies) and aren't in the remote read-set, so for timeout
+ * *messaging* they must not be labelled "Write" or carry the degraded-connection
+ * hint. `join` especially: a stalled handshake means the plugin never reached
+ * the relay, so "re-join the channel" advice is circular and misdirected.
+ */
+const NON_MUTATING_CONTROL_COMMANDS = new Set<string>(["join", "set_focus", "set_selections", "set_default_connector"]);
+
 /** True when the command mutates the file (atomic rollback applies). */
 export function isWriteCommand(command: string, params: unknown): boolean {
+  if (NON_MUTATING_CONTROL_COMMANDS.has(command)) return false;
   if (!REMOTE_READ_COMMANDS.has(command)) return true;
   // lint_design is a read unless autoFix binds variables
   if (command === "lint_design" && params && typeof params === "object" && (params as any).autoFix) {

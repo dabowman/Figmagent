@@ -69,13 +69,20 @@ export const server = new McpServer(
 // ─── Error-flagging helper (issue #60) ───────────────────────────────────────
 // Tool handlers catch failures and return them as plain content text without
 // setting `isError`, so timeouts/exceptions/validation rejections arrived as
-// `is_error: false` — the agent had to string-parse to detect them. Rather than
-// touch ~40 catch blocks, we classify the result centrally. Matches the
-// established error-text conventions, anchored at the start of the first text
-// block so legitimate success output (JSON, "Successfully…", "No annotations…")
-// never trips it.
-const ERROR_TEXT_PREFIX = /^(Error[:\s]|Failed to\b|Could not\b|(Read|Write) operation ")/;
-const ERROR_TEXT_CONTAINS = /\btimed out\b|\bnot connected to figma\b|\bconnection closed\b/i;
+// `is_error: false` — the agent had to string-parse to detect them.
+//
+// The structured-verdict tools (`edit`/apply, `write`/create, batch
+// `import_library_components`, `set_instance_overrides`) now set `isError`
+// themselves from their own `success`/`failed` counts — the matcher below
+// cannot see a failure verdict buried in `{"success":false,…}` JSON, so the
+// source is the right place to flag it. `looksLikeError` stays as the backstop
+// for the ~40 catch blocks that emit prose like `Error …:`/`Failed to …`.
+//
+// Both arms are start-anchored. A `read`/`grep` response that merely serializes
+// a node named "Timed out" or text reading "Connection closed" must NOT be
+// flagged — only text that *begins* with an error/timeout sentinel counts.
+const ERROR_TEXT_PREFIX =
+  /^(Error[:\s]|Failed to\b|Could not\b|Unable to\b|(Read|Write) operation "|Request to Figma timed out\b|Not connected to Figma\b|Connection closed\b)/;
 
 export function looksLikeError(result: any): boolean {
   if (!result || typeof result !== "object") return false;
@@ -86,7 +93,7 @@ export function looksLikeError(result: any): boolean {
   const first = content[0];
   const text = first && typeof first.text === "string" ? first.text : "";
   if (!text) return false;
-  return ERROR_TEXT_PREFIX.test(text) || ERROR_TEXT_CONTAINS.test(text);
+  return ERROR_TEXT_PREFIX.test(text);
 }
 
 // ─── Session logging wrapper ─────────────────────────────────────────────────

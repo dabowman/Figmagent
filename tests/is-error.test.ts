@@ -25,13 +25,15 @@ describe("looksLikeError (#60)", () => {
     expect(looksLikeError({ content: [{ type: "text", text: "Request to Figma timed out" }] })).toBe(true);
   });
 
-  test("flags Failed to / Could not phrasing", () => {
+  test("flags Failed to / Could not / Unable to phrasing", () => {
     expect(looksLikeError({ content: [{ type: "text", text: "Failed to set instance overrides: nope" }] })).toBe(true);
     expect(looksLikeError({ content: [{ type: "text", text: "Could not auto-discover channels" }] })).toBe(true);
+    expect(looksLikeError({ content: [{ type: "text", text: "Unable to load font" }] })).toBe(true);
   });
 
   test("flags connection-loss text", () => {
     expect(looksLikeError({ content: [{ type: "text", text: "Not connected to Figma. Attempting to connect..." }] })).toBe(true);
+    expect(looksLikeError({ content: [{ type: "text", text: "Connection closed" }] })).toBe(true);
   });
 
   test("does NOT flag successful responses", () => {
@@ -39,6 +41,42 @@ describe("looksLikeError (#60)", () => {
     expect(looksLikeError({ content: [{ type: "text", text: "No annotations provided" }] })).toBe(false);
     expect(looksLikeError({ content: [{ type: "text", text: '{ "issues": 0, "errors": 0 }' }] })).toBe(false);
     expect(looksLikeError({ content: [{ type: "text", text: "Created 5 connections" }] })).toBe(false);
+  });
+
+  // #60 follow-up (review finding a): the matcher is start-anchored, so a
+  // successful read/grep that merely *serializes* error-like node names or text
+  // content (a "Timed out" error-state mockup, a layer named "Connection
+  // closed") must NOT be flagged is_error.
+  test("does NOT flag reads whose serialized node data contains error words mid-string", () => {
+    expect(
+      looksLikeError({
+        content: [{ type: "text", text: 'meta:\n  nodeCount: 4\nnodes:\n  - name: "Timed out"\n    type: TEXT' }],
+      }),
+    ).toBe(false);
+    expect(
+      looksLikeError({ content: [{ type: "text", text: '{"name":"Connection closed banner","type":"FRAME"}' }] }),
+    ).toBe(false);
+    expect(
+      looksLikeError({ content: [{ type: "text", text: "Found 2 nodes: a label reading 'Not connected to Figma'." }] }),
+    ).toBe(false);
+  });
+
+  // #60 follow-up (review finding b): structured-verdict tools set isError
+  // themselves from their success/failed counts. The matcher must honor that
+  // flag — a fully-failed JSON batch is is_error:true even though it starts "{".
+  test("honors source-level isError on structured-JSON failure verdicts", () => {
+    expect(
+      looksLikeError({
+        isError: true,
+        content: [{ type: "text", text: '{"success":false,"nodesEdited":0,"totalNodes":3,"failures":[]}' }],
+      }),
+    ).toBe(true);
+    // A partial success stays unflagged at the source (isError omitted/false).
+    expect(
+      looksLikeError({
+        content: [{ type: "text", text: '{"success":true,"nodesEdited":2,"totalNodes":3}' }],
+      }),
+    ).toBe(false);
   });
 
   test("respects an explicit isError flag either way", () => {
@@ -72,5 +110,17 @@ describe("timeoutMessage (#46)", () => {
     // lint_design is a read by default but a write when autoFix binds variables.
     expect(timeoutMessage("lint_design", 30000, undefined, true)).toContain("Write operation");
     expect(timeoutMessage("lint_design", 30000, undefined, false)).toContain("Read operation");
+  });
+
+  // Review finding (c): plugin-only navigation/control commands don't mutate the
+  // file, so they must not be labelled "Write" or carry the degraded-connection
+  // hint. `join` especially — "re-join the channel" advice would be circular.
+  test("non-mutating control commands are not classified as writes", () => {
+    for (const cmd of ["join", "set_focus", "set_selections", "set_default_connector"]) {
+      expect(isWriteCommand(cmd, undefined)).toBe(false);
+      const msg = timeoutMessage(cmd, 30000);
+      expect(msg).toContain("Read operation");
+      expect(msg).not.toContain("degraded");
+    }
   });
 });
