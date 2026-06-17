@@ -627,10 +627,10 @@ export async function lintDesign(params) {
     } else {
       collectNodes(rootNode, "", 0, rootEntries);
     }
-    const rootName = prop(rootNode, "name");
     for (let ei = 0; ei < rootEntries.length; ei++) {
+      // Only rootNodeId is consumed downstream (rootStats lookup + per-issue
+      // attribution). The display name is recomputed independently in rootStats.
       rootEntries[ei].rootNodeId = rootIds[ri];
-      rootEntries[ei].rootNodeName = rootName;
       nodeList.push(rootEntries[ei]);
     }
   }

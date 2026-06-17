@@ -3,6 +3,29 @@ import { server } from "../instance.js";
 import { sendCommandToFigma } from "../connection.js";
 import { guardOutput, extractJsonSummary } from "../utils.js";
 
+/**
+ * Meta-extractor for the lint truncation path. Builds on the generic JSON
+ * summary (which collapses every array to "[N items]") but re-attaches the
+ * per-root `roots` breakdown inline — it is small and bounded by the number of
+ * roots, and is the whole point of the multi-root form, so it must survive
+ * truncation (which fires exactly on large multi-root scans). The large
+ * unbounded `issues` array stays collapsed.
+ */
+function extractLintSummary(text: string): string | null {
+  const summary = extractJsonSummary(text);
+  if (summary === null) return null;
+  try {
+    const obj = JSON.parse(text);
+    const roots = (obj as { roots?: unknown }).roots;
+    if (!Array.isArray(roots)) return summary;
+    const merged = JSON.parse(summary);
+    merged.roots = roots;
+    return JSON.stringify(merged, null, 2);
+  } catch {
+    return summary;
+  }
+}
+
 const lintableProperties = z.enum([
   "fills",
   "strokes",
@@ -69,7 +92,7 @@ Pass multiple root IDs (an array) to lint several frames/pages in one call. With
 
       const jsonText = JSON.stringify(result, null, 2);
       const guarded = guardOutput(jsonText, {
-        metaExtractor: extractJsonSummary,
+        metaExtractor: extractLintSummary,
         toolName: "lint",
         narrowingHints: [
           "  • Lower maxIssues to reduce output",
