@@ -111,7 +111,7 @@ Don't confuse these — they have different tool prefixes and different capabili
 - **Figmagent** (`mcp__Figmagent__*`): this project. Talks to the Figma plugin via the WebSocket relay. Full read/write canvas access.
 - **Figma** (`mcp__figma__*`): the official Figma MCP. Uses the Figma REST API directly. Different server, different tools.
 
-**Remote view-only fallback**: if Figmagent's **remote** transport returns "you don't have edit access to this file" on a `read`, the file is view-only for that identity — remote currently needs **editor** access even to read. Fall back to the official `figma` MCP (`get_metadata` / `get_design_context`, which read view-only files) or switch to the plugin transport. Do **not** reauth the official MCP expecting it to fix Figmagent — separate servers, separate auth.
+**Remote view-only fallback**: Figmagent's **remote** transport has surfaced an upstream "you don't have edit access to this file" error (from Figma's official `use_figma` MCP, not raised by Figmagent itself) — observed on view-only files for the authenticated identity. Two remedies, in order: if the wrong/expired Figma account is authenticated, run Figmagent's `reauthenticate` tool and pick an account with editor access; if the identity is correct but the file is genuinely view-only, fall back to the official `figma` MCP (`get_metadata` / `get_design_context`, which read view-only files) or switch to the plugin transport. Don't reauth the *official* `figma` MCP expecting it to fix Figmagent — separate servers, separate auth.
 
 ## Task Completion Checklist
 
@@ -138,7 +138,7 @@ Uncomment the `hostname: "0.0.0.0"` line in `src/socket.ts` to allow connections
 ## Agent Notes
 
 - No need to call `use_file` manually — the MCP server auto-joins when you issue the first Figma command. If multiple Figma files are open, the first command returns a list of file names; call `use_file({ channel: "file-name" })` to pick one. (On remote, `use_file` takes a Figma URL or fileKey.)
-- **Remote-first onboarding**: the **remote** transport has no auto-join — call `use_file` (URL/fileKey) **before** your first `read`, or it fails with "No Figma file selected." `get_selection` is also unavailable on remote (headless VM, no live selection); when the user references a node, use the node ID from their link and resolve its page from there.
+- **Remote-first onboarding**: the **remote** transport has no auto-join — select a file with `use_file` (URL/fileKey) or `FIGMA_FILE_KEY` before your first command, or it fails with "No Figma file selected." `get_selection` is callable on remote but returns no live selection (headless VM) and tells you to use `find`/`read` instead; when the user references a node, use the node ID from their link and resolve its page from there.
 - **No ToolSearch needed.** The MCP server instructions enumerate all 39 available tools by domain. Sub-agents declare their tools in agent definitions. Call tools directly by name instead of discovering them at runtime.
 - Call `read()` (no nodeId) first to understand the design structure
 - Use `grep` to search for nodes by regex pattern or criteria (component usage, variable bindings, style usage, text content, name, type) — returns grouped matches with ancestry paths

@@ -93,7 +93,7 @@ Only works on horizontal auto layout. Items that overflow wrap to the next line.
 
 ### Converting a Static Tree to Auto Layout
 
-Work **outside-in** (root → body → sections → … → text), and set `layoutMode` on each frame **before** setting `layoutSizingHorizontal/Vertical` on it or its children — combine both in one `edit` per node where possible (setting child sizing before the parent has auto layout fails).
+Work **outside-in** (root → body → sections → … → text), and set `layoutMode` on each frame **before** setting `layoutSizingHorizontal/Vertical` on it or its children — combine both in one `edit` per node where possible. This is the *Common Auto Layout Mistakes* "child sizing before the parent has auto layout" bullet applied in order: FILL sizing on a non-auto-layout child errors (or is warn-and-skipped on the `edit` path), so enabling the parent first avoids it.
 
 ---
 
