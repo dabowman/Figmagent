@@ -3,10 +3,44 @@ import { server } from "../instance.js";
 import { sendCommandToFigma } from "../connection.js";
 import type { getInstanceOverridesResult, setInstanceOverridesResult } from "../types.js";
 
+// Component sets with more than this many variants drop the full variants array
+// (key/description per variant). The compact variantIds map is always kept.
+export const VARIANT_THRESHOLD = 10;
+
+// Filter + shape the raw get_local_components payload. Always attaches a compact
+// variantIds map (variant name → nodeId) to every COMPONENT_SET so agents can
+// target variants without a follow-up read; only the verbose variants array is
+// gated behind VARIANT_THRESHOLD / includeVariants.
+export function processLocalComponents(
+  components: any[],
+  opts: { nameFilter?: string; includeVariants?: boolean } = {},
+): any[] {
+  let list = components;
+  if (opts.nameFilter) {
+    const filter = opts.nameFilter.toLowerCase();
+    list = list.filter((c: any) => c.name.toLowerCase().includes(filter));
+  }
+  return list.map((c: any) => {
+    if (c.type !== "COMPONENT_SET" || !c.variants) return c;
+    const variantIds: Record<string, string> = {};
+    for (const v of c.variants) {
+      if (v?.name && v.id) variantIds[v.name] = v.id;
+    }
+    const withMap = { ...c, variantIds };
+    if (c.variants.length <= VARIANT_THRESHOLD || opts.includeVariants) return withMap;
+    return {
+      ...withMap,
+      variants: [],
+      variantsOmitted: true,
+      variantsOmittedHint: `Full variants array (key/description) omitted for ${c.variantCount} variants; variantIds map is included above. Use includeVariants:true or get_component_variants for the full array.`,
+    };
+  });
+}
+
 // Get Local Components Tool
 server.tool(
   "get_local_components",
-  "Get local components from the Figma document. Returns COMPONENT_SETs (multi-variant) and standalone COMPONENTs. Use nameFilter to search by component name (case-insensitive). COMPONENT_SET results include variantAxes showing the structure (e.g. Type × Size × State). Variants are listed when ≤10; for larger sets they are omitted — use includeVariants to force inclusion, or use get_component_variants on the set ID.",
+  "Get local components from the Figma document. Returns COMPONENT_SETs (multi-variant) and standalone COMPONENTs. Use nameFilter to search by component name (case-insensitive). COMPONENT_SET results include variantAxes showing the structure (e.g. Type × Size × State) and a compact variantIds map ({ \"Size=MD, State=Default\": nodeId, ... }) so you can target variant nodes without a follow-up read. The full variants array (with key/description) is listed when ≤10; for larger sets it is omitted (variantIds stays present) — use includeVariants to force the full array, or use get_component_variants on the set ID.",
   {
     nameFilter: z
       .string()
@@ -23,23 +57,7 @@ server.tool(
     try {
       const result = await sendCommandToFigma("get_local_components");
       const allComponents = (result as any).components || [];
-      let components = allComponents;
-      if (nameFilter) {
-        const filter = nameFilter.toLowerCase();
-        components = allComponents.filter((c: any) => c.name.toLowerCase().includes(filter));
-      }
-      // Truncate variant lists for large component sets unless explicitly requested
-      const VARIANT_THRESHOLD = 10;
-      const processed = components.map((c: any) => {
-        if (c.type !== "COMPONENT_SET" || !c.variants) return c;
-        if (c.variants.length <= VARIANT_THRESHOLD || includeVariants) return c;
-        return {
-          ...c,
-          variants: [],
-          variantsOmitted: true,
-          variantsOmittedHint: `${c.variantCount} variants omitted. Use includeVariants:true or get_component_variants to see them.`,
-        };
-      });
+      const processed = processLocalComponents(allComponents, { nameFilter, includeVariants });
       return {
         content: [
           {
