@@ -267,6 +267,10 @@ IMPORTANT: Bind variables and text styles on COMPONENT nodes, not instances — 
       }
 
       return {
+        // #60: a batch where the verdict is failure (every op failed, or the
+        // plugin reported success:false) must carry is_error — the JSON summary
+        // starts with "{" and the central text matcher can't see the verdict.
+        isError: typedResult.success === false || (typedResult.successCount === 0 && typedResult.totalNodes > 0),
         content: [
           {
             type: "text",
@@ -276,6 +280,7 @@ IMPORTANT: Bind variables and text styles on COMPONENT nodes, not instances — 
       };
     } catch (error) {
       return {
+        isError: true,
         content: [
           {
             type: "text",

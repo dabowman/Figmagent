@@ -93,12 +93,40 @@ export const REMOTE_READ_COMMANDS = new Set<string>([
   "get_component_properties",
 ]);
 
+/**
+ * Plugin-only navigation/control commands. These don't mutate the file (no
+ * atomic rollback applies) and aren't in the remote read-set, so for timeout
+ * *messaging* they must not be labelled "Write" or carry the degraded-connection
+ * hint. `join` especially: a stalled handshake means the plugin never reached
+ * the relay, so "re-join the channel" advice is circular and misdirected.
+ */
+const NON_MUTATING_CONTROL_COMMANDS = new Set<string>(["join", "set_focus", "set_selections", "set_default_connector"]);
+
 /** True when the command mutates the file (atomic rollback applies). */
 export function isWriteCommand(command: string, params: unknown): boolean {
+  if (NON_MUTATING_CONTROL_COMMANDS.has(command)) return false;
   if (!REMOTE_READ_COMMANDS.has(command)) return true;
   // lint_design is a read unless autoFix binds variables
   if (command === "lint_design" && params && typeof params === "object" && (params as any).autoFix) {
     return true;
   }
   return false;
+}
+
+/**
+ * Build a timeout message that names the operation type and command (issue #46)
+ * so a write-vs-read distinction is visible to the agent. Read/write is
+ * classified with the same {@link isWriteCommand} list both transports share.
+ * Writes carry the degraded-connection hint because a stalled write while reads
+ * still succeed usually means a flaky connection, not a bad request.
+ */
+export function timeoutMessage(command: string, timeoutMs: number, params?: unknown, isWrite?: boolean): string {
+  const seconds = Math.round(timeoutMs / 1000);
+  const write = typeof isWrite === "boolean" ? isWrite : isWriteCommand(command, params);
+  const kind = write ? "Write" : "Read";
+  const base = `${kind} operation "${command}" timed out after ${seconds}s`;
+  if (write) {
+    return `${base} (if reads succeed but writes fail, the connection may be degraded — try use_file to re-join the channel)`;
+  }
+  return base;
 }

@@ -221,13 +221,33 @@ describe("sendCommandToFigma", () => {
     const start = Date.now();
     const result = sendCommandToFigma("get_selection", {}, 500); // 500ms timeout
 
-    await expect(result).rejects.toThrow("Request to Figma timed out");
+    // #46: the timeout message names the operation type + command. get_selection
+    // is a read, so it must NOT carry the degraded-connection write hint.
+    await expect(result).rejects.toThrow(/Read operation "get_selection" timed out after \d+s/);
     const elapsed = Date.now() - start;
     expect(elapsed).toBeGreaterThanOrEqual(450);
     expect(elapsed).toBeLessThan(2000);
 
     // Pending request should be cleaned up
     // (can't check exact key since UUID is internal, but size should be 0 for this request)
+  });
+
+  test("write-command timeout names the command and includes the degraded-connection hint", async () => {
+    const { connectToFigma, joinChannel, sendCommandToFigma } = await import("../src/figmagent_mcp/connection.js");
+
+    connectToFigma(PORT);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await joinChannel("timeout-write-ch");
+
+    // set_text_content is the exact command from issue #46/#60 (Session 25).
+    let message = "";
+    try {
+      await sendCommandToFigma("set_text_content", { nodeId: "1:1", text: "x" }, 500);
+    } catch (e: any) {
+      message = e.message;
+    }
+    expect(message).toMatch(/Write operation "set_text_content" timed out after \d+s/);
+    expect(message).toContain("connection may be degraded");
   });
 
   test("error response from plugin rejects the promise", async () => {

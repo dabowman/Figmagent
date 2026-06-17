@@ -10,7 +10,7 @@
 import { logger } from "../utils.js";
 import { getDomainBundle } from "./bundles.js";
 import { getRemoteClient } from "./client.js";
-import { COMMAND_DOMAINS } from "./domains.js";
+import { COMMAND_DOMAINS, timeoutMessage } from "./domains.js";
 
 /** use_figma rejects scripts over ~50KB; leave headroom for the wrapper. */
 const SCRIPT_CHAR_BUDGET = 49000;
@@ -141,8 +141,9 @@ async function runOne(
     return result;
   } catch (err) {
     if (isTimeoutError(err)) {
-      // Match the plugin transport's timeout shape
-      throw new Error("Request to Figma timed out");
+      // Name the operation + read/write classification (issue #46). atomicWrite
+      // already encodes the write classification computed by the transport.
+      throw new Error(timeoutMessage(command, timeoutMs, undefined, atomicWrite));
     }
     const message = err instanceof Error ? err.message : String(err);
     // A thrown script error means the whole script rolled back (verified).

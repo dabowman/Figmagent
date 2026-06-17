@@ -337,6 +337,9 @@ server.tool(
       const failed = results.filter((r: any) => !r.success).length;
 
       return {
+        // #60: the verdict lives in the JSON counts, not in error-prefixed text.
+        // Flag when nothing imported (every component failed).
+        isError: succeeded === 0 && failed > 0,
         content: [
           {
             type: "text",
@@ -346,6 +349,7 @@ server.tool(
       };
     } catch (error) {
       return {
+        isError: true,
         content: [
           {
             type: "text",
