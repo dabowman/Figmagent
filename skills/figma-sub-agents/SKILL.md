@@ -99,7 +99,7 @@ Note: this only works if each node gets only ONE type of binding per agent. If a
 
 ## Discovery Sub-Agent
 
-The agent definition lives at `.claude/agents/figma-discovery.md`. It has:
+The agent definition ships in this plugin at `agents/figma-discovery.md`. It has:
 - A read-only tool set (no create/modify tools)
 - A system prompt with its full workflow and output schema
 
