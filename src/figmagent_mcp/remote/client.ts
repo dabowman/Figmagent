@@ -134,6 +134,33 @@ export class RemoteMcpClient {
       this.connecting = null;
     }
   }
+
+  /**
+   * Force a fresh OAuth flow: drop any cached connection, wipe the stored token,
+   * then reconnect — which (with no token) re-triggers the browser authorization
+   * and blocks until the loopback redirect completes. Lets the user pick a
+   * different Figma account without hand-editing ~/.figmagent/auth.json.
+   *
+   * The token is persisted by the SDK as soon as the code exchange succeeds, so
+   * even if the caller abandons the awaited promise (e.g. a harness tool-call
+   * timeout) the login still lands and the next command is authenticated.
+   *
+   * @returns the account info from whoami when the official server exposes it.
+   */
+  async reauthenticate(forgetClient: boolean = false): Promise<{ authUrl: string | null; account: unknown }> {
+    await this.close();
+    this.authProvider.clearStoredAuth(forgetClient);
+    await this.connect();
+    let account: unknown = null;
+    try {
+      // Best-effort: confirm which account is now authed. Swallow if the
+      // server doesn't expose whoami — the reauth itself already succeeded.
+      account = await this.callOfficialTool("whoami", {}, 15000);
+    } catch (err) {
+      logger.info(`whoami after reauth unavailable: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return { authUrl: this.authProvider.lastAuthorizationUrl, account };
+  }
 }
 
 let sharedClient: RemoteMcpClient | null = null;
