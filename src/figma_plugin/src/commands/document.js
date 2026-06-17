@@ -1,6 +1,6 @@
 // Document, selection, node info, and export commands
 
-import { sendProgressUpdate, generateCommandId, customBase64Encode, rgbaToHex, toNumber, prop } from "../helpers.js";
+import { sendProgressUpdate, generateCommandId, customBase64Encode, rgbaToHex, toNumber, prop, fail } from "../helpers.js";
 
 export async function getDocumentInfo() {
   await figma.currentPage.loadAsync();
@@ -595,59 +595,131 @@ export async function getNodeTree(params) {
   };
 }
 
-export async function exportNodeAsImage(params) {
-  const { nodeId, scale = 1 } = params || {};
-  const format = "PNG";
+// Max nodes accepted in one batch export call.
+const EXPORT_MAX_NODES = 20;
+// Hard ceiling on total base64 payload (~chars) returned by one call. Roughly
+// 4 MB of image data. This is a true ceiling, not a floor: a node is only added
+// if it fits within the remaining budget, so the returned payload never exceeds
+// this cap (the only exception is a single first image larger than the whole
+// cap — see below). Enforcing the ceiling on the plugin side also bounds the
+// remote transport's return payload, where `use_figma` does `JSON.stringify`
+// with no size guard of its own (remote/executor.ts only budgets the input
+// script). Over-budget nodes are reported in `truncated` so the caller can
+// re-request them in a follow-up batch.
+const EXPORT_MAX_PAYLOAD_CHARS = 4000000;
 
-  if (!nodeId) {
-    throw new Error("Missing nodeId parameter");
+function mimeTypeForFormat(format) {
+  switch (format) {
+    case "PNG":
+      return "image/png";
+    case "JPG":
+      return "image/jpeg";
+    case "SVG":
+      return "image/svg+xml";
+    case "PDF":
+      return "application/pdf";
+    default:
+      return "application/octet-stream";
   }
+}
 
+async function exportSingleNode(nodeId, format, scale) {
   const node = await figma.getNodeByIdAsync(nodeId);
   if (!node) {
-    throw new Error(`Node not found with ID: ${nodeId}`);
+    fail(`Node not found with ID: ${nodeId}`, "Verify the node ID with `grep` or `read` — it may be stale after a delete.");
   }
 
   if (!("exportAsync" in node)) {
-    throw new Error(`Node does not support exporting: ${nodeId}`);
+    fail(`Node does not support exporting: ${nodeId}`, "Export a node that supports rendering, such as a FRAME, COMPONENT, or GROUP.");
   }
 
-  try {
-    const settings = {
-      format: format,
-      constraint: { type: "SCALE", value: scale },
-    };
+  const settings = {
+    format: format,
+    constraint: { type: "SCALE", value: scale },
+  };
 
-    const bytes = await node.exportAsync(settings);
+  const bytes = await node.exportAsync(settings);
+  const base64 = customBase64Encode(bytes);
 
-    let mimeType;
-    switch (format) {
-      case "PNG":
-        mimeType = "image/png";
-        break;
-      case "JPG":
-        mimeType = "image/jpeg";
-        break;
-      case "SVG":
-        mimeType = "image/svg+xml";
-        break;
-      case "PDF":
-        mimeType = "application/pdf";
-        break;
-      default:
-        mimeType = "application/octet-stream";
+  return {
+    nodeId,
+    format,
+    scale,
+    mimeType: mimeTypeForFormat(format),
+    imageData: base64,
+  };
+}
+
+export async function exportNodeAsImage(params) {
+  const p = params || {};
+  const scale = p.scale === undefined ? 1 : p.scale;
+  const format = p.format ? p.format : "PNG";
+
+  // Batch mode: a `nodeIds` array returns images keyed by nodeId.
+  if (p.nodeIds !== undefined) {
+    const nodeIds = p.nodeIds;
+    if (!Array.isArray(nodeIds) || nodeIds.length === 0) {
+      fail("nodeIds must be a non-empty array of node IDs", "Pass nodeIds: [\"1:2\", \"3:4\"] or use a single nodeId.");
+    }
+    if (nodeIds.length > EXPORT_MAX_NODES) {
+      fail(
+        `Too many nodes for one batch export: ${nodeIds.length} (max ${EXPORT_MAX_NODES})`,
+        `Split nodeIds into batches of ${EXPORT_MAX_NODES} or fewer.`,
+      );
     }
 
-    const base64 = customBase64Encode(bytes);
+    const images = {};
+    const errors = {};
+    const truncated = [];
+    let payloadChars = 0;
 
-    return {
-      nodeId,
+    for (const id of nodeIds) {
+      try {
+        const single = await exportSingleNode(id, format, scale);
+        const imageChars = single.imageData.length;
+        // Enforce the cap AFTER export so it is a true ceiling: only add this
+        // image if it fits in the remaining budget. Always allow the first
+        // image through (images empty) so a single oversized node still
+        // returns one result rather than silently producing nothing.
+        const isFirst = Object.keys(images).length === 0;
+        if (!isFirst && payloadChars + imageChars > EXPORT_MAX_PAYLOAD_CHARS) {
+          truncated.push(id);
+          continue;
+        }
+        images[id] = {
+          format: single.format,
+          scale: single.scale,
+          mimeType: single.mimeType,
+          imageData: single.imageData,
+        };
+        payloadChars += imageChars;
+      } catch (error) {
+        errors[id] = error && error.message ? error.message : String(error);
+      }
+    }
+
+    const result = {
+      batch: true,
       format,
       scale,
-      mimeType,
-      imageData: base64,
+      images,
     };
-  } catch (error) {
-    throw new Error(`Error exporting node as image: ${error.message}`);
+    if (Object.keys(errors).length > 0) {
+      result.errors = errors;
+    }
+    if (truncated.length > 0) {
+      result.truncated = truncated;
+    }
+    return result;
   }
+
+  // Single-node mode (backward compatible). The not-found / unsupported checks
+  // in exportSingleNode already throw descriptive, fix-stated errors, so call
+  // it directly rather than re-wrapping (which would double-prefix the message).
+  const nodeId = p.nodeId;
+  if (!nodeId) {
+    fail("Missing nodeId parameter", "Pass `nodeId` for one node or `nodeIds` for a batch.");
+  }
+
+  return await exportSingleNode(nodeId, format, scale);
 }
