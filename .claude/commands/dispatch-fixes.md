@@ -26,6 +26,11 @@ issue is always better than opening a bad PR.**
 - If lint/test/build fail after applying the plan, **abort that issue**: remove the
   worktree, comment on the issue that auto-fix failed and needs manual work, open **no** PR.
 
+> **Lockstep with the analyzer.** Constraints 1 and 4 depend on the `analyze-session`
+> skill reliably emitting `- **Auto-fixable**: yes/no` (Phase 5) and setting `Status: planned`
+> after it writes a plan (Phase 6). The plan file (constraint 3) is the load-bearing artifact.
+> If the skill stops emitting those fields this stage goes inert — keep the two docs aligned.
+
 ## Steps
 
 1. **Pick candidates.** Read `.claude/analysis/improvement-tracker.md`. Collect entries

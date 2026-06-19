@@ -51,9 +51,12 @@ echo "[$(ts)] Stage A — extract Figmagent sessions across all repos"
 # ---- Stage B: analyze each unanalyzed figma session ------------------------
 echo "[$(ts)] Stage B — analyze sessions (cap $MAX_ANALYZE)"
 for ((n = 1; n <= MAX_ANALYZE; n++)); do
-  NEEDS="$("$BUN" scripts/refresh-manifest.ts --count 2>/dev/null)"
-  echo "[$(ts)]   sessions needing analysis: ${NEEDS:-?}"
-  [[ "${NEEDS:-0}" =~ ^[0-9]+$ ]] || { echo "[$(ts)]   manifest count unreadable — stopping Stage B"; break; }
+  NEEDS="$("$BUN" scripts/refresh-manifest.ts --count 2>/dev/null | tail -n1)"
+  echo "[$(ts)]   sessions needing analysis: ${NEEDS:-<unreadable>}"
+  # Test the RAW value: an empty count (script crashed) or non-numeric line must
+  # STOP — not fall through and fire analyze up to MAX_ANALYZE times. ${NEEDS:-0}
+  # would mask an empty value as "0" and pass this guard.
+  [[ "$NEEDS" =~ ^[0-9]+$ ]] || { echo "[$(ts)]   manifest count unreadable — stopping Stage B"; break; }
   [ "$NEEDS" -eq 0 ] && break
   # Each call is a fresh, small-context session (the skill analyzes one at a
   # time and marks it done in the manifest). The loop guard above stops us.
@@ -61,15 +64,22 @@ for ((n = 1; n <= MAX_ANALYZE; n++)); do
     || echo "[$(ts)]   /analyze-session exited non-zero (continuing)"
 done
 
-# ---- commit analysis artifacts so Stage D branches from a clean tree --------
-if [ "$DO_COMMIT" = "1" ]; then
+# Branch guard: this is a main-branch maintenance job. Commit analyses and run
+# Stage D only on main — otherwise the auto-commit would land on whatever feature
+# branch is checked out, and Stage D's PRs would build off the wrong base.
+BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+
+# ---- commit analysis artifacts to main (local, no push) so they're recorded -
+if [ "$DO_COMMIT" = "1" ] && [ "$BRANCH" = "main" ]; then
   if ! git diff --quiet -- .claude/analysis .claude/plans 2>/dev/null \
      || [ -n "$(git ls-files --others --exclude-standard .claude/analysis .claude/plans)" ]; then
-    echo "[$(ts)] committing analysis artifacts (local, no push)"
+    echo "[$(ts)] committing analysis artifacts to main (local, no push)"
     git add .claude/analysis .claude/plans
     git -c commit.gpgsign=false commit -q -m "auto-improve: session analyses $(date +%F)" \
       || echo "[$(ts)]   nothing to commit / commit failed (continuing)"
   fi
+elif [ "$DO_COMMIT" = "1" ]; then
+  echo "[$(ts)] not on main (on '$BRANCH') — leaving analysis artifacts uncommitted"
 fi
 
 # ---- Stage C: sync tracker → GitHub issues ---------------------------------
@@ -77,10 +87,12 @@ echo "[$(ts)] Stage C — sync improvement tracker → GitHub issues"
 "$BUN" scripts/sync-tracker-issues.ts
 
 # ---- Stage D: open draft PRs for safe auto-fixable issues ------------------
-if [ "$DO_DISPATCH" = "1" ]; then
+if [ "$DO_DISPATCH" = "1" ] && [ "$BRANCH" = "main" ]; then
   echo "[$(ts)] Stage D — dispatch draft fix PRs"
   "$CLAUDE" -p "/dispatch-fixes" $PERMS \
     || echo "[$(ts)]   /dispatch-fixes exited non-zero (continuing)"
+elif [ "$DO_DISPATCH" = "1" ]; then
+  echo "[$(ts)] Stage D — skipped (not on main, on '$BRANCH')"
 else
   echo "[$(ts)] Stage D — skipped (AUTO_IMPROVE_DISPATCH=0)"
 fi

@@ -281,10 +281,10 @@ Update `.claude/analysis/improvement-tracker.md`:
 
 1. **Add new issues**: For each efficiency issue or error pattern identified in this analysis that doesn't already exist in the tracker:
    - Assign an ID: `[CATEGORY-NNN]` where CATEGORY is TOOL, BUG, AGENT, or INFRA
-   - Auto-increment NNN within the category
+   - **Auto-increment NNN past the highest existing number in that category across BOTH the Active and Resolved sections.** Grep `^### \[CATEGORY-` for the current max first — reusing a number collides two distinct findings onto one GitHub issue (the sync warns on this, but don't create it).
    - Set status to `identified`
    - Set priority based on estimated call savings: P0 (>50 calls), P1 (10-50 calls), P2 (<10 calls)
-   - Classify as auto-fixable if it matches a known fix pattern (see Phase 6)
+   - **Always add an explicit `- **Auto-fixable**: yes` or `- **Auto-fixable**: no` line** (`yes` only when it matches a Phase 6 safe pattern). Stage D (`/dispatch-fixes`) keys on this field — an entry missing it is never auto-fixed.
 
 2. **Update existing issues**: For each tracker entry:
    - If the issue was not observed in this session and the fix is confirmed working → advance to `verified`, move to Resolved Issues
@@ -307,7 +307,7 @@ Update `.claude/analysis/improvement-tracker.md`:
 
 ## Phase 6: Generate Fix Plans (if applicable)
 
-For issues marked `auto-fixable: yes` in the tracker, generate implementation plans. Plans go to `.claude/plans/<date>-<issue-id>.md`.
+For issues with `- **Auto-fixable**: yes` in the tracker, generate implementation plans. Plans go to `.claude/plans/<date>-<issue-id>.md`. **After writing a plan file, set that entry's `Status` to `planned`.** Stage D (`/dispatch-fixes`) gates on the plan file's existence plus a non-resolved status, so a written-but-not-marked plan would never be dispatched — keep these in lockstep.
 
 ### Safe Fix Patterns (allowlist)
 

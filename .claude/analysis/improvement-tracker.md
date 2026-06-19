@@ -667,7 +667,7 @@ Sessions analyzed: 35
 - **Description**: A library variable imported via `import_library_variable` but not bound in the same operation is **garbage-collected by Figma** before a later bind references it. Session 35: a nearest-token snapping pass failed for `gap/md`=12 and `radius/lg`=8 with "Variable not found" because those tokens were imported in an earlier exact-match pass but never bound (the exact-match pass found no node needing them), so Figma GC'd them. The partial-fail `edit` (call 130) returned 13/24 nodes edited with a clear "Variable not found … pass the full VariableID" fix; agent re-imported and retried successfully.
 - **Proposed fix**: Agent-behavior + tool — import and bind variables in the same operation; or have `edit`/`run_script` re-import a referenced library variable on-the-fly if it's missing. At minimum document the GC behavior in the design-tokens workflow note.
 
-### [AGENT-019] `lint --autoFix` only binds local variables; prefer batch import + run_script for value-matching
+### [AGENT-020] `lint --autoFix` only binds local variables; prefer batch import + run_script for value-matching
 - **Status**: identified
 - **Priority**: P2
 - **Category**: agent-behavior

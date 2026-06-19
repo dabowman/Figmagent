@@ -202,7 +202,16 @@ async function discoverFigmaSessionsAllProjects(): Promise<SessionInfo[]> {
 		const jsonlFiles = dirEntries.filter((e) => e.endsWith(".jsonl"));
 		for (const file of jsonlFiles) {
 			const filePath = join(dir, file);
-			const raw = await readFile(filePath, "utf-8");
+			let raw: string;
+			let fileStat: Awaited<ReturnType<typeof stat>>;
+			try {
+				// A single mid-write / rotated / permission-restricted transcript
+				// must not abort the whole nightly --all-projects walk.
+				raw = await readFile(filePath, "utf-8");
+				fileStat = await stat(filePath);
+			} catch {
+				continue;
+			}
 			// Cheap reject: skip files that never mention Figmagent at all.
 			// (The full name also appears in system-reminder tool listings, so a
 			// raw match is necessary but not sufficient — we confirm a real call
@@ -210,7 +219,6 @@ async function discoverFigmaSessionsAllProjects(): Promise<SessionInfo[]> {
 			if (!raw.includes("mcp__Figmagent__")) continue;
 
 			const id = file.replace(".jsonl", "");
-			const fileStat = await stat(filePath);
 			const lines = raw.split("\n").filter(Boolean);
 
 			let firstUserMsg = "";

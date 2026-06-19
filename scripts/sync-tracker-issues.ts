@@ -7,10 +7,12 @@
  * `### [CATEGORY-NNN] Title` block maps to at most one GitHub issue.
  *
  * Matching an entry to its GitHub issue (in priority order):
- *   1. An `/issues/N` URL embedded in the entry header/body (the tracker links
- *      many entries to issues that already exist) → that issue number.
- *   2. An existing issue whose title is prefixed `[CATEGORY-NNN]` (issues this
- *      script created on a previous run).
+ *   1. An existing issue whose title is prefixed `[CATEGORY-NNN]` (issues this
+ *      script created on a previous run) — the reliable key.
+ *   2. A structured `- **Issue**: #N` field, else an `/issues/N` URL in the entry
+ *      HEADER line (where the tracker links pre-existing issues). We never scrape
+ *      `/issues/N` from free body prose — a "Follow-up: #57" cross-reference must
+ *      not bind the entry to that unrelated issue.
  *   3. Neither → the entry has no issue yet.
  *
  * Reconciliation:
@@ -19,10 +21,12 @@
  *   - active entry, issue closed        → report drift (reopen only with --reopen)
  *   - resolved entry, no issue          → skip (don't create just to close)
  *
- * "Resolved" = the entry appears under "## Resolved Issues", or its Status
- * starts with `verified` / `resolved`. The same ID can appear in both the Active
- * and Resolved sections; entries are deduped by ID (richest body wins, resolved
- * is sticky, first issue ref wins).
+ * "Resolved" derivation: the same ID can appear under both "## Active Issues"
+ * and "## Resolved Issues". The ACTIVE occurrence's Status is authoritative — if
+ * an entry is active with Status `identified`, a stale Resolved-section recap
+ * does NOT mark it resolved (so re-activated work is never auto-closed). An ID
+ * that appears ONLY under Resolved (no active occurrence) is resolved. A Status
+ * of verified / resolved / implemented counts as resolved.
  *
  * Idempotent: safe to run nightly. Keys on stable issue numbers / ID prefixes,
  * so it never creates duplicates.
@@ -43,10 +47,22 @@ const LABEL = "figmagent-improvement";
 
 const dryRun = process.argv.includes("--dry-run");
 const reopen = process.argv.includes("--reopen");
+
+// --limit caps new issues per run. Absent ⇒ no cap. A malformed value
+// (--limit=, --limit=abc) is an error, not a silently-disabled cap.
+let createLimit = Number.POSITIVE_INFINITY;
 const limitArg = process.argv.find((a) => a.startsWith("--limit="));
-const createLimit = limitArg
-	? Number.parseInt(limitArg.split("=")[1] ?? "", 10)
-	: Number.POSITIVE_INFINITY;
+if (limitArg) {
+	const n = Number.parseInt(limitArg.split("=")[1] ?? "", 10);
+	if (Number.isNaN(n) || n < 0) {
+		console.error(`Invalid ${limitArg} — expected a non-negative integer (e.g. --limit=10).`);
+		process.exit(1);
+	}
+	createLimit = n;
+}
+
+const isResolutionStatus = (s: string): boolean =>
+	/^(verified|resolved|implemented)\b/i.test(s);
 
 // ---- parse the tracker into deduped issues ---------------------------------
 
@@ -54,22 +70,30 @@ interface TrackerIssue {
 	id: string; // TOOL-001
 	cleanTitle: string; // header text with " — [#N]…" decoration stripped
 	fullTitle: string; // "[TOOL-001] cleanTitle"
-	status: string;
 	priority: string; // P0 | P1 | P2 | ""
 	category: string;
-	resolved: boolean;
-	issueRef?: number; // existing /issues/N referenced by the tracker
 	body: string;
+	issueRef?: number; // structured **Issue** field, else header /issues/N
+	activeStatus?: string; // Status from an Active-section occurrence (authoritative)
+	inResolved: boolean; // appeared under "## Resolved Issues"
+	resolved: boolean; // derived after parsing
+	resolvedReason: string; // for the close comment (never contradicts status)
 }
 
-const parseIssueRef = (text: string): number | undefined => {
-	const m = text.match(/\/issues\/(\d+)/);
+// Issue ref from the HEADER line only (the entry's own link), never body prose.
+const headerIssueRef = (titleLine: string): number | undefined => {
+	const m = titleLine.match(/\/issues\/(\d+)/);
 	return m?.[1] ? Number.parseInt(m[1], 10) : undefined;
 };
 
 const raw = await readFile(TRACKER, "utf-8");
 const lines = raw.split("\n");
 const byId = new Map<string, TrackerIssue>();
+// IDs reused for materially different issues (an analyzer numbering bug): two
+// distinct findings would collapse onto one GitHub issue. Detect and warn.
+const collisions = new Set<string>();
+const normTitle = (s: string): string =>
+	s.toLowerCase().replace(/[`*_]/g, "").replace(/\s+/g, " ").trim();
 
 let section: "active" | "resolved" | "other" = "other";
 let curId = "";
@@ -77,18 +101,14 @@ let curTitleLine = "";
 let curStatus = "";
 let curPriority = "";
 let curCategory = "";
+let curIssue: number | undefined;
 let bodyLines: string[] = [];
 
 const commit = (): void => {
 	if (!curId) return;
 	const body = bodyLines.join("\n").trim();
-	// An entry is "resolved" (→ its GitHub issue should be closed) when it sits
-	// under Resolved, or its Status is verified / resolved / implemented. Note
-	// "partially implemented" and "mixed" deliberately stay open (work remains).
-	const resolved =
-		section === "resolved" || /^(verified|resolved|implemented)\b/i.test(curStatus);
 	const cleanTitle = curTitleLine.replace(/\s*—\s*\[(?:#|PR\b).*$/u, "").trim();
-	const issueRef = parseIssueRef(`${curTitleLine}\n${body}`);
+	const ref = curIssue ?? headerIssueRef(curTitleLine);
 
 	const existing = byId.get(curId);
 	if (!existing) {
@@ -96,26 +116,32 @@ const commit = (): void => {
 			id: curId,
 			cleanTitle,
 			fullTitle: `[${curId}] ${cleanTitle}`,
-			status: curStatus,
 			priority: curPriority,
 			category: curCategory,
-			resolved,
-			issueRef,
 			body,
+			issueRef: ref,
+			activeStatus: section === "active" ? curStatus : undefined,
+			inResolved: section === "resolved",
+			resolved: false,
+			resolvedReason: "",
 		});
 	} else {
-		// Merge duplicates (Active + Resolved recap). Richest body wins;
-		// resolved is sticky; keep the first issue ref we saw.
+		// Same ID, materially different title ⇒ two different issues share an ID.
+		if (normTitle(cleanTitle) !== normTitle(existing.cleanTitle)) {
+			collisions.add(curId);
+		}
+		// Merge duplicates. Richest body wins for display; the ACTIVE occurrence's
+		// status is authoritative; resolved-ness is derived later, not OR-ed here.
 		if (body.length > existing.body.length) {
 			existing.body = body;
 			existing.cleanTitle = cleanTitle;
 			existing.fullTitle = `[${curId}] ${cleanTitle}`;
-			if (curStatus) existing.status = curStatus;
 			if (curPriority) existing.priority = curPriority;
 			if (curCategory) existing.category = curCategory;
 		}
-		existing.resolved = existing.resolved || resolved;
-		existing.issueRef = existing.issueRef ?? issueRef;
+		if (section === "active" && curStatus) existing.activeStatus = curStatus;
+		if (section === "resolved") existing.inResolved = true;
+		existing.issueRef = existing.issueRef ?? ref;
 	}
 };
 
@@ -141,6 +167,7 @@ for (const line of lines) {
 		curStatus = "";
 		curPriority = "";
 		curCategory = "";
+		curIssue = undefined;
 		bodyLines = [];
 		continue;
 	}
@@ -152,9 +179,29 @@ for (const line of lines) {
 		if (p) curPriority = (p[1] ?? "").trim();
 		const c = line.match(/^- \*\*Category\*\*:\s*(.+)/);
 		if (c) curCategory = (c[1] ?? "").trim();
+		// Optional structured override: `- **Issue**: #123` (preferred over header).
+		const iss = line.match(/^- \*\*Issue\*\*:\s*#?(\d+)/);
+		if (iss?.[1]) curIssue = Number.parseInt(iss[1], 10);
 	}
 }
 commit();
+
+if (collisions.size > 0) {
+	console.error(
+		`⚠️  Duplicate tracker IDs with different titles — renumber them (each maps to one GitHub issue): ${[...collisions].join(", ")}`,
+	);
+}
+
+// Derive resolved-ness from the authoritative occurrence.
+for (const t of byId.values()) {
+	if (t.activeStatus !== undefined) {
+		t.resolved = isResolutionStatus(t.activeStatus);
+		t.resolvedReason = t.resolved ? `status: ${t.activeStatus}` : "";
+	} else {
+		t.resolved = t.inResolved; // only appears under Resolved
+		t.resolvedReason = t.inResolved ? "listed under Resolved Issues" : "";
+	}
+}
 
 const trackerIssues = [...byId.values()];
 
@@ -164,10 +211,10 @@ const issueBody = (t: TrackerIssue): string =>
 		"",
 		"---",
 		"*Auto-synced from `.claude/analysis/improvement-tracker.md` by `scripts/sync-tracker-issues.ts`.*",
-		`*Tracker ID: \`${t.id}\` — keep the \`[${t.id}]\` title prefix; it is a sync key.*`,
+		`*Tracker ID: \`${t.id}\` — keep the \`[${t.id}]\` title prefix; it is the sync key.*`,
 	].join("\n");
 
-// ---- read current GitHub state ---------------------------------------------
+// ---- read current GitHub state (fully paginated, PRs excluded) --------------
 
 interface GhIssue {
 	number: number;
@@ -175,13 +222,25 @@ interface GhIssue {
 	state: string;
 }
 
+// `gh issue list --limit N` caps the snapshot; once the repo exceeds N an
+// existing [ID]-titled issue could fall outside the window and get duplicated.
+// `gh api --paginate --slurp` walks every page and returns one JSON array (of
+// per-page arrays). The REST issues endpoint also returns PRs, so filter them
+// out (`.pull_request` present ⇒ it's a PR).
+// Params go in the URL (query string) — `-f` would make `gh api` issue a POST.
 const listJson =
-	await $`gh issue list --repo ${REPO} --state all --limit 1000 --json number,title,state`
+	await $`gh api --paginate --slurp ${`repos/${REPO}/issues?state=all&per_page=100`}`
 		.nothrow()
 		.text();
-let existingIssues: GhIssue[] = [];
+let existingIssues: GhIssue[];
 try {
-	existingIssues = JSON.parse(listJson);
+	const pages = JSON.parse(listJson) as Array<
+		Array<{ number: number; title: string; state: string; pull_request?: unknown }>
+	>;
+	existingIssues = pages
+		.flat()
+		.filter((e) => !e.pull_request)
+		.map((e) => ({ number: e.number, title: e.title, state: e.state }));
 } catch {
 	console.error(`Failed to list GitHub issues. Is \`gh\` authenticated for ${REPO}?`);
 	process.exit(1);
@@ -195,6 +254,11 @@ for (const e of existingIssues) {
 	if (m?.[1]) numberByPrefix.set(m[1], e.number);
 }
 
+// The [ID]-title match is the reliable primary key; the header/struct ref is a
+// fallback for pre-existing issues the sync didn't create.
+const resolveNum = (t: TrackerIssue): number | undefined =>
+	numberByPrefix.get(t.id) ?? t.issueRef;
+
 // ---- ensure labels exist ----------------------------------------------------
 
 const ensureLabel = async (
@@ -207,9 +271,6 @@ const ensureLabel = async (
 		.nothrow()
 		.quiet();
 };
-
-const resolveNum = (t: TrackerIssue): number | undefined =>
-	t.issueRef ?? numberByPrefix.get(t.id);
 
 const prioColor: Record<string, string> = {
 	P0: "b60205",
@@ -252,9 +313,9 @@ for (const t of trackerIssues) {
 			actions.push(`MISSING [${t.id}] → #${num} not found on ${REPO}; skipping`);
 			skipped++;
 		} else if (!wantOpen && state === "open") {
-			actions.push(`CLOSE   #${num} [${t.id}] (${t.status || "resolved"})`);
+			actions.push(`CLOSE   #${num} [${t.id}] (${t.resolvedReason || "resolved"})`);
 			if (!dryRun) {
-				await $`gh issue close ${num} --repo ${REPO} --comment ${`Resolved in tracker (status: ${t.status || "resolved"}). Closed by auto-improve sync.`}`
+				await $`gh issue close ${num} --repo ${REPO} --comment ${`Resolved in tracker (${t.resolvedReason || "resolved"}). Closed by auto-improve sync.`}`
 					.nothrow()
 					.quiet();
 			}

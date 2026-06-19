@@ -36,6 +36,27 @@ interface Entry {
 // seconds-since-epoch with 2 decimal places, matching the prior Python script
 const mtimeSeconds = (ms: number): number => Math.round(ms / 10) / 100;
 
+const HOME = process.env.HOME || "~";
+
+// mtime of the ORIGINAL Claude Code transcript for a session, derived from its
+// recorded cwd + id (~/.claude/projects/<encoded-cwd>/<id>.jsonl). Returns
+// undefined if it's been rotated away. Preferred over the extracted JSON's
+// mtime, which bumps on every re-extraction even when content is unchanged.
+async function originalTranscriptMtime(
+	cwd: string | undefined,
+	sid: string,
+): Promise<number | undefined> {
+	if (!cwd) return undefined;
+	const encoded = cwd.replace(/\//g, "-");
+	try {
+		return mtimeSeconds(
+			(await stat(join(HOME, ".claude/projects", encoded, `${sid}.jsonl`))).mtimeMs,
+		);
+	} catch {
+		return undefined;
+	}
+}
+
 let manifest: { sessions: Record<string, Entry> };
 try {
 	manifest = JSON.parse(await readFile(MANIFEST, "utf-8"));
@@ -55,13 +76,18 @@ for (const f of files) {
 	let data: {
 		sessionId?: string;
 		metadata?: {
+			cwd?: string;
 			uniqueTools?: string[];
 			toolCallCount?: number;
 			duration?: { minutes?: number };
 		};
 	};
+	let jsonMtime: number;
 	try {
 		data = JSON.parse(await readFile(path, "utf-8"));
+		// stat inside the try: a TOCTOU removal between readdir and here must
+		// not throw an unhandled rejection that aborts the whole refresh.
+		jsonMtime = mtimeSeconds((await stat(path)).mtimeMs);
 	} catch {
 		continue;
 	}
@@ -72,7 +98,9 @@ for (const f of files) {
 	const tools = m.uniqueTools || [];
 	const figmaTools = tools.filter((t) => t.includes("Figmagent"));
 	const tc = m.toolCallCount || 0;
-	const sourceModified = mtimeSeconds((await stat(path)).mtimeMs);
+	// Key freshness on the original transcript's mtime when available; fall back
+	// to the extracted JSON's mtime. Avoids re-analyzing on spurious re-extraction.
+	const sourceModified = (await originalTranscriptMtime(m.cwd, sid)) ?? jsonMtime;
 
 	const existing = manifest.sessions[sid] || ({} as Entry);
 	const entry: Entry = {
