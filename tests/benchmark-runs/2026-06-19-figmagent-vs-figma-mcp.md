@@ -59,6 +59,29 @@
 1. **`import_library_component(s)` is broken on remote** — fails with `set_selection: selection of a page can only include nodes in that page` (reproduced 3× across batch + single, into both a component and a page). This blocked the only task Figmagent lost. **P1.** → filed as [BUG-018] (#101), new.
 2. **`screenshot` export fails on large nodes on remote** — returns a malformed MCP result (`-32602 invalid_union`, `content[0]` missing `data`) / empty; small-to-mid nodes export fine. Prevents visual self-verification of full screens. → **recurrence of the existing [BUG-016] (#96)**; this run's repro was folded into that entry (not a new bug).
 
+## Expansion round — differentiating tools (8 prompts)
+
+A second round targeting the operations where Figmagent has *first-class tools* but the official Figma MCP must hand-roll Plugin-API JS: variant swap, annotations, batch token-binding, lint+autofix, batch annotate, instance-override transfer, text-style audit, component-property defs. Selection-dependent prompts were re-phrased to explicit node references; each agent **cloned the fixture to its own page** so the seed stayed pristine (verified: scopes the Figmagent agent widened were restored before Round 2B for fairness).
+
+| | Figmagent | Figma MCP |
+|---|---|---|
+| Prompts successful | **8 / 8** | **8 / 8** |
+| Wall-clock | **~2:19** | ~4:33 |
+| Tool calls *(informational)* | 35 | 20 |
+| Output tokens | 82 k | 87 k |
+| Approach | first-class typed tools | all hand-written `use_figma` JS |
+
+**Both reachable — the split is ergonomics, speed, and analysis quality:**
+- **Figmagent ~2× faster wall-clock** here (2:19 vs 4:33) *despite more calls* — typed calls are quick, whereas the official MCP had to author ~30-line scripts (color-distance matchers, field-by-field override replication, a closest-text-style matcher).
+- **Lint quality edge — Figmagent.** Its purpose-built `lint` surfaced **14** issues with full severity classification (6 exact, 1 near, 2 no-match *font sizes*, **5 ambiguous** — padding vs. gap sharing value 12) and auto-fixed all 6 exact. The official MCP's hand-rolled matcher found **6** issues (2 exact, 4 near), bound 2, and **missed both the padding/gap ambiguity and the unmatched font sizes** — its ad-hoc threshold also mislabeled exact fixture colors as "near."
+- **Figma MCP fewer calls** (20 vs 35), consistent with its batch-JS model; the official-MCP agent itself concluded *"a dedicated lint/bind/override-transfer tool would have collapsed #3/#4/#6/#7 from ~30 lines each to single calls."*
+- **Identical visual outcomes** verified for the headline tasks (override transfer → Button B shows "Save" + swapped icon; ListItem fully bound) in both runs.
+
+**Net of both rounds:** near-parity on raw construction; the official MCP wins on **library import, self-verification, and call economy**; Figmagent wins on **speed and analysis quality for token/lint/override/annotation work**, and its **post-write assertions** auto-catch layout bugs the JS model doesn't guard. The clearest "adopt" idea for Figmagent is the official MCP's reliable `get_screenshot` (see BUG-016) and its first-try library import (BUG-018).
+
+### Benchmark-design nit surfaced
+Prompts 2.6 / 3.8 specify annotation categories `development` / `spacing` / `typography`, but Figma annotation categories are **file-specific GUIDs** and only `Development`/`Interaction`/`Accessibility`/`Content` exist in the seed. Both agents worked around it (mapped to the closest valid category). Fix: either define these annotation categories in the seed, or relax the prompts to use the categories Figma ships. Tracked as a follow-up to `tests/seed/`.
+
 ## Caveats
 - This run covered 14 of ~40 prompts (selection-free + library); selection-dependent and fixture-mutating prompts were out of scope.
 - Figmagent ran on the **remote** transport — both bugs above are remote-transport-specific and may not reproduce on the plugin transport (which would also be ~100× faster per command).
