@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.figmagent.auto-improve</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/davidbowman/Github/cursor-talk-to-figma-mcp/scripts/auto-improve.sh</string>
+  </array>
+
+  <!-- Run nightly at 03:00. If the Mac is asleep/off at 03:00, launchd runs it
+       at the next wake. -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>3</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/Users/davidbowman/.bun/bin:/Users/davidbowman/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <!-- Optional tunables (uncomment to override auto-improve.sh defaults):
+    <key>AUTO_IMPROVE_DISPATCH</key><string>1</string>
+    <key>AUTO_IMPROVE_MAX_ANALYZE</key><string>25</string>
+    -->
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+
+  <!-- launchd's own capture of stdout/stderr (the script also writes its own
+       detailed log to .claude/analysis/auto-improve.log). -->
+  <key>StandardOutPath</key>
+  <string>/Users/davidbowman/Github/cursor-talk-to-figma-mcp/.claude/analysis/auto-improve.launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/davidbowman/Github/cursor-talk-to-figma-mcp/.claude/analysis/auto-improve.launchd.log</string>
+</dict>
+</plist>
