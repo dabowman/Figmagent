@@ -635,6 +635,7 @@ Sessions analyzed: 35
 - **Description**: On the remote transport, `mcp__Figmagent__screenshot` intermittently fails with `MCP error -32602: Invalid tools/call result: [{ "code": "invalid_union", ... "path": ["type"], "message": "Invalid input: expected \"text\"" }, { "expected": "string", "code": "invalid_type", "path": ["text"] ...}]` — the returned content block is neither a valid `text` nor `image` block, so the SDK rejects the whole result. **Intermittent and single-node-only**: failed on main #44 (`4:608`), agent-ab #6 (`4:383`), agent-ab #22 (`4:608`), while a *batched* `screenshot {nodeIds:[...]}` (agent-ab #5) and 8 single-node screenshots in agent-a0 succeeded. Correlates with larger/complex nodes and a ~2.9KB truncated payload — likely an oversized or error-stringified image block escaping into the content array. Agent recovered well (retry, or fall back to official `figma get_screenshot` → curl asset → Read, a 3-call dance).
 - **Proposed fix**: In the remote `screenshot`/`export` result path, guarantee the content block conforms to the MCP `image` schema (base64 `data` + `mimeType`); cap/handle oversized exports rather than emitting a malformed union member; on export failure return a proper `is_error` text block instead. Reproduce by screenshotting a large/complex single node on remote.
 - **Note**: Result-serialization fix, not in the Phase 6 auto-fix allowlist (sync-to-async / type-coercion / missing-batch-tool) — no auto-plan generated. Related: [TOOL-017] (batch screenshot works; single-node path is the broken one), [BUG-008] (a malformed result should surface as a clean error).
+- **Recurred**: Benchmark run 2026-06-19 (`tests/benchmark-runs/2026-06-19-figmagent-vs-figma-mcp.md`). The Figmagent agent could not screenshot a full 390×844 login screen (same `-32602 invalid_union`, `content[0]` missing `data`) while cards / button sets / data tables exported fine — reinforcing the larger/complex-node correlation. A batch `screenshot` call also returned "0 nodes". The official Figma MCP's `get_screenshot` succeeded on the same screen, so this bug is the main self-verification gap vs. the official MCP.
 
 ### [TOOL-020] No way to read a variable's resolved numeric value on remote
 - **Status**: identified
@@ -666,6 +667,16 @@ Sessions analyzed: 35
 - **Estimated savings**: ~3 calls per multi-pass binding task (re-import + retry)
 - **Description**: A library variable imported via `import_library_variable` but not bound in the same operation is **garbage-collected by Figma** before a later bind references it. Session 35: a nearest-token snapping pass failed for `gap/md`=12 and `radius/lg`=8 with "Variable not found" because those tokens were imported in an earlier exact-match pass but never bound (the exact-match pass found no node needing them), so Figma GC'd them. The partial-fail `edit` (call 130) returned 13/24 nodes edited with a clear "Variable not found … pass the full VariableID" fix; agent re-imported and retried successfully.
 - **Proposed fix**: Agent-behavior + tool — import and bind variables in the same operation; or have `edit`/`run_script` re-import a referenced library variable on-the-fly if it's missing. At minimum document the GC behavior in the design-tokens workflow note.
+
+### [BUG-018] import_library_component fails on remote transport (set_selection page-mismatch)
+- **Status**: identified
+- **Priority**: P1
+- **Category**: plugin-bug
+- **First seen**: Benchmark run 2026-06-19 (head-to-head vs official Figma MCP, remote transport)
+- **Sessions affected**: benchmark-2026-06-19
+- **Estimated savings**: unblocks all published-library component import on remote
+- **Description**: `import_library_component(s)` fails on the **remote** transport with `set_selection: selection of a page can only include nodes in that page`. Reproduced 3× (batch + single; targeting both a COMPONENT parent and a PAGE) with valid, resolved WPDS Gutenberg variant keys (no "library not found"). It blocked the WPDS compose task (benchmark prompt 13, "import Secondary/Medium + Primary/Medium Buttons → FormActions") — the only task Figmagent lost; the official Figma MCP imported the same components via `importComponentByKeyAsync` first-try. Likely the import handler calls `figma.currentPage.selection`/`setSelection` with a node not on the current page in the remote `use_figma` VM.
+- **Proposed fix**: in the remote import path, don't `set_selection` on nodes outside the current page (set `currentPage` first, or drop the selection step entirely). Verify against the keys in `tests/seed/README.md` and the run in `tests/benchmark-runs/2026-06-19-figmagent-vs-figma-mcp.md`.
 
 ### [AGENT-020] `lint --autoFix` only binds local variables; prefer batch import + run_script for value-matching
 - **Status**: identified

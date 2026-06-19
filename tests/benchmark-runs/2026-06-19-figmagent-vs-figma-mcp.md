@@ -56,8 +56,8 @@
 3. **Granular typed tools** made intent explicit and validated per-op (vs. hand-written JS that must get sequencing right).
 
 ## Action items for Figmagent (remote transport)
-1. **`import_library_component(s)` is broken on remote** — fails with `set_selection: selection of a page can only include nodes in that page` (reproduced 3× across batch + single, into both a component and a page). This blocked the only task Figmagent lost. **P1.**
-2. **`screenshot` export fails on large nodes on remote** — returns a malformed MCP result (Zod union error) / empty; small-to-mid nodes export fine. Prevents visual self-verification of full screens. **P1–P2.**
+1. **`import_library_component(s)` is broken on remote** — fails with `set_selection: selection of a page can only include nodes in that page` (reproduced 3× across batch + single, into both a component and a page). This blocked the only task Figmagent lost. **P1.** → filed as [BUG-018] (#101), new.
+2. **`screenshot` export fails on large nodes on remote** — returns a malformed MCP result (`-32602 invalid_union`, `content[0]` missing `data`) / empty; small-to-mid nodes export fine. Prevents visual self-verification of full screens. → **recurrence of the existing [BUG-016] (#96)**; this run's repro was folded into that entry (not a new bug).
 
 ## Caveats
 - This run covered 14 of ~40 prompts (selection-free + library); selection-dependent and fixture-mutating prompts were out of scope.
