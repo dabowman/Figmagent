@@ -29,8 +29,10 @@ interface Entry {
 	figmaToolCalls: number;
 	durationMinutes: number;
 	sourceModified: number;
+	sourceSignature?: string; // "${toolCalls}:${figmaToolCalls}" — content fingerprint
 	analysis?: string;
 	analyzedAt?: number;
+	analyzedSignature?: string; // the sourceSignature the recorded analysis covered
 }
 
 // seconds-since-epoch with 2 decimal places, matching the prior Python script
@@ -98,8 +100,13 @@ for (const f of files) {
 	const tools = m.uniqueTools || [];
 	const figmaTools = tools.filter((t) => t.includes("Figmagent"));
 	const tc = m.toolCallCount || 0;
-	// Key freshness on the original transcript's mtime when available; fall back
-	// to the extracted JSON's mtime. Avoids re-analyzing on spurious re-extraction.
+	// Content fingerprint — re-analysis is keyed on THIS, not mtime. Even the
+	// original transcript's mtime drifts when a session is touched without
+	// changing analyzable content, producing false "updated" flags (observed:
+	// a transcript 13 min newer than its analysis with identical 12 calls).
+	const sourceSignature = `${tc}:${figmaTools.length}`;
+	// mtime is still recorded (display / ordering / resync hint) but no longer
+	// the freshness key.
 	const sourceModified = (await originalTranscriptMtime(m.cwd, sid)) ?? jsonMtime;
 
 	const existing = manifest.sessions[sid] || ({} as Entry);
@@ -115,13 +122,29 @@ for (const f of files) {
 		entry.skip = true;
 	} else if (figmaTools.length > 0) {
 		entry.sessionType = "figma";
+		entry.sourceSignature = sourceSignature;
 		if (existing.analysis) {
 			entry.analysis = existing.analysis;
 			try {
 				const af = join(ANALYSIS_DIR, existing.analysis);
 				entry.analyzedAt = mtimeSeconds((await stat(af)).mtimeMs);
 			} catch {
-				// analysis file was deleted — treat as needing re-analysis
+				// analysis file deleted — leave analyzedSignature unset so the
+				// needs-filter re-flags it.
+			}
+			if (entry.analyzedAt !== undefined) {
+				// Maintain analyzedSignature here (refresh-owned, no skill help):
+				//  • migrate — a pre-signature analysis is assumed to cover current
+				//    content (this is what stops the historical mtime false positives);
+				//  • resync — the analysis file is at/after the source mtime, so it
+				//    reflects current content;
+				//  • else keep the prior signature, so a genuine content change
+				//    (a different signature) is still detected.
+				entry.analyzedSignature =
+					existing.analyzedSignature === undefined ||
+					entry.analyzedAt >= sourceModified
+						? sourceSignature
+						: existing.analyzedSignature;
 			}
 		}
 	} else {
@@ -138,7 +161,7 @@ const figma = Object.entries(manifest.sessions).filter(
 	([, v]) => v.sessionType === "figma",
 );
 const needs = figma
-	.filter(([, v]) => !v.analysis || (v.sourceModified ?? 0) > (v.analyzedAt ?? 0))
+	.filter(([, v]) => !v.analysis || v.analyzedSignature !== v.sourceSignature)
 	.sort((a, b) => a[1].sourceModified - b[1].sourceModified);
 
 if (countOnly) {
