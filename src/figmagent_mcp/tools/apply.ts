@@ -6,10 +6,10 @@ import { formatWarningsBlock } from "../utils.js";
 // Color schema shared across fill/stroke/font
 const colorSchema = z
   .object({
-    r: z.number().min(0).max(1).describe("Red (0-1)"),
-    g: z.number().min(0).max(1).describe("Green (0-1)"),
-    b: z.number().min(0).max(1).describe("Blue (0-1)"),
-    a: z.number().min(0).max(1).optional().describe("Alpha (0-1)"),
+    r: z.coerce.number().min(0).max(1).describe("Red (0-1)"),
+    g: z.coerce.number().min(0).max(1).describe("Green (0-1)"),
+    b: z.coerce.number().min(0).max(1).describe("Blue (0-1)"),
+    a: z.coerce.number().min(0).max(1).optional().describe("Alpha (0-1)"),
   })
   .optional();
 
@@ -53,8 +53,8 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
       nodeId: z.string().describe("ID of the existing node to modify"),
 
       // Structural operations
-      x: z.number().optional().describe("New X position (moves the node; does NOT change parent)"),
-      y: z.number().optional().describe("New Y position (moves the node; does NOT change parent)"),
+      x: z.coerce.number().optional().describe("New X position (moves the node; does NOT change parent)"),
+      y: z.coerce.number().optional().describe("New Y position (moves the node; does NOT change parent)"),
       name: z.string().optional().describe("Rename the node (e.g. variant names like 'Size=MD, State=Default')"),
       index: z
         .number()
@@ -78,15 +78,15 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
       // Visual properties (direct values)
       fillColor: colorSchema.describe("Fill color (also sets font color on TEXT nodes)"),
       strokeColor: colorSchema.describe("Stroke color"),
-      strokeWeight: z.number().positive().optional().describe("Stroke weight"),
-      cornerRadius: z.number().min(0).optional().describe("Corner radius"),
-      opacity: z.number().min(0).max(1).optional().describe("Node opacity (0-1)"),
+      strokeWeight: z.coerce.number().positive().optional().describe("Stroke weight"),
+      cornerRadius: z.coerce.number().min(0).optional().describe("Corner radius"),
+      opacity: z.coerce.number().min(0).max(1).optional().describe("Node opacity (0-1)"),
       clipsContent: z
         .boolean()
         .optional()
         .describe("Clip content (frames only). true = overflow hidden, false = overflow visible."),
-      width: z.number().positive().optional().describe("Width (resizes the node)"),
-      height: z.number().positive().optional().describe("Height (resizes the node)"),
+      width: z.coerce.number().positive().optional().describe("Width (resizes the node)"),
+      height: z.coerce.number().positive().optional().describe("Height (resizes the node)"),
 
       // Font properties (TEXT nodes only — loads fonts automatically)
       fontFamily: z.string().optional().describe("Font family (e.g. 'Inter', 'Space Grotesk'). TEXT nodes only."),
@@ -94,7 +94,7 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
         .number()
         .optional()
         .describe("Font weight (100-900, e.g. 400=Regular, 600=Semi Bold, 700=Bold). TEXT nodes only."),
-      fontSize: z.number().positive().optional().describe("Font size in pixels. TEXT nodes only."),
+      fontSize: z.coerce.number().positive().optional().describe("Font size in pixels. TEXT nodes only."),
       fontColor: colorSchema.describe("Font color (convenience alias for fillColor on TEXT nodes)."),
       textAutoResize: z
         .enum(["NONE", "WIDTH_AND_HEIGHT", "HEIGHT", "TRUNCATE"])
@@ -113,16 +113,16 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
       // Layout properties
       layoutMode: z.enum(["NONE", "HORIZONTAL", "VERTICAL"]).optional().describe("Auto-layout direction"),
       layoutWrap: z.enum(["NO_WRAP", "WRAP"]).optional().describe("Whether auto-layout wraps children"),
-      paddingTop: z.number().optional(),
-      paddingRight: z.number().optional(),
-      paddingBottom: z.number().optional(),
-      paddingLeft: z.number().optional(),
+      paddingTop: z.coerce.number().optional(),
+      paddingRight: z.coerce.number().optional(),
+      paddingBottom: z.coerce.number().optional(),
+      paddingLeft: z.coerce.number().optional(),
       primaryAxisAlignItems: z.enum(["MIN", "MAX", "CENTER", "SPACE_BETWEEN"]).optional(),
       counterAxisAlignItems: z.enum(["MIN", "MAX", "CENTER", "BASELINE"]).optional(),
       layoutSizingHorizontal: z.enum(["FIXED", "HUG", "FILL"]).optional(),
       layoutSizingVertical: z.enum(["FIXED", "HUG", "FILL"]).optional(),
-      itemSpacing: z.number().optional().describe("Spacing between children"),
-      counterAxisSpacing: z.number().optional().describe("Spacing between wrapped rows/columns (requires WRAP)"),
+      itemSpacing: z.coerce.number().optional().describe("Spacing between children"),
+      counterAxisSpacing: z.coerce.number().optional().describe("Spacing between wrapped rows/columns (requires WRAP)"),
 
       // Design token variable bindings
       variables: z
