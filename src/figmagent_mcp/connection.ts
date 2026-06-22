@@ -26,31 +26,52 @@ let currentChannel: string | null = null;
 // Port of the active relay connection (needed for channel discovery inside sendCommandToFigma)
 let activePort: number = 3055;
 
+// Reconnect control. disconnectFromFigma() sets suppressReconnect and cancels
+// any timer a close handler already scheduled — removing listeners alone can't
+// unschedule a pending setTimeout, which previously left reconnect loops (to a
+// dead port) poisoning shared module state across tests. connectToFigma() resets
+// the flag so production auto-reconnect still works.
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let suppressReconnect = false;
+
 // Add command line argument parsing
 const args = process.argv.slice(2);
 const serverArg = args.find((arg) => arg.startsWith("--server="));
 const serverUrl = serverArg ? serverArg.split("=")[1] : "localhost";
 const WS_URL = serverUrl === "localhost" ? `ws://${serverUrl}` : `wss://${serverUrl}`;
 
-export function connectToFigma(port: number = 3055) {
+export function connectToFigma(port: number = 3055): Promise<void> {
   // If already connected, do nothing
   if (ws && ws.readyState === WebSocket.OPEN) {
     logger.info("Already connected to Figma");
-    return;
+    return Promise.resolve();
   }
 
   activePort = port;
+  suppressReconnect = false;
   const wsUrl = serverUrl === "localhost" ? `${WS_URL}:${port}` : WS_URL;
   logger.info(`Connecting to Figma socket server at ${wsUrl}...`);
-  ws = new WebSocket(wsUrl);
+  const socket = new WebSocket(wsUrl);
+  ws = socket;
 
-  ws.on("open", () => {
-    logger.info("Connected to Figma socket server");
-    // Reset channel on new connection
-    currentChannel = null;
+  // Resolve once the connection settles so callers can deterministically await
+  // it instead of guessing with a fixed sleep — the source of the CI flake in
+  // tests/connection.test.ts, where a slow runner sent a command before the
+  // socket reached OPEN. Always resolves, never rejects: fire-and-forget callers
+  // (server.ts) must not face an unhandled rejection when the relay is down, and
+  // an awaiter on a dead relay should proceed (then hit the "Not connected"
+  // path) rather than hang.
+  const settled = new Promise<void>((resolve) => {
+    socket.on("open", () => {
+      logger.info("Connected to Figma socket server");
+      // Reset channel on new connection
+      currentChannel = null;
+      resolve();
+    });
+    socket.once("close", () => resolve());
   });
 
-  ws.on("message", (data: any) => {
+  socket.on("message", (data: any) => {
     try {
       // Define a more specific type with an index signature to allow any property access
       interface ProgressMessage {
@@ -131,13 +152,15 @@ export function connectToFigma(port: number = 3055) {
     }
   });
 
-  ws.on("error", (error) => {
+  socket.on("error", (error) => {
     logger.error(`Socket error: ${error}`);
   });
 
-  ws.on("close", () => {
+  socket.on("close", () => {
     logger.info("Disconnected from Figma socket server");
-    ws = null;
+    // Only clear the active socket if it's still this one — a later
+    // connectToFigma() may have already replaced it.
+    if (ws === socket) ws = null;
 
     // Reject all pending requests
     for (const [id, request] of pendingRequests.entries()) {
@@ -146,19 +169,35 @@ export function connectToFigma(port: number = 3055) {
       pendingRequests.delete(id);
     }
 
-    // Attempt to reconnect
-    logger.info("Attempting to reconnect in 2 seconds...");
-    setTimeout(() => connectToFigma(port), 2000);
+    // Attempt to reconnect unless this was an intentional disconnect
+    if (!suppressReconnect) {
+      logger.info("Attempting to reconnect in 2 seconds...");
+      reconnectTimer = setTimeout(() => connectToFigma(port), 2000);
+    }
   });
+
+  return settled;
 }
 
 // Close the WebSocket connection and suppress reconnect.
 // Exported for test cleanup — prevents reconnect loops from poisoning shared module state.
 export function disconnectFromFigma(): void {
+  // Stop the auto-reconnect loop and cancel any timer a close handler already
+  // scheduled (removing listeners alone can't unschedule a pending setTimeout).
+  suppressReconnect = true;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
   if (ws) {
-    ws.removeAllListeners();
-    ws.close();
+    const socket = ws;
     ws = null;
+    socket.removeAllListeners();
+    // Re-attach a no-op error handler: a socket still CONNECTING to a dead relay
+    // (CI has no relay on the default port 3055) emits 'error' on teardown, and
+    // after removeAllListeners() that would surface as an unhandled ErrorEvent.
+    socket.on("error", () => {});
+    socket.close();
   }
   currentChannel = null;
 }
