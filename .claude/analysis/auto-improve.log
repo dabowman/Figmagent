@@ -1,0 +1,112 @@
+
+========================= auto-improve 2026-06-22 15:17:41 =========================
+[2026-06-22 15:17:41] Stage A — extract Figmagent sessions across all repos
+  dca6c80c-0cac-4235-8026-78399e789d46 → 392 messages, 149 tool calls + 2 sub-agents
+  064943cf-2e11-4a9a-a092-c18088b0d27f → 159 messages, 61 tool calls + 4 sub-agents
+  dc10dbb1-731f-4402-85e3-c22615a2564c → 59 messages, 21 tool calls
+  de1c4083-6d93-463d-a970-2b062048be35 → 436 messages, 168 tool calls + 5 sub-agents
+  44d8e724-6e14-41c5-b160-5e089a20697d → 336 messages, 134 tool calls
+  6fceb24e-bcb9-4c0c-af54-3c35ff7cb747 → 212 messages, 77 tool calls
+  72e93572-9d9d-447c-b825-4b0b8dc232c6 → 69 messages, 25 tool calls
+  59a8406c-3d98-4016-9b3e-f406da681422 → 33 messages, 12 tool calls
+
+8 extracted, 5 up-to-date. Output: /Users/davidbowman/Github/cursor-talk-to-figma-mcp/.claude/sessions-json
+Figma sessions: 34, needs analysis: 8
+  59a8406c-3d98-4016-9b3e-f406da681422    12 calls   2 figma  (updated)
+  72e93572-9d9d-447c-b825-4b0b8dc232c6    25 calls   6 figma  (updated)
+  6fceb24e-bcb9-4c0c-af54-3c35ff7cb747    77 calls  13 figma  (new)
+  44d8e724-6e14-41c5-b160-5e089a20697d   134 calls  14 figma  (updated)
+  de1c4083-6d93-463d-a970-2b062048be35   168 calls   9 figma  (new)
+  dc10dbb1-731f-4402-85e3-c22615a2564c    21 calls   6 figma  (new)
+  064943cf-2e11-4a9a-a092-c18088b0d27f    61 calls  11 figma  (updated)
+  dca6c80c-0cac-4235-8026-78399e789d46   149 calls   4 figma  (new)
+[2026-06-22 15:17:42] Stage B — analyze sessions (cap 25)
+[2026-06-22 15:17:42]   sessions needing analysis: 8
+Analysis complete. Session 36 analyzed and tracker/manifest updated.
+
+## Summary
+
+**Session 36** (`dca6c80c`) — a 134-minute **design-to-code** session on the external `vip-workflows` repo (remote transport), porting a Figma design's typography/breadcrumb/`AdminPage` into React/CSS. Figmagent was used **read-only** (14 of 149 calls); the rest was dev work.
+
+**Two Figma-side findings, both recurrences (no new issues):**
+
+1. **[BUG-014]** — remote onboarding friction: the agent issued `read` (#5) and `screenshot` (#6) *before* `use_file`, both failed `"No Figma file selected"`, then recovered with the URL it already had. ~2 wasted calls. Added session 36 to affected.
+
+2. **[TOOL-020]** — both `get_design_system` calls returned **completely empty** payloads because the file binds *library* (imported) typography tokens, which don't surface as local on remote. The agent recovered well by grepping the codebase's `@wordpress/theme` token output for the numeric values — the correct design-to-code move. Added session 36 + a "go to codebase tokens when GDS is empty" sub-finding.
+
+**What worked well:** fast error recovery (1 `use_file` call), correct fallback to codebase tokens, low ToolSearch overhead (1.3%), zero reconnections/retry storms. No `[BUG-016]` screenshot failure (nodes were small).
+
+**Phase 6:** No fix plans generated — both findings are recurrences of existing entries and neither matches an auto-fix pattern (sync-to-async / type-coercion / missing-batch-tool).
+
+7 Figma sessions remain unanalyzed; run `/analyze-session` again for the next (`064943cf`, 61 calls).
+[2026-06-22 15:21:50]   sessions needing analysis: 7
+Analysis complete. **Session 37** is now analyzed and recorded.
+
+## Summary
+
+**Session 37** — external WordPress-Admin-Environment, remote transport, 2026-06-17, 77 calls. The **direct sequel to Session 33**: the agent opened by running `reauthenticate` to switch the remote identity to an **editor** account, then created the WPDS 6.9 design-token variable set — **135 variables created + 83 updated** for a server-side-derived Dark mode, 0 failures — and evaluated re-linking old Button/IconButton instances to WPDS 22.3 `@wordpress/ui` variants.
+
+**What worked well**
+- Re-auth-to-editor unblocked everything (practical fix for [BUG-015]; corroborates Session 34).
+- Batched variable CRUD with zero failures; clever `/tmp` Node-script dark-mode hex derivation from `@wordpress/theme` color ramps; clean prototype-instance cleanup; AskUserQuestion used only for real design ambiguity.
+
+**Findings (2 new + 3 corroborations)**
+- **[AGENT-021]** (new, P2) — agent passed an official-figma `libraryKey` (`lk-…`) to Figmagent's `get_library_components` as a `fileKey` → 404. Two MCPs, two key namespaces.
+- **[AGENT-022]** (new, P2) — agent tried to `read` published-library variant node IDs (from `get_component_variants`) in the working file → "Node not found". Library IDs must be imported, not read. Recurrence of a documented CLAUDE.md hazard.
+- **[BUG-008]** — strongest single-session evidence yet: three distinct failure shapes (import not-found, REST 404, node not-found) all returned `is_error: false`.
+- **[BUG-015]** & **[TOOL-005]** — corroborated (reauth-to-editor remedy; external-repo ToolSearch overhead 11.7%).
+
+No Phase 6 fix plans generated — both new issues are agent-behavior, outside the auto-fix allowlist.
+
+Updated: `figma-mcp-session37-analysis.md` (new), `improvement-tracker.md` (header → 37, two new issues, three corroborations, metrics row), and the session manifest.
+
+The next-oldest unanalyzed sessions are `dc10dbb1` (vip-workflows, 21 calls) and `de1c4083` (cursor-talk-to-figma-mcp, 168 calls) — run `/analyze-session` again to take the next one.
+[2026-06-22 15:27:31]   sessions needing analysis: 6
+Analysis complete. **Session 38** (`dc10dbb1`, vip-workflows, remote) is analyzed and the tracker is updated.
+
+## What this session showed
+
+A clean, efficient 15-min remote build: 5 `StageNode` frames + 2 `TransitionEdge` frames → two COMPONENT_SETs with variants and component properties (Title text, Actors instance-swap). Notably done **entirely with first-class tools** (`combine_as_variants`, `component_properties`, `edit`) — zero `run_script` escape-hatching, a contrast to the Session 34 Omnibar build. 3 errors, all recovered, ~14% waste.
+
+## Tracker changes
+- **TOOL-022 (new, P2)** — Hyphenated node IDs from Figma URLs (`2010-73`) are rejected; the API wants colon form (`2010:73`). `use_file` tolerates the URL form but `read`/`edit`/`screenshot` don't, so reusing the same ID stumbles once. Fix: normalize `^(\d+)-(\d+)$` → `$1:$2` at the tool boundary.
+- **BUG-016** — 3rd independent recurrence of the remote single-node `screenshot` `-32602 invalid_union` (whole base-components FRAME). Escalation noted; this remains the main remote self-verification gap.
+- **BUG-014** — onboarding half recurred (`read` before `use_file`); added Session 38, now affecting 27/33/34/36/38.
+- Metrics row 38 added; "Sessions analyzed" → 38.
+
+## Manifest hygiene
+The refresh flagged 6 sessions, but **4 were false positives** — sessions 34/35/27/33 reappeared only because re-extraction bumped their source mtime above `analyzedAt`; their content is unchanged (I confirmed session 34 *is* this WordPress-Admin transcript exactly). I realigned their `analyzedAt` so they stop resurfacing rather than re-analyzing identical content.
+
+One genuinely-new session remains: **`de1c4083`** (168 calls, 9 figma). Run `/analyze-session` again to take it next.
+[2026-06-22 15:33:03]   sessions needing analysis: 5
+Analysis complete. Session 39 is written, the tracker and manifest are updated.
+
+## Summary
+
+**Session 39** (`de1c4083…`) was a **benchmark orchestration** transcript — 168 calls / 35 Figma, 99 min — building the WPDS seed and running two head-to-head rounds (Figmagent vs. official Figma MCP). The actual canvas builds happened in **5 delegated agents whose sub-transcripts weren't captured** (`subAgents: {}`), so this analysis covers the orchestrator's seed-build, verification, and file-reset work.
+
+**Findings:**
+- **TOOL-023 (new, P2)** — All 6 `run_script` calls were page CRUD (create/rename/delete page, reset file to pristine seed between contestants). Figmagent has no first-class page management, so every page op falls to the remote-only escape hatch. Proposed `write({type:"PAGE"})` / rename via `edit` / `delete` on PAGE nodes.
+- **BUG-016 (existing, P1)** — The `screenshot` `-32602 invalid_union` failed on the 390×844 login frame (`2003:10153`) while mid-size siblings exported fine. This session **confirms it's not agent-specific** — it fired from the orchestrator's own verification path, not just delegated agents. Added session 39 to its affected list with a recurrence note.
+
+**What worked well:** server-side `create_variables` payload generation (37+16 vars + 9 styles in 3 calls), atomic `run_script` file-reset for benchmark hygiene, sub-agent delegation keeping orchestrator context lean, batched screenshot verification (TOOL-017), and in-line diagnosis with no retry storms.
+
+The 2 `Edit` "file not read" errors were generic Claude Code workflow slips, not Figmagent issues — not tracked.
+
+The remaining 4 "needs analysis" sessions in the manifest are mtime-drift false positives (already analyzed; bulk-touched source JSONs), so they don't require re-analysis.
+[2026-06-22 15:38:36]   sessions needing analysis: 4
+All sessions analyzed — nothing to do.
+
+The four sessions that initially flagged (27, 33, 34, 35) were mtime-only false positives from a bulk re-extraction, not real content changes. I verified two against their existing analyses (session27 → 25 calls, session33 → 12 calls — exact matches), then reconciled the manifest. The two genuinely new sessions extracted this run (f6232d34, a238de20) are both `dev` type with 0 Figmagent calls, so they're correctly skipped.
+
+Manifest now reports **34 Figma sessions, 0 needing analysis**.
+[2026-06-22 15:40:15]   sessions needing analysis: 0
+[2026-06-22 15:40:15] not on main (on 'feat/auto-improve-pipeline') — leaving analysis artifacts uncommitted
+[2026-06-22 15:40:15] Stage C — sync improvement tracker → GitHub issues
+tracker→issues: 67 unique entries · 4 create, 0 close, 0 reopen, 0 drift, 63 in-sync/skip
+CREATE  [AGENT-021] (P2) Don't pass an official-figma `libraryKey` (`lk-…`) to Figmagent REST tools (they want a Figma `fileKey`)
+CREATE  [AGENT-022] (P2) Published-library variant node IDs aren't readable in the working file — import, don't `read`
+CREATE  [TOOL-022] (P2) Normalize hyphenated node IDs (Figma URL form) to colon form
+CREATE  [TOOL-023] (P2) No first-class page management — page CRUD falls to `run_script`
+[2026-06-22 15:40:25] Stage D — skipped (not on main, on 'feat/auto-improve-pipeline')
+[2026-06-22 15:40:25] run complete
