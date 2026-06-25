@@ -114,6 +114,17 @@ Don't confuse these — they have different tool prefixes and different capabili
 
 **Remote view-only fallback**: Figmagent's **remote** transport has surfaced an upstream "you don't have edit access to this file" error (from Figma's official `use_figma` MCP, not raised by Figmagent itself) — observed on view-only files for the authenticated identity. Two remedies, in order: if the wrong/expired Figma account is authenticated, run Figmagent's `reauthenticate` tool and pick an account with editor access; if the identity is correct but the file is genuinely view-only, fall back to the official `figma` MCP (`get_metadata` / `get_design_context`, which read view-only files) or switch to the plugin transport. Don't reauth the *official* `figma` MCP expecting it to fix Figmagent — separate servers, separate auth.
 
+## Automated Improvement Pipeline
+
+A nightly self-improvement flywheel turns every Figmagent session into captured GitHub findings and draft fix PRs, with no manual steps. Orchestrated by `scripts/auto-improve.sh` (run `bun run auto-improve`), triggered by launchd (`scripts/launchd/com.figmagent.auto-improve.plist`). Setup + safety details: [`scripts/launchd/README.md`](scripts/launchd/README.md).
+
+- **A. Extract** — `bun run extract-sessions --all-projects` discovers every transcript across **all repos** in `~/.claude/projects/*/` that made a real Figmagent tool call (not just ones that mention the name in context), extracts them to `.claude/sessions-json/`, then `bun run refresh-manifest` rebuilds `.claude/analysis/sessions.json`.
+- **B. Analyze** — loops `claude -p "/analyze-session"` until the manifest reports zero unanalyzed figma sessions. The `analyze-session` skill is one-session-at-a-time; the loop guard is `bun run refresh-manifest --count`.
+- **C. Sync to GitHub** — `bun run sync-issues` maps each `### [ID]` tracker entry to one GitHub issue. **The tracker is the deduplicated source of truth, not the analysis docs.** Matching keys on an embedded `/issues/N` ref first, then the `[ID]` title prefix — so it never creates duplicates. Active entries with no issue → create; `verified`/`resolved`/`implemented` → close. Never auto-reopens (reports `DRIFT` instead; `--dry-run` to preview, `--reopen` to act).
+- **D. Dispatch** — `claude -p "/dispatch-fixes"` opens **draft** PRs for auto-fixable P0/P1 issues that already have a `.claude/plans/` fix plan, in an isolated git worktree, aborting on any lint/test/build failure. Max 2/run. Nothing is pushed to `main`; no ready-for-review PR is ever opened.
+
+When changing session-analysis or issue-sync behavior, update the `analyze-session` skill and these scripts together — the manifest logic is shared (`scripts/refresh-manifest.ts`).
+
 ## Task Completion Checklist
 
 Run before considering any feature/fix done:

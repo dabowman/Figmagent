@@ -1,7 +1,7 @@
 # Figmagent Improvement Tracker
 
-Last updated: 2026-06-17
-Sessions analyzed: 33
+Last updated: 2026-06-22
+Sessions analyzed: 39
 
 ## Active Issues
 
@@ -67,9 +67,9 @@ Sessions analyzed: 33
 - **Priority**: P1
 - **Category**: infrastructure
 - **First seen**: Session 1 (2026-03-05)
-- **Sessions affected**: 1, 2, 4, 5, 6, 7, 9, 10, 11, 13, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29
+- **Sessions affected**: 1, 2, 4, 5, 6, 7, 9, 10, 11, 13, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 34
 - **Estimated savings**: ~20-33 calls/session (long sessions), ~2-8 calls/session (short sessions)
-- **Description**: Agent rediscovers same tools repeatedly. 33 calls in session 1 (10.7%), 28 in session 2 (7.2%), 35 in session 5 (13.5%), 8 in session 4 (14.3%), 3 in session 6 (4.4%), 2 in session 7 (8.3%), 7 in session 9 (43.8% — worst ratio). Session 18: only 6 calls (2.2%) — best ratio. Session 19: 7 calls (15.2%) — short session with high ratio. Session 20: 5 calls (16.7%). Session 21: 2 calls (8.7%). Session 22: 5 calls (4.5% — good ratio for a 112-call session). Session 23: 8 calls (11.8% — one re-search after a multi-file `join_channel`). Session 24: 5 calls (12.8% — re-search after multi-file `join_channel`). Session 25: 11 calls (14.9% — worsened by 3 reconnections). Session 26: 11 calls (12.9%). Session 27: 4 calls (16% — short remote session). Session 28: 5 calls (15.2%). Session 29: 17 calls (10.6% — good ratio for a 161-call session). Worst after reconnections or in short sessions where overhead ratio is high.
+- **Description**: Agent rediscovers same tools repeatedly. 33 calls in session 1 (10.7%), 28 in session 2 (7.2%), 35 in session 5 (13.5%), 8 in session 4 (14.3%), 3 in session 6 (4.4%), 2 in session 7 (8.3%), 7 in session 9 (43.8% — worst ratio). Session 18: only 6 calls (2.2%) — best ratio. Session 19: 7 calls (15.2%) — short session with high ratio. Session 20: 5 calls (16.7%). Session 21: 2 calls (8.7%). Session 22: 5 calls (4.5% — good ratio for a 112-call session). Session 23: 8 calls (11.8% — one re-search after a multi-file `join_channel`). Session 24: 5 calls (12.8% — re-search after multi-file `join_channel`). Session 25: 11 calls (14.9% — worsened by 3 reconnections). Session 26: 11 calls (12.9%). Session 27: 4 calls (16% — short remote session). Session 28: 5 calls (15.2%). Session 29: 17 calls (10.6% — good ratio for a 161-call session). Session 34: 6 calls (9.8% — **external repo**, where Figmagent + official-figma + design-system tools are ALL deferred and must be ToolSearched; the "No ToolSearch needed" CLAUDE.md note only holds in-repo where the MCP server enumerates tools). Session 37: 9 calls (11.7% — **external repo**, same deferred-tools cause as 34). Worst after reconnections or in short sessions where overhead ratio is high.
 - **Proposed fix**: Pre-load tool schemas at session start; auto-restore after reconnections; add complete tool reference to skill file.
 
 ### [AGENT-001] Fail fast on repeated identical errors
@@ -214,7 +214,8 @@ Sessions analyzed: 33
 - **Proposed fix**: Add "DEPRECATED: Use `apply` instead" to each legacy tool's description. Eventually remove them.
 
 ### [AGENT-005] Delete-recreate TEXT nodes instead of apply for font changes — [#9](https://github.com/dabowman/Figmagent/issues/9)
-- **Status**: identified
+- **Status**: verified
+- **Verified in**: production audit 2026-06-19 — #9 confirmed fixed in code: tools/apply.ts:211 description: 'never delete and recreate text just to change font'
 - **Priority**: P1
 - **Category**: agent-behavior
 - **First seen**: Session 5 (2026-03-12)
@@ -234,7 +235,8 @@ Sessions analyzed: 33
 - **Proposed fix**: Add cross-reference to `find(hasAnnotation: true)` in the `get_annotations` tool description. Emphasize `nodeIds` batch support in description.
 
 ### [AGENT-007] Use `find` instead of `scan_nodes_by_types` for node discovery — [#11](https://github.com/dabowman/Figmagent/issues/11)
-- **Status**: identified
+- **Status**: verified
+- **Verified in**: production audit 2026-06-19 — #11 confirmed fixed in code: tools/find.ts:25 description: replaces old scan_text_nodes/scan_nodes_by_types flows
 - **Priority**: P1
 - **Category**: agent-behavior
 - **First seen**: Session 7 (2026-03-13)
@@ -254,7 +256,8 @@ Sessions analyzed: 33
 - **Proposed fix**: Add to CLAUDE.md: "If a REST API call returns 403 on a file key, all REST API calls to that file will fail. Stop after the first 403 and ask about token scopes."
 
 ### [AGENT-009] Parallel cancellation cascade — don't mix Agent + speculative Reads — [#16](https://github.com/dabowman/Figmagent/issues/16)
-- **Status**: identified
+- **Status**: verified
+- **Verified in**: production audit 2026-06-19 — #16 confirmed fixed in code: CLAUDE.md: never mix Agent calls with speculative Reads; Glob first
 - **Priority**: P2
 - **Category**: agent-behavior
 - **First seen**: Session 14 (2026-03-16)
@@ -264,7 +267,8 @@ Sessions analyzed: 33
 - **Proposed fix**: Never mix long-running Agent calls with speculative Reads in the same parallel batch. Verify file existence (Glob) before parallel launch if uncertain.
 
 ### [AGENT-010] Confused exposed instances with INSTANCE_SWAP properties — [#17](https://github.com/dabowman/Figmagent/issues/17)
-- **Status**: identified
+- **Status**: verified
+- **Verified in**: production audit 2026-06-19 — #17 confirmed fixed in code: CLAUDE.md Key Patterns: exposed instances vs INSTANCE_SWAP vs Slots
 - **Priority**: P1
 - **Category**: agent-behavior
 - **First seen**: Session 12 (2026-03-16)
@@ -274,7 +278,8 @@ Sessions analyzed: 33
 - **Proposed fix**: Clarify the distinction between exposed instances and INSTANCE_SWAP properties in CLAUDE.md, tool descriptions, and design_workflow prompt.
 
 ### [AGENT-011] Validate approach on 1 node before mass rollout — [#18](https://github.com/dabowman/Figmagent/issues/18)
-- **Status**: identified
+- **Status**: verified
+- **Verified in**: production audit 2026-06-19 — #18 confirmed fixed in code: CLAUDE.md: validate on 1 node first, confirm, then batch
 - **Priority**: P1
 - **Category**: agent-behavior
 - **First seen**: Session 12 (2026-03-16)
@@ -295,7 +300,8 @@ Sessions analyzed: 33
 - **Verified in**: Session 29 — `import_library_components` (plural) succeeded 3× importing WPDS Buttons + error Notices, 0 failures, no clone-reparent workaround.
 
 ### [BUG-004] Font loading bug in `import_library_component` with `parentNodeId` — [#20](https://github.com/dabowman/Figmagent/issues/20)
-- **Status**: identified
+- **Status**: verified
+- **Verified in**: production audit 2026-06-19 — #20 confirmed fixed in code: components.js:178-209 — parentNodeId import collects + loadFontAsync's all TEXT fonts before appendChild
 - **Priority**: P0
 - **Category**: plugin-bug
 - **First seen**: Session 15 (2026-03-16)
@@ -306,7 +312,8 @@ Sessions analyzed: 33
 - **Possibly fixed**: Session 29 imported WPDS Buttons + Notices (TEXT-containing components) via `import_library_components` and positioned them with **no clone-reparent workaround** — suggests the font-loading path may be fixed. Needs explicit confirmation with `parentNodeId` direct insertion.
 
 ### [TOOL-013] Batch `get_component_variants` — [#21](https://github.com/dabowman/Figmagent/issues/21)
-- **Status**: identified
+- **Status**: verified
+- **Verified in**: production audit 2026-06-19 — #21 confirmed fixed in code: libraries.ts:379 get_component_variants accepts componentSetNodeIds array (batch)
 - **Priority**: P1
 - **Category**: missing-batch-tool
 - **First seen**: Session 15 (2026-03-16)
@@ -315,7 +322,8 @@ Sessions analyzed: 33
 - **Description**: 24 sequential calls in session 15. 48 sequential calls in session 18 (two bursts of 24 and 22 consecutive). All using the same fileKey.
 
 ### [BUG-005] `get_node_info` type coercion — depth as string — [#22](https://github.com/dabowman/Figmagent/issues/22)
-- **Status**: identified
+- **Status**: verified
+- **Verified in**: production audit 2026-06-19 — #22 confirmed fixed in code: tools/document.ts:169 z.coerce.number() + plugin document.js:404 toNumber() coerce depth string→number
 - **Priority**: P2
 - **Category**: type-coercion
 - **First seen**: Session 13 (2026-03-16)
@@ -326,7 +334,8 @@ Sessions analyzed: 33
 - **Auto-fixable**: yes
 
 ### [BUG-006] `getMainComponent` sync in FSGN traversal — [#23](https://github.com/dabowman/Figmagent/issues/23)
-- **Status**: identified
+- **Status**: verified
+- **Verified in**: production audit 2026-06-19 — #23 confirmed fixed in code: document.js:264 FSGN traversal uses getMainComponentAsync; no sync getMainComponent in traversal
 - **Priority**: P2
 - **Category**: plugin-bug
 - **First seen**: Session 13 (2026-03-16)
@@ -346,7 +355,8 @@ Sessions analyzed: 33
 - **Related**: [BUG-004] (same class, different tool), [AGENT-005] (workaround pattern)
 
 ### [TOOL-014] `get_design_system` needs filtering params — [#28](https://github.com/dabowman/Figmagent/issues/28) (REOPENED — partial)
-- **Status**: partially implemented
+- **Status**: verified
+- **Verified in**: production audit 2026-06-19 — #28 confirmed fixed in code: tokens.ts:33/39 get_design_system has collection + namePattern regex filters
 - **Priority**: P1
 - **Category**: missing-tool
 - **First seen**: Session 17 (2026-03-16)
@@ -357,7 +367,8 @@ Sessions analyzed: 33
 - **Truncation-message sub-finding**: Session 20's "lowering `maxOutputChars` won't help — filter instead" hint added as a comment on the existing open issue [#44](https://github.com/dabowman/Figmagent/issues/44) (which already covers listing collection names in the truncation message).
 
 ### [AGENT-013] Cross-tool timeout tracking for reconnection — [#29](https://github.com/dabowman/Figmagent/issues/29)
-- **Status**: identified
+- **Status**: verified
+- **Verified in**: production audit 2026-06-19 — #29 confirmed fixed in code: CLAUDE.md: after 2 timeouts in a row on any tool, assume connection lost
 - **Priority**: P2
 - **Category**: agent-behavior
 - **First seen**: Session 17 (2026-03-16)
@@ -367,7 +378,8 @@ Sessions analyzed: 33
 - **Proposed fix**: Clarify in CLAUDE.md: "After 2 timeouts in a row on ANY tool (not just the same tool), assume the WebSocket connection is lost."
 
 ### [AGENT-012] Read pipeline output, not source tokens — [#25](https://github.com/dabowman/Figmagent/issues/25)
-- **Status**: identified
+- **Status**: verified
+- **Verified in**: production audit 2026-06-19 — #25 confirmed fixed in code: CLAUDE.md: read pipeline output (tokens/figma/, build/) not source/base tokens
 - **Priority**: P1
 - **Category**: agent-behavior
 - **First seen**: Session 17 (2026-03-16)
@@ -377,7 +389,8 @@ Sessions analyzed: 33
 - **Proposed fix**: Add to agent workflow: "When a token pipeline exists, always read the pipeline's Figma-specific output files before creating variables. Don't infer naming or structure from base/source tokens."
 
 ### [INFRA-003] Token-to-Figma conversion utility — [#26](https://github.com/dabowman/Figmagent/issues/26)
-- **Status**: identified
+- **Status**: verified
+- **Verified in**: production audit 2026-06-19 — #26 confirmed fixed in code: tokens.ts:500 prepare_figma_variables converts DTCG→create_variables server-side (hexToRgba, scopes, batching)
 - **Priority**: P1
 - **Category**: infrastructure
 - **First seen**: Session 17 (2026-03-16)
@@ -387,17 +400,19 @@ Sessions analyzed: 33
 - **Proposed fix**: Create a `prepare-figma-variables` script or MCP tool that reads DTCG-format JSON files and outputs `create_variables` payloads with automatic hex→RGBA conversion, alias resolution via ID map, and batching (25 vars per batch).
 
 ### [BUG-008] Timeout responses not flagged as errors (all tools, not just import) — [#60](https://github.com/dabowman/Figmagent/issues/60)
-- **Status**: identified
+- **Status**: verified
+- **Verified in**: production audit 2026-06-19 — #60 confirmed fixed in code: instance.ts:84-137 looksLikeError matcher sets is_error:true for Error/Failed/timeout/Not-connected text
 - **Priority**: P2
 - **Category**: plugin-bug
 - **First seen**: Session 18 (2026-03-23)
-- **Sessions affected**: 18, 25, 26, 28, 29, 30, 32, 33 (30/32 = the multi-file picker is also an "Error…" string with `is_error: false`; 33 = the remote "you don't have edit access" block also returns `is_error: false` — see [BUG-015]; 32/33 are external WordPress-Admin-Environment sessions)
+- **Sessions affected**: 18, 25, 26, 28, 29, 30, 32, 33, 37 (30/32 = the multi-file picker is also an "Error…" string with `is_error: false`; 33 = the remote "you don't have edit access" block also returns `is_error: false` — see [BUG-015]; 32/33/37 are external WordPress-Admin-Environment sessions. **Session 37 is the strongest single-session evidence: three distinct failure shapes — `import_library_component` "Component … not found", `get_library_components` REST 404, and `read` "Node not found" — ALL returned `is_error: false`** on the remote path)
 - **Estimated savings**: faster agent error detection
 - **Description**: `import_library_component` timeout responses return `is_error: false` with content `"Error importing library component: Request to Figma timed out"`. Agent must parse the content string to detect the timeout. Session 25 shows the same for `set_text_content` — `"Error setting text content: Request to Figma timed out"` also returns `is_error: false`. Session 26 shows it for a `lint_design` **crash** — `"Error running lint_design: cannot read property 'type' of undefined"` also returns `is_error: false` (see [BUG-012]). **Session 28 is the strongest evidence: three distinct failure types — lint timeout, `get` "Node not found", and `get_library_variables` 403 — ALL returned `is_error: false`.** The MCP server appears to never set `is_error: true` for Figmagent failures. Agent must string-parse every response.
 - **Fix pattern**: Set `is_error: true` in the MCP server's error/timeout handling path (generalize across all commands — timeouts, thrown errors, not-found, and REST errors, not just import).
 
 ### [AGENT-014] Reconnection loop on slow operations vs actual disconnections — [#61](https://github.com/dabowman/Figmagent/issues/61)
-- **Status**: identified
+- **Status**: verified
+- **Verified in**: production audit 2026-06-19 — #61 confirmed fixed in code: CLAUDE.md Plugin Transport Appendix: join after timeout = healthy; don't keep reconnecting
 - **Priority**: P1
 - **Category**: agent-behavior
 - **First seen**: Session 18 (2026-03-23)
@@ -411,9 +426,9 @@ Sessions analyzed: 33
 - **Priority**: P2
 - **Category**: missing-tool
 - **First seen**: Session 19 (2026-03-19)
-- **Sessions affected**: 19
+- **Sessions affected**: 19, 35
 - **Estimated savings**: ~1 call per component with corner radius tokens
-- **Description**: `apply` with `variables: { cornerRadius: "VariableID:..." }` only binds `topLeftRadius`. To bind all four corners, the agent must make a second call with `topLeftRadius`, `topRightRadius`, `bottomLeftRadius`, `bottomRightRadius` individually. The tool should auto-expand `cornerRadius` to all four corners.
+- **Description**: `apply` with `variables: { cornerRadius: "VariableID:..." }` only binds `topLeftRadius`. To bind all four corners, the agent must make a second call with `topLeftRadius`, `topRightRadius`, `bottomLeftRadius`, `bottomRightRadius` individually. The tool should auto-expand `cornerRadius` to all four corners. **Session 35**: recurred — a `run_script` bind reported 129 binds but a verification scan counted only 119; the 10-field gap was all `cornerRadius` binding only `topLeftRadius`. Agent caught it via post-write reconciliation and rebound all four corners explicitly.
 - **Proposed fix**: In plugin `apply.js`, when `variables.cornerRadius` is set, bind it to all four individual corner radius properties (`topLeftRadius`, `topRightRadius`, `bottomLeftRadius`, `bottomRightRadius`).
 
 ### [AGENT-015] Prefer Figma API variable IDs over local config files
@@ -438,7 +453,8 @@ Sessions analyzed: 33
 - **Proposed fix**: None needed; reinforce in design-build prompt and watch for recurrence in post-rename sessions.
 
 ### [BUG-009] `apply` FILL silently no-ops on width-0 text nodes (and reports success) — [#50](https://github.com/dabowman/Figmagent/issues/50)
-- **Status**: identified
+- **Status**: verified
+- **Verified in**: production audit 2026-06-19 — #50 confirmed fixed in code: assertions.js:130 width_collapse warning + apply.js width-recovery before FILL
 - **Priority**: P1
 - **Category**: plugin-bug
 - **First seen**: Session 21 (2026-04-20)
@@ -450,7 +466,8 @@ Sessions analyzed: 33
 - **Companion skill doc**: [#51](https://github.com/dabowman/Figmagent/issues/51) — document the width-collapse fix recipe (set width before FILL) as interim agent guidance.
 
 ### [BUG-010] `update_styles`/`update_variables` don't pre-load the style's current font — [#52](https://github.com/dabowman/Figmagent/issues/52)
-- **Status**: identified
+- **Status**: verified
+- **Verified in**: production audit 2026-06-19 — #52 confirmed fixed in code: styles.js:1037 loadCurrentStyleFont preloads style font before any property write
 - **Priority**: P1
 - **Category**: plugin-bug
 - **First seen**: Session 22 (2026-03-30)
@@ -461,7 +478,8 @@ Sessions analyzed: 33
 - **Note**: Error string is "Cannot write to node with unloaded font" (font-loading), not the sync-to-async "documentAccess: dynamic-page" trigger — not in the Phase 6 auto-fix allowlist, so no auto-plan generated.
 
 ### [INFRA-004] WebFetch cannot reach localhost — use `curl` for loopback URLs — [#54](https://github.com/dabowman/Figmagent/issues/54)
-- **Status**: identified
+- **Status**: verified
+- **Verified in**: production audit 2026-06-19 — #54 confirmed fixed in code: CLAUDE.md: fetch localhost/127.0.0.1/0.0.0.0 with Bash curl, not WebFetch
 - **Priority**: P2
 - **Category**: agent-behavior
 - **First seen**: Session 22 (2026-03-30)
@@ -471,7 +489,8 @@ Sessions analyzed: 33
 - **Proposed fix**: Agent-behavior — when porting a live local page, fetch `localhost`/`127.0.0.1`/`0.0.0.0` URLs with `Bash curl` from the start, not WebFetch. After one ECONNREFUSED, probe with `lsof`/`curl` before asking the user to start the server. Add a line to CLAUDE.md / the figma-guidelines skill (which covers porting live pages into Figma).
 
 ### [TOOL-016] `apply` layout-sizing no-ops before `layoutMode` exists (and reports success) — [#53](https://github.com/dabowman/Figmagent/issues/53)
-- **Status**: identified
+- **Status**: verified
+- **Verified in**: production audit 2026-06-19 — #53 confirmed fixed in code: apply.js:643 sizingContextMissing → fill_not_applied warning + skip when parent lacks auto-layout
 - **Priority**: P2
 - **Category**: plugin-bug
 - **First seen**: Session 23 (2026-03-24)
@@ -482,7 +501,8 @@ Sessions analyzed: 33
 - **Note**: Same silent-no-op-reports-success family as [BUG-009]. Not in the Phase 6 auto-fix allowlist.
 
 ### [AGENT-017] Batch sibling reads with multi-nodeId `get` — [#55](https://github.com/dabowman/Figmagent/issues/55)
-- **Status**: identified
+- **Status**: verified
+- **Verified in**: production audit 2026-06-19 — #55 confirmed fixed in code: CLAUDE.md: batch sibling reads via nodeIds array in one read
 - **Priority**: P2
 - **Category**: agent-behavior
 - **First seen**: Session 23 (2026-03-24)
@@ -492,7 +512,7 @@ Sessions analyzed: 33
 - **Proposed fix**: When inspecting a known set of sibling nodes (e.g. all sections under a body), pass them as a `nodeIds` array in one `get`. Reinforce in CLAUDE.md / figma-guidelines.
 
 ### [TOOL-017] Batch `export_node_as_image` / `screenshot` — [#56](https://github.com/dabowman/Figmagent/issues/56)
-- **Status**: identified
+- **Status**: implemented
 - **Priority**: P2
 - **Category**: missing-batch-tool
 - **First seen**: Session 24 (2026-03-25)
@@ -500,9 +520,11 @@ Sessions analyzed: 33
 - **Estimated savings**: ~10 round-trips per multi-slide/multi-node review
 - **Description**: Session 24 exported 15 slides one at a time (#22–36), all sequential (not even parallelized). No batch variant exists.
 - **Proposed fix**: Add a multi-node export accepting a `nodeIds` array, returning images keyed by nodeId with a payload cap. Below the strict 20-consecutive batch-tool threshold but a clear pattern. Interim agent-side: issue exports in parallel batches.
+- **Current status**: Implemented — `screenshot` accepts a `nodeIds` array. Verified in Session 34: agent-ab #5 and agent-a0 #24 each verified all 4 Omnibar variants in one batched `screenshot {nodeIds:[...]}` call. (Note: the *single-node* remote screenshot path is intermittently broken — see [BUG-016].)
 
 ### [AGENT-018] Fail-fast on Read "exceeds maximum allowed tokens" — [#58](https://github.com/dabowman/Figmagent/issues/58)
-- **Status**: identified
+- **Status**: verified
+- **Verified in**: production audit 2026-06-19 — #58 confirmed fixed in code: CLAUDE.md: on Read 'exceeds maximum allowed tokens', use offset/limit or Bash; never re-Read
 - **Priority**: P2
 - **Category**: agent-behavior
 - **First seen**: Session 24 (2026-03-25)
@@ -523,7 +545,8 @@ Sessions analyzed: 33
 - **Note**: Error string is "Request to Figma timed out" (performance), not the sync-to-async trigger — not in the Phase 6 auto-fix allowlist. Related: [AGENT-014] (don't reconnect on slow ops), [BUG-008] (flag timeouts as errors).
 
 ### [BUG-012] `lint_design` crashes with "cannot read property 'type' of undefined" on certain nodes — [#62](https://github.com/dabowman/Figmagent/issues/62)
-- **Status**: identified
+- **Status**: verified
+- **Verified in**: production audit 2026-06-19 — #62 confirmed fixed in code: lint.js:149/404/411 prop()/Array.isArray guards; non-SOLID paints skipped before .type deref
 - **Priority**: P1
 - **Category**: plugin-bug
 - **First seen**: Session 26 (2026-03-24)
@@ -534,7 +557,8 @@ Sessions analyzed: 33
 - **Note**: "cannot read property 'type' of undefined" is a null-guard fix, not in the Phase 6 auto-fix allowlist (sync-to-async / type-coercion / missing-batch-tool) — no auto-plan generated. Related: [BUG-008] (flag the crash as an error).
 
 ### [BUG-013] `fig.bindVariable` (run_script stdlib) doesn't bind stroke paints — [#63](https://github.com/dabowman/Figmagent/issues/63)
-- **Status**: identified
+- **Status**: verified
+- **Verified in**: production audit 2026-06-19 — #63 confirmed fixed in code: apply.js:135-149 binds strokes via setBoundVariableForPaint; stdlib.js:45-52 fig.bindVariable throws on warning
 - **Priority**: P1
 - **Category**: plugin-bug
 - **First seen**: Session 27 (2026-06-16, remote transport)
@@ -549,14 +573,15 @@ Sessions analyzed: 33
 - **Priority**: P2
 - **Category**: plugin-bug
 - **First seen**: Session 27 (2026-06-16, remote transport)
-- **Sessions affected**: 27, 33
+- **Sessions affected**: 27, 33, 34, 36, 38
 - **Estimated savings**: ~3 reads per remote multi-page session
-- **Description**: On the headless remote transport, `read` with no nodeId returned only "Page 1" (`0:1`) as the document overview, even though the user's selected node (`198:1567`) lived on a different page ("Architecture — Slide", `156:749`). `get_selection` also returned nothing (no live selection in a headless VM). The agent had to read the link's node and trace ancestry across multiple `read` calls to find the real parent page.
+- **Description**: On the headless remote transport, `read` with no nodeId returned only "Page 1" (`0:1`) as the document overview, even though the user's selected node (`198:1567`) lived on a different page ("Architecture — Slide", `156:749`). `get_selection` also returned nothing (no live selection in a headless VM). The agent had to read the link's node and trace ancestry across multiple `read` calls to find the real parent page. **Session 36 (design-to-code, external vip-workflows, remote):** recurrence of the onboarding half — the agent issued `read` (#5) and `screenshot` (#6) *before* `use_file` and both failed with `"No Figma file selected. Pass a file URL to use_file…"`; it then called `use_file` with the node's figma.com URL and both succeeded. It had the URL the whole time (used it as `use_file`'s `channel`) — leading with `use_file` would have saved 2 calls. Reinforces the companion-doc proposal [#65] (use_file before first read on remote). **Session 38 (component-set build, external vip-workflows, remote):** same onboarding half again — `read(2010-73)` (#3) failed with `No Figma file selected`, then `use_file(<url>)` (#4) + `read` succeeded; the URL was available from the start.
 - **Proposed fix**: On remote, enumerate **all** pages in the document overview (or note that more exist), and add a helper to resolve a node's parent PAGE directly. Document the headless `get_selection` limitation and "call `use_file` before the first `read`" in the remote section of CLAUDE.md.
 - **Companion skill doc**: [#65](https://github.com/dabowman/Figmagent/issues/65) — remote-first onboarding (use_file before first read; get_selection unavailable).
 
 ### [TOOL-018] No tool to import/enumerate library VARIABLES (only components) — [#66](https://github.com/dabowman/Figmagent/issues/66)
-- **Status**: identified
+- **Status**: verified
+- **Verified in**: production audit 2026-06-19 — #66 confirmed fixed in code: libraries.ts:599 get_enabled_library_variables + :640 import_library_variable (Plugin API)
 - **Priority**: P2
 - **Category**: missing-tool
 - **First seen**: Session 28 (2026-06-09)
@@ -567,7 +592,8 @@ Sessions analyzed: 33
 - **Note**: missing-tool capability gap, not in the Phase 6 auto-fix allowlist.
 
 ### [AGENT-019] Create variables WITH scopes (lint disambiguation needs them) — [#67](https://github.com/dabowman/Figmagent/issues/67)
-- **Status**: identified
+- **Status**: verified
+- **Verified in**: production audit 2026-06-19 — #67 confirmed fixed in code: CLAUDE.md: pass scopes inline to create_variables for lint disambiguation
 - **Priority**: P2
 - **Category**: agent-behavior
 - **First seen**: Session 28 (2026-06-09)
@@ -577,7 +603,8 @@ Sessions analyzed: 33
 - **Proposed fix**: Agent-behavior — set `scopes` at creation time on `create_variables` (frame fills vs text vs strokes) when the variables are intended for lint auto-binding. Reinforce in the design-tokens workflow note in CLAUDE.md.
 
 ### [TOOL-019] No tool to set component-property values on an instance — [#68](https://github.com/dabowman/Figmagent/issues/68)
-- **Status**: identified
+- **Status**: verified
+- **Verified in**: production audit 2026-06-19 — #68 confirmed fixed in code: tools/apply.ts:148 componentProperties → apply.js:307-345 setProperties on instance
 - **Priority**: P2
 - **Category**: missing-tool
 - **First seen**: Session 29 (2026-06-01)
@@ -593,9 +620,119 @@ Sessions analyzed: 33
 - **First seen**: Session 33 (2026-06-17, external WordPress-Admin-Environment, remote transport)
 - **Sessions affected**: 33
 - **Estimated savings**: unblocks read-only/design-to-code on view-only files (currently impossible on remote)
+- **Session 34 corroboration**: Same external project, but with **editor** access the agent completed a large remote *write* (88-var rename + 60 binds + component swaps across 4 variants) with no access errors. Confirms the edit-access wall is the sole blocker — given editor scope, remote reads AND writes are production-grade. The gap is purely that *view-only* access can't read.
+- **Session 37 corroboration**: The **direct sequel to Session 33** (same external project, same day). The agent opened by running `reauthenticate` to switch the remote identity to an **editor** account, after which the previously-blocked reads succeeded AND it created 135 variables + updated 83 for Dark mode with 0 failures. Re-auth-to-editor is the practical remedy for this bug; reinforces that view-only is the only thing remote can't do.
 - **Description**: On the **remote transport**, all `read` operations failed with `"Error reading nodes: Looks like you don't have edit access to this file. The file owner can share it with you and make you an editor."` (`is_error: false`) — even though `use_file` resolved/connected to the file fine. The user had only **view** access. Figmagent's remote-transport identity (the `use_figma` VM / official-MCP path it rides) requires **editor** scope even for reads. The agent fell back to the official figma MCP (`mcp__plugin_figma_figma__get_metadata`), which read the view-only file successfully. This blocks the most common read-only case: consuming a shared library file you don't own.
 - **Proposed fix**: Remote-transport reads should use a path that accepts **view** access (read/metadata), reserving editor scope for writes. At minimum, the error should name the limitation and point to the plugin transport or official figma MCP for view-only files.
 - **Note**: Auth/transport behavior, not in the Phase 6 auto-fix allowlist. Related: [BUG-014] (remote read friction), [BUG-008] (flag as error). The official figma MCP reads view-only files; Figmagent remote does not.
+
+### [BUG-016] Remote `screenshot` returns a malformed result → MCP `-32602 invalid_union`
+- **Status**: identified
+- **Priority**: P1
+- **Category**: plugin-bug
+- **First seen**: Session 34 (2026-06-19, external WordPress-Admin-Environment, remote transport)
+- **Sessions affected**: 34, 38, 39
+- **Estimated savings**: ~6 calls per verification-heavy session (removes the 3-call official-MCP screenshot fallback)
+- **Description**: On the remote transport, `mcp__Figmagent__screenshot` intermittently fails with `MCP error -32602: Invalid tools/call result: [{ "code": "invalid_union", ... "path": ["type"], "message": "Invalid input: expected \"text\"" }, { "expected": "string", "code": "invalid_type", "path": ["text"] ...}]` — the returned content block is neither a valid `text` nor `image` block, so the SDK rejects the whole result. **Intermittent and single-node-only**: failed on main #44 (`4:608`), agent-ab #6 (`4:383`), agent-ab #22 (`4:608`), while a *batched* `screenshot {nodeIds:[...]}` (agent-ab #5) and 8 single-node screenshots in agent-a0 succeeded. Correlates with larger/complex nodes and a ~2.9KB truncated payload — likely an oversized or error-stringified image block escaping into the content array. Agent recovered well (retry, or fall back to official `figma get_screenshot` → curl asset → Read, a 3-call dance).
+- **Proposed fix**: In the remote `screenshot`/`export` result path, guarantee the content block conforms to the MCP `image` schema (base64 `data` + `mimeType`); cap/handle oversized exports rather than emitting a malformed union member; on export failure return a proper `is_error` text block instead. Reproduce by screenshotting a large/complex single node on remote.
+- **Note**: Result-serialization fix, not in the Phase 6 auto-fix allowlist (sync-to-async / type-coercion / missing-batch-tool) — no auto-plan generated. Related: [TOOL-017] (batch screenshot works; single-node path is the broken one), [BUG-008] (a malformed result should surface as a clean error).
+- **Recurred**: Benchmark run 2026-06-19 (`tests/benchmark-runs/2026-06-19-figmagent-vs-figma-mcp.md`). The Figmagent agent could not screenshot a full 390×844 login screen (same `-32602 invalid_union`, `content[0]` missing `data`) while cards / button sets / data tables exported fine — reinforcing the larger/complex-node correlation. A batch `screenshot` call also returned "0 nodes". The official Figma MCP's `get_screenshot` succeeded on the same screen, so this bug is the main self-verification gap vs. the official MCP.
+- **Recurred again**: Session 38 (2026-06-19, external vip-workflows, remote). `screenshot(2010:73)` on a full "Node UI — Base components" FRAME failed with the same `-32602 invalid_union`. The agent did **not** retry/fall back this time — it abandoned the visual check and verified the built COMPONENT_SETs structurally via `read` instead. Same larger/complex-node correlation (whole base-components frame). Third independent recurrence → escalate.
+- **Confirmed not agent-specific**: Session 39 (2026-06-22, benchmark orchestration). The *orchestrator's own* verification path hit it — `screenshot(2003:10153)` on the full **390×844 login screen** built by the Figmagent contestant returned the same `-32602 invalid_union`, while mid-size siblings on the same page (`2003:24/97/69`, `2007:22`, `2008:2048`) exported fine. This is the same benchmark already cited in the first "Recurred" note, now confirmed firing from the main session (not just from delegated agents) — larger/complex-node correlation holds. Diagnosed in-line, no retry storm.
+
+### [TOOL-020] No way to read a variable's resolved numeric value on remote
+- **Status**: identified
+- **Priority**: P1
+- **Category**: missing-tool
+- **First seen**: Session 35 (2026-06-19, external vip-workflows, remote transport)
+- **Sessions affected**: 35, 36
+- **Estimated savings**: ~20 calls per exact-match token-binding task (eliminates probe-frame harvesting)
+- **Description**: Binding numeric props (fontSize, line-height, padding, gap, radius) to **exact-matching** theme tokens requires each token's resolved numeric value, but there is no way to read it on remote: `read` (FSGN) omits `fontSize`/`lineHeight` numerics from node output; `get_design_system` returns **no local variables** when the file binds *library* (imported) variables (and imported library variables never surface as "local" even after `import_library_variable`); the Figma library API returns *keys* not values; and the design-system MCP `get_design_tokens` lists names not numeric values. Session 35 the agent built an empirical "probe frame harvesting" workaround — create 6 scratch frames, bind FLOAT tokens to readable numeric slots (width/height/padding/itemSpacing/cornerRadius), read the resolved numbers back, iterate across scope-enforced fields (~9–15 calls of pure workaround) — before switching to `run_script` to read `fontSize`/`lineHeight`/`boundVariables` directly. **Session 36 (design-to-code, same external repo, remote):** both `get_design_system` calls (one `namePattern` typography filter, one `collection: Typography` + `includeStyles`) returned **completely empty** payloads (`styles`/`variables`/`collections` all empty) because the file binds *library* typography styles/variables — none surface as local. The agent recovered well by grepping the **codebase token pipeline** (`@wordpress/theme` CSS output) for the `wpds-font` size/line-height numerics rather than probe-harvesting — the right move in a design-to-code context.
+- **Proposed fix**: (a) include resolved `fontSize`/`lineHeight`/`letterSpacing` numerics in FSGN `read` output, and/or (b) extend `get_design_system`/`get_enabled_library_variables` to resolve imported library-variable values (numeric + color). Interim agent guidance: on remote, reach for `run_script` immediately for value-matching tasks rather than probe-harvesting; **in design-to-code, when `get_design_system` returns empty, go straight to the codebase token pipeline output** (per [AGENT-012]).
+- **Note**: Capability gap, not in the Phase 6 auto-fix allowlist — no auto-plan generated.
+
+### [TOOL-021] `search_library_components` has no multi-query batch
+- **Status**: identified
+- **Priority**: P1
+- **Category**: missing-batch-tool
+- **First seen**: Session 35 (2026-06-19, external vip-workflows, remote transport)
+- **Sessions affected**: 35
+- **Estimated savings**: ~10 calls per icon-heavy session
+- **Description**: 16 `search_library_components` calls, each searching for **one** glyph (chevron-up/down, kebab/more, pencil, bell, list, lock, warning, arrowhead, …) — calls 32–43 are 12 back-to-back single-glyph searches; 4 more later. The tool accepts a single query string with no array form.
+- **Proposed fix**: Accept `queries: string[]` (or comma-separated) and return grouped results per query in one round-trip. Sibling to [TOOL-013] (batch `get_component_variants`) and [TOOL-012] (batch `import_library_components`).
+
+### [BUG-017] Imported-but-unbound library variables are garbage-collected by Figma
+- **Status**: identified
+- **Priority**: P2
+- **Category**: plugin-bug
+- **First seen**: Session 35 (2026-06-19, external vip-workflows, remote transport)
+- **Sessions affected**: 35
+- **Estimated savings**: ~3 calls per multi-pass binding task (re-import + retry)
+- **Description**: A library variable imported via `import_library_variable` but not bound in the same operation is **garbage-collected by Figma** before a later bind references it. Session 35: a nearest-token snapping pass failed for `gap/md`=12 and `radius/lg`=8 with "Variable not found" because those tokens were imported in an earlier exact-match pass but never bound (the exact-match pass found no node needing them), so Figma GC'd them. The partial-fail `edit` (call 130) returned 13/24 nodes edited with a clear "Variable not found … pass the full VariableID" fix; agent re-imported and retried successfully.
+- **Proposed fix**: Agent-behavior + tool — import and bind variables in the same operation; or have `edit`/`run_script` re-import a referenced library variable on-the-fly if it's missing. At minimum document the GC behavior in the design-tokens workflow note.
+
+### [BUG-018] import_library_component fails on remote transport (set_selection page-mismatch)
+- **Status**: identified
+- **Priority**: P1
+- **Category**: plugin-bug
+- **First seen**: Benchmark run 2026-06-19 (head-to-head vs official Figma MCP, remote transport)
+- **Sessions affected**: benchmark-2026-06-19
+- **Estimated savings**: unblocks all published-library component import on remote
+- **Description**: `import_library_component(s)` fails on the **remote** transport with `set_selection: selection of a page can only include nodes in that page`. Reproduced 3× (batch + single; targeting both a COMPONENT parent and a PAGE) with valid, resolved WPDS Gutenberg variant keys (no "library not found"). It blocked the WPDS compose task (benchmark prompt 13, "import Secondary/Medium + Primary/Medium Buttons → FormActions") — the only task Figmagent lost; the official Figma MCP imported the same components via `importComponentByKeyAsync` first-try. Likely the import handler calls `figma.currentPage.selection`/`setSelection` with a node not on the current page in the remote `use_figma` VM.
+- **Proposed fix**: in the remote import path, don't `set_selection` on nodes outside the current page (set `currentPage` first, or drop the selection step entirely). Verify against the keys in `tests/seed/README.md` and the run in `tests/benchmark-runs/2026-06-19-figmagent-vs-figma-mcp.md`.
+
+### [AGENT-020] `lint --autoFix` only binds local variables; prefer batch import + run_script for value-matching
+- **Status**: identified
+- **Priority**: P2
+- **Category**: agent-behavior
+- **First seen**: Session 35 (2026-06-19, external vip-workflows, remote transport)
+- **Sessions affected**: 35
+- **Estimated savings**: ~4 calls (avoids a useless lint pass + singular-import overhead)
+- **Description**: Two agent-behavior gaps in Session 35: (1) the file bound everything to *library* (imported) variables, so `lint` ran but couldn't auto-bind anything — lint only matches *local* variables; the agent ran one lint, discovered this, and bound manually. (2) The agent used the **singular** `import_library_component` 11 times when the batch `import_library_components` (plural, [TOOL-012], verified Session 29) exists — contiguous groups (e.g. 6 icons in a row) were batchable.
+- **Proposed fix**: Add to figma-guidelines: "`lint --autoFix` only binds *local* variables — when a file binds library/imported variables, bind manually via `edit({variables})`/`run_script`." And: "prefer `import_library_components` (plural) when importing 3+ components; reserve the singular for the prototype-one step."
+
+### [AGENT-021] Don't pass an official-figma `libraryKey` (`lk-…`) to Figmagent REST tools (they want a Figma `fileKey`)
+- **Status**: identified
+- **Priority**: P2
+- **Category**: agent-behavior
+- **First seen**: Session 37 (2026-06-17, external WordPress-Admin-Environment, remote transport)
+- **Sessions affected**: 37
+- **Estimated savings**: ~2 calls per cross-MCP library task
+- **Description**: `mcp__plugin_figma_figma__get_libraries` (official figma MCP) returns team libraries keyed by a 130-char `libraryKey: "lk-9c51b469…"`. The agent passed one of those `lk-…` strings to Figmagent's `get_library_components` as its `fileKey` (Session 37 call 63) → `Figma API returned 404 Not Found`. Figmagent's REST tools (`get_library_components`, `get_component_variants`, `search_library_components`) expect a **Figma fileKey** (short form, e.g. `jMgzw8IhsMC4gpMbMko4lv`), not an official-MCP library handle. The agent recovered with the real fileKey at calls 64–69. Two MCPs, two key namespaces, nothing flags the mismatch.
+- **Proposed fix**: (a) Agent-behavior — never feed an `lk-`-prefixed official-MCP library key into a Figmagent REST tool; resolve the real Figma fileKey first. (b) Tool-side — `get_library_components` could detect an `lk-`-prefixed `fileKey` and return "that's an official-MCP library key, not a Figma fileKey" instead of a bare 404. Related: [AGENT-008] (REST-key/scope confusion family), [BUG-008] (404 returned `is_error: false`).
+- **Note**: agent-behavior + small tool guard, not in the Phase 6 auto-fix allowlist.
+
+### [AGENT-022] Published-library variant node IDs aren't readable in the working file — import, don't `read`
+- **Status**: identified
+- **Priority**: P2
+- **Category**: agent-behavior
+- **First seen**: Session 37 (2026-06-17, external WordPress-Admin-Environment, remote transport)
+- **Sessions affected**: 37
+- **Estimated savings**: ~2 calls per library-inspection flow
+- **Description**: `get_component_variants(fileKey=jMgzw8…)` returned WPDS variant node IDs (`16507:33913`, `16507:33977`). The agent then `read` those IDs against the **connected WP-Admin file** (Session 37 calls 71–72) → `Node not found: 16507:33913`. Those IDs live in the **library file**, not the working file; they can't be `read` by ID in the working context — they must be imported (`import_library_component`/`import_library_components`) first. This is a recurrence of the documented CLAUDE.md hazard ("a URL-derived node ID may belong to a different file than the connected one — e.g. a library file vs the working file"), surfacing specifically in the remote + published-library flow where the guidance wasn't applied.
+- **Proposed fix**: Reinforce in the libraries / figma-guidelines section: variant node IDs from `get_component_variants` belong to the library file — import them, don't `read` them in the working file. No code change. Related: [BUG-008] ("Node not found" returned `is_error: false`).
+
+### [TOOL-022] Normalize hyphenated node IDs (Figma URL form) to colon form
+- **Status**: identified
+- **Priority**: P2
+- **Category**: type-coercion
+- **First seen**: Session 38 (2026-06-19, external vip-workflows, remote transport)
+- **Sessions affected**: 38
+- **Estimated savings**: ~1 call per session whenever a node ID is lifted from a URL
+- **Description**: Figma deep-link URLs encode node IDs with a **hyphen** (`?node-id=2010-73`), but the Plugin/MCP API expects the **colon** form (`2010:73`). Session 38 the agent called `read(nodeId: "2010-73")` (#5) straight from the URL → `Error: Node not found: 2010-73`, then retried with `read(nodeId: "2010:73")` (#6) → success. `use_file` happily accepts the full hyphenated URL, so an agent naturally reuses the same hyphenated ID for `read`/`edit`/`screenshot` and hits a one-round-trip "Node not found" stumble. (Note: here `Node not found` correctly returned `is_error: true`, unlike the `is_error:false` variants in [BUG-008]/[AGENT-022].)
+- **Proposed fix**: Normalize `nodeId`/`nodeIds` at the tool boundary — coerce `^(\d+)-(\d+)$` → `$1:$2` before lookup in `read`/`edit`/`screenshot`/`grep` (and anywhere a node ID is accepted). Mirrors how `use_file` already tolerates the URL form. Trivial string fix; eliminates a recurring URL-copy failure.
+- **Note**: String-normalization at the schema boundary — adjacent to the `type-coercion` auto-fix pattern, but applied to node-ID params rather than numeric ones; left un-planned for now since it touches multiple tool handlers' input parsing.
+
+### [TOOL-023] No first-class page management — page CRUD falls to `run_script`
+- **Status**: identified
+- **Priority**: P2
+- **Category**: missing-tool
+- **First seen**: Session 39 (2026-06-22, this repo, benchmark orchestration)
+- **Sessions affected**: 39
+- **Estimated savings**: ~6 `run_script` calls per multi-round harness session; ~1–2 per ordinary multi-artifact build
+- **Description**: Session 39 (benchmark orchestration) used **all 6** of its `run_script` calls for page/file-state operations, not design logic: rename Page 1 → "Fixtures" + create a "Patterns" page (#63), create a contestant run page (#93, #113), and reset the file to a pristine seed between contestants — remove the run page + non-baseline collections/styles, restore widened variable scopes, recreate the next run page (#112, #143, #157). `write`/`edit`/`delete` operate on canvas nodes, not on `PAGE` nodes or document-level collections, so page creation, renaming, deletion, and file-state reset all drop to the remote-only `run_script` escape hatch.
+- **Proposed fix**: Bring page CRUD onto the first-class surface — `write({ type: "PAGE", name })` to create, `edit({ nodeId: "<page>", name })` to rename, `delete: true` on a PAGE node to remove — so multi-artifact / harness / benchmark workflows don't reach for `run_script`. (A document-level "reset to baseline" helper is a larger ask; page CRUD is the high-frequency primitive.)
+- **Note**: Missing-tool (single capability, not a batch variant) — not in the Phase 6 auto-fix allowlist (sync-to-async / type-coercion / missing-batch-tool); no auto-plan generated. Rare in single-page design sessions; recurs in any multi-page or harness workflow.
 
 ## Resolved Issues
 
@@ -681,6 +818,12 @@ Sessions analyzed: 33
 | 31 | 2026-05-27 | 42 (3 figma) | 0 | ~0% | 1 | 0 (design-to-code: read WPDS SiteHub → CSS) — **external: WordPress-Admin-Environment** | 0 | 0 |
 | 32 | 2026-06-02 | 189 (6 figma) | 0 (1 soft) | ~0% | 3 | 0 (design-to-code: WPDS _Page/Header → React) — **external: WordPress-Admin-Environment** | 0 | 0 |
 | 33 | 2026-06-17 | 12 (9 figma) | 0 (6 soft) | ~60% (blocked) | 2 | 0 (remote read blocked by edit-access → official-MCP fallback) — **external: WordPress-Admin-Environment** | 1 | 0 |
+| 34 | 2026-06-19 | 61 main / 175 w/agents | 9 | ~15% | 6 (9.8%) | **first successful remote WRITE**: 88 vars renamed + 60 token binds + Dark pinned + icon/IconButton swaps across 4 Omnibar variants — **external: WordPress-Admin-Environment** | 1 (BUG-016) | 0 |
+| 35 | 2026-06-19 | 134 | 4 | ~25% | 7 (5.2%) | board cleanup + 10 components reparented + 11 hand-drawn icons → @wordpress/icons instances + 214 numeric fields bound to @wordpress/theme — **external: vip-workflows** | 4 (TOOL-020/021, BUG-017, AGENT-019) | 0 |
+| 39 | 2026-06-22 | 168 (35 figma) | 3 (1 figma `-32602`, 2 Edit re-read) | ~8% | 8 (4.8%) | WPDS benchmark **orchestration**: seed build (37+16 vars, 5+4 styles, fixtures) + 2-round Figmagent-vs-official-MCP benchmark via 5 delegated agents (uncaptured); 6 run_script = all page CRUD/reset — **this repo** | 1 (TOOL-023) | 0 |
+| 36 | 2026-06-22 | 149 (14 figma) | 8 (2 figma) | ~8% (whole) / ~40% (figma-only) | 2 (1.3%) | 0 (design-to-code: ported Figma typography/breadcrumb/AdminPage → React/CSS; Figmagent read-only ref) — **external: vip-workflows**, remote | 0 (recurrences: BUG-014, TOOL-020) | 0 |
+| 37 | 2026-06-17 | 77 (41 figma) | 5 (all figma, all `is_error:false`) | ~16% | 9 (11.7%) | reauth→editor then **135 WPDS vars created + 83 updated for derived Dark mode** (0 failed); Button/IconButton re-link evaluated — **external: WordPress-Admin-Environment**, remote (sequel to S33) | 2 (AGENT-021/022) | 0 |
+| 38 | 2026-06-19 | 21 (16 figma) | 3 | ~14% | 2 (9.5%) | 2 COMPONENT_SETs built from 7 frames + variants + component props (Title/Actors) via first-class tools, no `run_script` — **external: vip-workflows**, remote | 1 (TOOL-022); recurrences: BUG-016 (3rd), BUG-014 | 0 |
 
 ## Issue Categories
 

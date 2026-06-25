@@ -1,0 +1,88 @@
+{
+  "$comment": "Local design system for the Figma design-agent benchmark seed file. Naming mirrors the WordPress Design System (WPDS) semantic token structure (--wpds-<type>-<property>-<target>-<modifier>) rendered as slash-grouped Figma variable names. Color hex values are the standard WordPress/Gutenberg admin palette (brand #3858e9 is canonical per the WPDS token docs); treat the rest as WPDS-aligned reference values and reconcile against the published libraries if pixel-exactness ever matters. These are defined LOCALLY because WPDS published-library *variables* are not importable into a consuming file via the Plugin API or REST (verified) — only components are. Build with create_variables / create_styles. Aliases use {group/name} referencing a Primitives variable.",
+  "collections": [
+    {
+      "name": "Primitives",
+      "modes": ["Value"],
+      "variables": [
+        { "name": "color/white", "type": "COLOR", "scopes": ["ALL_SCOPES"], "values": { "Value": "#ffffff" } },
+        { "name": "color/gray/0", "type": "COLOR", "scopes": ["ALL_SCOPES"], "values": { "Value": "#f6f7f7" } },
+        { "name": "color/gray/100", "type": "COLOR", "scopes": ["ALL_SCOPES"], "values": { "Value": "#f0f0f1" } },
+        { "name": "color/gray/200", "type": "COLOR", "scopes": ["ALL_SCOPES"], "values": { "Value": "#dcdcde" } },
+        { "name": "color/gray/300", "type": "COLOR", "scopes": ["ALL_SCOPES"], "values": { "Value": "#c3c4c7" } },
+        { "name": "color/gray/400", "type": "COLOR", "scopes": ["ALL_SCOPES"], "values": { "Value": "#a7aaad" } },
+        { "name": "color/gray/500", "type": "COLOR", "scopes": ["ALL_SCOPES"], "values": { "Value": "#8c8f94" } },
+        { "name": "color/gray/600", "type": "COLOR", "scopes": ["ALL_SCOPES"], "values": { "Value": "#646970" } },
+        { "name": "color/gray/700", "type": "COLOR", "scopes": ["ALL_SCOPES"], "values": { "Value": "#3c434a" } },
+        { "name": "color/gray/800", "type": "COLOR", "scopes": ["ALL_SCOPES"], "values": { "Value": "#2c3338" } },
+        { "name": "color/gray/900", "type": "COLOR", "scopes": ["ALL_SCOPES"], "values": { "Value": "#1d2327" } },
+        { "name": "color/blue/50", "type": "COLOR", "scopes": ["ALL_SCOPES"], "values": { "Value": "#f0f4ff" } },
+        { "name": "color/blue/100", "type": "COLOR", "scopes": ["ALL_SCOPES"], "values": { "Value": "#dce3ff" } },
+        { "name": "color/blue/500", "type": "COLOR", "scopes": ["ALL_SCOPES"], "values": { "Value": "#3858e9" } },
+        { "name": "color/blue/600", "type": "COLOR", "scopes": ["ALL_SCOPES"], "values": { "Value": "#2145e6" } },
+        { "name": "color/blue/700", "type": "COLOR", "scopes": ["ALL_SCOPES"], "values": { "Value": "#183ad6" } },
+        { "name": "color/red/50", "type": "COLOR", "scopes": ["ALL_SCOPES"], "values": { "Value": "#fcf0f1" } },
+        { "name": "color/red/500", "type": "COLOR", "scopes": ["ALL_SCOPES"], "values": { "Value": "#d63638" } },
+        { "name": "color/red/600", "type": "COLOR", "scopes": ["ALL_SCOPES"], "values": { "Value": "#b32d2e" } },
+        { "name": "color/green/500", "type": "COLOR", "scopes": ["ALL_SCOPES"], "values": { "Value": "#00a32a" } },
+        { "name": "color/green/600", "type": "COLOR", "scopes": ["ALL_SCOPES"], "values": { "Value": "#008a20" } },
+        { "name": "color/yellow/500", "type": "COLOR", "scopes": ["ALL_SCOPES"], "values": { "Value": "#dba617" } },
+
+        { "name": "dimension/radius/xs", "type": "FLOAT", "scopes": ["CORNER_RADIUS"], "values": { "Value": 2 } },
+        { "name": "dimension/radius/sm", "type": "FLOAT", "scopes": ["CORNER_RADIUS"], "values": { "Value": 2 } },
+        { "name": "dimension/radius/md", "type": "FLOAT", "scopes": ["CORNER_RADIUS"], "values": { "Value": 4 } },
+        { "name": "dimension/radius/lg", "type": "FLOAT", "scopes": ["CORNER_RADIUS"], "values": { "Value": 8 } },
+        { "name": "dimension/radius/xl", "type": "FLOAT", "scopes": ["CORNER_RADIUS"], "values": { "Value": 16 } },
+
+        { "name": "dimension/padding/xs", "type": "FLOAT", "scopes": ["GAP", "WIDTH_HEIGHT"], "values": { "Value": 2 } },
+        { "name": "dimension/padding/sm", "type": "FLOAT", "scopes": ["GAP", "WIDTH_HEIGHT"], "values": { "Value": 4 } },
+        { "name": "dimension/padding/md", "type": "FLOAT", "scopes": ["GAP", "WIDTH_HEIGHT"], "values": { "Value": 8 } },
+        { "name": "dimension/padding/lg", "type": "FLOAT", "scopes": ["GAP", "WIDTH_HEIGHT"], "values": { "Value": 12 } },
+        { "name": "dimension/padding/xl", "type": "FLOAT", "scopes": ["GAP", "WIDTH_HEIGHT"], "values": { "Value": 16 } },
+        { "name": "dimension/padding/2xl", "type": "FLOAT", "scopes": ["GAP", "WIDTH_HEIGHT"], "values": { "Value": 24 } },
+
+        { "name": "dimension/gap/sm", "type": "FLOAT", "scopes": ["GAP"], "values": { "Value": 4 } },
+        { "name": "dimension/gap/md", "type": "FLOAT", "scopes": ["GAP"], "values": { "Value": 8 } },
+        { "name": "dimension/gap/lg", "type": "FLOAT", "scopes": ["GAP"], "values": { "Value": 12 } },
+        { "name": "dimension/gap/xl", "type": "FLOAT", "scopes": ["GAP"], "values": { "Value": 16 } }
+      ]
+    },
+    {
+      "name": "Semantic",
+      "modes": ["Light", "Dark"],
+      "variables": [
+        { "name": "color/background/surface/neutral", "type": "COLOR", "scopes": ["FRAME_FILL", "SHAPE_FILL"], "values": { "Light": "{color/white}", "Dark": "{color/gray/900}" } },
+        { "name": "color/background/surface/neutral-weak", "type": "COLOR", "scopes": ["FRAME_FILL", "SHAPE_FILL"], "values": { "Light": "{color/gray/0}", "Dark": "{color/gray/800}" } },
+        { "name": "color/background/surface/neutral-strong", "type": "COLOR", "scopes": ["FRAME_FILL", "SHAPE_FILL"], "values": { "Light": "{color/gray/100}", "Dark": "{color/gray/700}" } },
+        { "name": "color/background/surface/error-weak", "type": "COLOR", "scopes": ["FRAME_FILL", "SHAPE_FILL"], "values": { "Light": "{color/red/50}", "Dark": "{color/red/600}" } },
+        { "name": "color/background/interactive/brand-strong", "type": "COLOR", "scopes": ["FRAME_FILL", "SHAPE_FILL"], "values": { "Light": "{color/blue/500}", "Dark": "{color/blue/500}" } },
+        { "name": "color/background/interactive/brand-strong-active", "type": "COLOR", "scopes": ["FRAME_FILL", "SHAPE_FILL"], "values": { "Light": "{color/blue/600}", "Dark": "{color/blue/600}" } },
+        { "name": "color/background/interactive/brand-weak", "type": "COLOR", "scopes": ["FRAME_FILL", "SHAPE_FILL"], "values": { "Light": "{color/blue/50}", "Dark": "{color/gray/800}" } },
+        { "name": "color/background/interactive/neutral-weak-active", "type": "COLOR", "scopes": ["FRAME_FILL", "SHAPE_FILL"], "values": { "Light": "{color/gray/100}", "Dark": "{color/gray/700}" } },
+
+        { "name": "color/foreground/content/neutral", "type": "COLOR", "scopes": ["TEXT_FILL", "SHAPE_FILL"], "values": { "Light": "{color/gray/900}", "Dark": "{color/gray/0}" } },
+        { "name": "color/foreground/content/neutral-weak", "type": "COLOR", "scopes": ["TEXT_FILL", "SHAPE_FILL"], "values": { "Light": "{color/gray/600}", "Dark": "{color/gray/400}" } },
+        { "name": "color/foreground/content/error", "type": "COLOR", "scopes": ["TEXT_FILL", "SHAPE_FILL"], "values": { "Light": "{color/red/500}", "Dark": "{color/red/500}" } },
+        { "name": "color/foreground/interactive/brand", "type": "COLOR", "scopes": ["TEXT_FILL", "SHAPE_FILL"], "values": { "Light": "{color/blue/500}", "Dark": "{color/blue/500}" } },
+
+        { "name": "color/stroke/surface/neutral", "type": "COLOR", "scopes": ["STROKE_COLOR"], "values": { "Light": "{color/gray/200}", "Dark": "{color/gray/700}" } },
+        { "name": "color/stroke/surface/neutral-weak", "type": "COLOR", "scopes": ["STROKE_COLOR"], "values": { "Light": "{color/gray/100}", "Dark": "{color/gray/800}" } },
+        { "name": "color/stroke/interactive/brand", "type": "COLOR", "scopes": ["STROKE_COLOR"], "values": { "Light": "{color/blue/500}", "Dark": "{color/blue/500}" } },
+        { "name": "color/stroke/focus", "type": "COLOR", "scopes": ["STROKE_COLOR"], "values": { "Light": "{color/blue/500}", "Dark": "{color/blue/500}" } }
+      ]
+    }
+  ],
+  "textStyles": [
+    { "name": "Body/sm", "fontFamily": "Inter", "fontStyle": "Regular", "fontSize": 12, "lineHeightPercent": 140 },
+    { "name": "Body/md", "fontFamily": "Inter", "fontStyle": "Regular", "fontSize": 13, "lineHeightPercent": 150 },
+    { "name": "Heading/sm", "fontFamily": "Inter", "fontStyle": "Medium", "fontSize": 15, "lineHeightPercent": 130 },
+    { "name": "Heading/md", "fontFamily": "Inter", "fontStyle": "Medium", "fontSize": 20, "lineHeightPercent": 125 },
+    { "name": "Heading/lg", "fontFamily": "Inter", "fontStyle": "Medium", "fontSize": 24, "lineHeightPercent": 120 }
+  ],
+  "effectStyles": [
+    { "name": "Elevation/xs", "effects": [{ "type": "DROP_SHADOW", "color": "#1d232714", "offset": { "x": 0, "y": 1 }, "radius": 2, "spread": 0 }] },
+    { "name": "Elevation/sm", "effects": [{ "type": "DROP_SHADOW", "color": "#1d23271f", "offset": { "x": 0, "y": 2 }, "radius": 6, "spread": 0 }] },
+    { "name": "Elevation/md", "effects": [{ "type": "DROP_SHADOW", "color": "#1d232729", "offset": { "x": 0, "y": 4 }, "radius": 12, "spread": 0 }] },
+    { "name": "Elevation/lg", "effects": [{ "type": "DROP_SHADOW", "color": "#1d232733", "offset": { "x": 0, "y": 8 }, "radius": 24, "spread": 0 }] }
+  ]
+}
