@@ -64,6 +64,7 @@ describe("discoverChannels", () => {
   test("returns channels with client counts after clients join", async () => {
     // Connect a client and join a channel
     const ws = new WebSocket(`ws://localhost:${PORT}`);
+    ws.onerror = () => {}; // swallow the disconnect error when the relay is torn down
     await new Promise((resolve) => {
       ws.onopen = resolve;
     });
@@ -91,6 +92,7 @@ describe("discoverChannels", () => {
   test("discoverChannels function works", async () => {
     // Connect a client to create a channel
     const ws = new WebSocket(`ws://localhost:${PORT}`);
+    ws.onerror = () => {}; // swallow the disconnect error when the relay is torn down
     await new Promise((resolve) => {
       ws.onopen = resolve;
     });
@@ -140,6 +142,9 @@ describe("sendCommandToFigma", () => {
   afterEach(async () => {
     const { disconnectFromFigma } = await import("../src/figmagent_mcp/connection.js");
     disconnectFromFigma();
+    // Let in-flight socket closes settle before killing the relay — otherwise a
+    // still-closing client sees the relay vanish and emits an unhandled error.
+    await new Promise((resolve) => setTimeout(resolve, 100));
     proc.kill();
   });
 
@@ -185,6 +190,7 @@ describe("sendCommandToFigma", () => {
   test("sendCommandToFigma constructs correct message shape", async () => {
     // Connect a spy client to the same channel to observe the message
     const ws = new WebSocket(`ws://localhost:${port}`);
+    ws.onerror = () => {}; // swallow the disconnect error when the relay is torn down
     await new Promise((resolve) => {
       ws.onopen = resolve;
     });
@@ -299,6 +305,7 @@ describe("sendCommandToFigma", () => {
 
   test("error response from plugin rejects the promise", async () => {
     const spy = new WebSocket(`ws://localhost:${port}`);
+    spy.onerror = () => {}; // swallow the disconnect error when the relay is torn down
     await new Promise((resolve) => {
       spy.onopen = resolve;
     });
