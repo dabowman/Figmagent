@@ -1363,7 +1363,7 @@
       "toolCalls": 102,
       "figmaToolCalls": 0,
       "durationMinutes": 7091,
-      "sourceModified": 1781629339.61,
+      "sourceModified": 1782346091.94,
       "sessionType": "dev",
       "skip": true
     },
@@ -1559,8 +1559,8 @@
     "064943cf-2e11-4a9a-a092-c18088b0d27f": {
       "toolCalls": 61,
       "figmaToolCalls": 11,
-      "durationMinutes": 53,
-      "sourceModified": 1782163412.47,
+      "durationMinutes": 8781,
+      "sourceModified": 1782343814.33,
       "sessionType": "figma",
       "sourceSignature": "61:11",
       "analysis": "figma-mcp-session34-analysis.md",
@@ -1570,7 +1570,7 @@
     "44d8e724-6e14-41c5-b160-5e089a20697d": {
       "toolCalls": 134,
       "figmaToolCalls": 14,
-      "durationMinutes": 56,
+      "durationMinutes": 5768,
       "sourceModified": 1782163728.46,
       "sessionType": "figma",
       "sourceSignature": "134:14",
@@ -1592,7 +1592,7 @@
     "dc10dbb1-731f-4402-85e3-c22615a2564c": {
       "toolCalls": 21,
       "figmaToolCalls": 6,
-      "durationMinutes": 15,
+      "durationMinutes": 4577,
       "sourceModified": 1782163734.05,
       "sessionType": "figma",
       "sourceSignature": "21:6",
@@ -1615,7 +1615,7 @@
       "toolCalls": 168,
       "figmaToolCalls": 9,
       "durationMinutes": 99,
-      "sourceModified": 1782163412.06,
+      "sourceModified": 1782404612.49,
       "sessionType": "figma",
       "sourceSignature": "168:9",
       "analysis": "figma-mcp-session39-analysis.md",
@@ -1626,7 +1626,7 @@
       "toolCalls": 42,
       "figmaToolCalls": 0,
       "durationMinutes": 29,
-      "sourceModified": 1782163412.05,
+      "sourceModified": 1782404612.48,
       "sessionType": "dev",
       "skip": true
     },
@@ -1634,7 +1634,7 @@
       "toolCalls": 31,
       "figmaToolCalls": 0,
       "durationMinutes": 11,
-      "sourceModified": 1782163412.6,
+      "sourceModified": 1782404613.03,
       "sessionType": "dev",
       "skip": true
     },
@@ -1650,7 +1650,7 @@
       "toolCalls": 126,
       "figmaToolCalls": 0,
       "durationMinutes": 7191,
-      "sourceModified": 1782164876.8,
+      "sourceModified": 1782169895.99,
       "sessionType": "dev",
       "skip": true
     },
@@ -1666,7 +1666,7 @@
       "toolCalls": 28,
       "figmaToolCalls": 0,
       "durationMinutes": 9,
-      "sourceModified": 1782163412.06,
+      "sourceModified": 1782404612.47,
       "sessionType": "dev",
       "skip": true
     },

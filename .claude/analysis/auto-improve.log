@@ -110,3 +110,20 @@ CREATE  [TOOL-022] (P2) Normalize hyphenated node IDs (Figma URL form) to colon 
 CREATE  [TOOL-023] (P2) No first-class page management — page CRUD falls to `run_script`
 [2026-06-22 15:40:25] Stage D — skipped (not on main, on 'feat/auto-improve-pipeline')
 [2026-06-22 15:40:25] run complete
+
+========================= auto-improve 2026-06-25 11:13:39 =========================
+[2026-06-25 11:13:39] Stage A — extract Figmagent sessions across all repos
+  de1c4083-6d93-463d-a970-2b062048be35 → 436 messages, 168 tool calls + 5 sub-agents
+  064943cf-2e11-4a9a-a092-c18088b0d27f → 159 messages, 61 tool calls + 4 sub-agents
+  dc10dbb1-731f-4402-85e3-c22615a2564c → 59 messages, 21 tool calls
+  44d8e724-6e14-41c5-b160-5e089a20697d → 336 messages, 134 tool calls
+
+4 extracted, 9 up-to-date. Output: /Users/davidbowman/Github/cursor-talk-to-figma-mcp/.claude/sessions-json
+Figma sessions: 34, needs analysis: 0
+[2026-06-25 11:13:40] Stage B — analyze sessions (cap 25)
+[2026-06-25 11:13:40]   sessions needing analysis: 0
+[2026-06-25 11:13:40] not on main (on 'feat/auto-improve-pipeline') — leaving analysis artifacts uncommitted
+[2026-06-25 11:13:40] Stage C — sync improvement tracker → GitHub issues
+tracker→issues: 67 unique entries · 0 create, 0 close, 0 reopen, 0 drift, 67 in-sync/skip
+[2026-06-25 11:13:41] Stage D — skipped (not on main, on 'feat/auto-improve-pipeline')
+[2026-06-25 11:13:41] run complete
