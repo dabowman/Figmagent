@@ -157,6 +157,11 @@ export function connectToFigma(port: number = 3055) {
 export function disconnectFromFigma(): void {
   if (ws) {
     ws.removeAllListeners();
+    // Keep a no-op error handler through teardown: a socket that is mid-connect
+    // or mid-close can still emit 'error' (e.g. ECONNREFUSED to a dead relay)
+    // after its listeners are stripped, which would otherwise surface as an
+    // unhandled error and crash the process.
+    ws.on("error", () => {});
     ws.close();
     ws = null;
   }
