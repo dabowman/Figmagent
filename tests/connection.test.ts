@@ -19,13 +19,30 @@ let relayProcess: Subprocess;
 // OAuth token exists on the machine running the tests.
 process.env.FIGMA_TRANSPORT = "plugin";
 
+// Poll the relay's HTTP endpoint until it answers, rather than sleeping a fixed
+// interval — a subprocess spawn + port bind can take well over 500ms on a
+// loaded CI runner, which is what made these tests flaky there.
+async function waitForRelay(port: number, timeoutMs = 10000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const r = await fetch(`http://localhost:${port}/channels`);
+      if (r.ok) return;
+    } catch {
+      // relay not listening yet — retry
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`relay did not start on port ${port} within ${timeoutMs}ms`);
+}
+
 beforeAll(async () => {
   relayProcess = Bun.spawn([BUN, "run", "src/socket.ts"], {
     env: { ...process.env, PORT: String(PORT) },
     stdout: "pipe",
     stderr: "pipe",
   });
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  await waitForRelay(PORT);
 });
 
 afterAll(() => {
@@ -112,15 +129,14 @@ describe("sendCommandToFigma", () => {
   });
 
   test("rejects non-join commands when no channel is joined", async () => {
-    const { connectToFigma, disconnectFromFigma, sendCommandToFigma, pendingRequests } = await import(
+    const { connectToFigma, disconnectFromFigma, sendCommandToFigma, pendingRequests, waitForConnection } = await import(
       "../src/figmagent_mcp/connection.js"
     );
 
     // Ensure clean state — previous test may have left a stale connection
     disconnectFromFigma();
     connectToFigma(PORT);
-    // Wait for connection
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await waitForConnection();
 
     const result = sendCommandToFigma("get_document_info", {});
     await expect(result).rejects.toThrow(/No active Figma channels|Must join a channel/);
@@ -128,12 +144,14 @@ describe("sendCommandToFigma", () => {
   });
 
   test("join command succeeds and sets channel", async () => {
-    const { connectToFigma, disconnectFromFigma, joinChannel } = await import("../src/figmagent_mcp/connection.js");
+    const { connectToFigma, disconnectFromFigma, joinChannel, waitForConnection } = await import(
+      "../src/figmagent_mcp/connection.js"
+    );
 
     // Ensure clean state
     disconnectFromFigma();
     connectToFigma(PORT);
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await waitForConnection();
 
     // joinChannel calls sendCommandToFigma("join", ...) internally
     // The relay responds with a system message containing result
@@ -163,9 +181,11 @@ describe("sendCommandToFigma", () => {
     }); // join result
 
     // Now connect the MCP module to the same channel
-    const { connectToFigma, joinChannel, sendCommandToFigma } = await import("../src/figmagent_mcp/connection.js");
+    const { connectToFigma, joinChannel, sendCommandToFigma, waitForConnection } = await import(
+      "../src/figmagent_mcp/connection.js"
+    );
     connectToFigma(PORT);
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await waitForConnection();
     await joinChannel("shape-test-ch");
 
     // Listen for the broadcast that the spy client receives
@@ -212,10 +232,12 @@ describe("sendCommandToFigma", () => {
   });
 
   test("request times out and rejects after specified timeout", async () => {
-    const { connectToFigma, joinChannel, sendCommandToFigma } = await import("../src/figmagent_mcp/connection.js");
+    const { connectToFigma, joinChannel, sendCommandToFigma, waitForConnection } = await import(
+      "../src/figmagent_mcp/connection.js"
+    );
 
     connectToFigma(PORT);
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await waitForConnection();
     await joinChannel("timeout-test-ch");
 
     const start = Date.now();
@@ -233,10 +255,12 @@ describe("sendCommandToFigma", () => {
   });
 
   test("write-command timeout names the command and includes the degraded-connection hint", async () => {
-    const { connectToFigma, joinChannel, sendCommandToFigma } = await import("../src/figmagent_mcp/connection.js");
+    const { connectToFigma, joinChannel, sendCommandToFigma, waitForConnection } = await import(
+      "../src/figmagent_mcp/connection.js"
+    );
 
     connectToFigma(PORT);
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await waitForConnection();
     await joinChannel("timeout-write-ch");
 
     // set_text_content is the exact command from issue #46/#60 (Session 25).
@@ -266,9 +290,11 @@ describe("sendCommandToFigma", () => {
       spy.onmessage = resolve;
     }); // join result
 
-    const { connectToFigma, joinChannel, sendCommandToFigma } = await import("../src/figmagent_mcp/connection.js");
+    const { connectToFigma, joinChannel, sendCommandToFigma, waitForConnection } = await import(
+      "../src/figmagent_mcp/connection.js"
+    );
     connectToFigma(PORT);
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await waitForConnection();
     await joinChannel("err-test-ch");
 
     // Listen for broadcast and respond with error

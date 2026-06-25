@@ -580,7 +580,7 @@ async function main() {
 	// --file mode: extract a single external JSONL file directly
 	if (args.file) {
 		const filePath = resolve(args.file);
-		const fileStat = await stat(filePath);
+		await stat(filePath); // fail fast with a clear error if the path doesn't exist
 		const sessionId = basename(filePath, ".jsonl");
 		const parentDir = dirname(filePath);
 

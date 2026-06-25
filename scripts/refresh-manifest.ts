@@ -73,6 +73,12 @@ try {
 	// sessions-json not created yet — nothing to scan
 }
 
+// Track session IDs still present on disk so stale manifest keys (their extracted
+// JSON was deleted) can be pruned below — otherwise an orphaned figma entry with
+// no analysis is counted by --count forever, and the Stage B `while count>0`
+// loop can never reach 0.
+const seen = new Set<string>();
+
 for (const f of files) {
 	const path = join(SESSIONS_DIR, f);
 	let data: {
@@ -95,6 +101,7 @@ for (const f of files) {
 	}
 	const sid = data.sessionId;
 	if (!sid) continue;
+	seen.add(sid);
 
 	const m = data.metadata || {};
 	const tools = m.uniqueTools || [];
@@ -153,6 +160,12 @@ for (const f of files) {
 	}
 
 	manifest.sessions[sid] = entry;
+}
+
+// Prune manifest entries whose extracted session JSON is no longer on disk, so a
+// removed session can't keep the needs-analysis count above zero indefinitely.
+for (const sid of Object.keys(manifest.sessions)) {
+	if (!seen.has(sid)) delete manifest.sessions[sid];
 }
 
 await writeFile(MANIFEST, JSON.stringify(manifest, null, 2));
