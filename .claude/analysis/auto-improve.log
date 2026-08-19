@@ -127,3 +127,176 @@ Figma sessions: 34, needs analysis: 0
 tracker→issues: 67 unique entries · 0 create, 0 close, 0 reopen, 0 drift, 67 in-sync/skip
 [2026-06-25 11:13:41] Stage D — skipped (not on main, on 'feat/auto-improve-pipeline')
 [2026-06-25 11:13:41] run complete
+
+========================= auto-improve 2026-08-19 14:54:49 =========================
+[2026-08-19 14:54:49] Stage A — extract Figmagent sessions across all repos
+
+0 extracted, 28 up-to-date. Output: /Users/davidbowman/Github/cursor-talk-to-figma-mcp/.claude/sessions-json
+Figma sessions: 50, needs analysis: 16
+  36b9fcdd-0898-4d0a-8674-c406b217be3e     4 calls   1 figma  (new)
+  16ed3ca6-73c0-451f-901d-c9302f3a77ca     3 calls   1 figma  (new)
+  5c2e6cb0-ffbc-4327-9e34-c4ad85eb9a20    10 calls   1 figma  (new)
+  d5995279-b8ee-43f8-8cb8-5c6dc612077c    12 calls   1 figma  (new)
+  8ca1f562-2e06-460c-967a-4609e9cbc6e9     9 calls   1 figma  (new)
+  076b71f6-3163-4a74-abc8-2ff41c8e849f    10 calls   1 figma  (new)
+  4a6dbf76-eaf5-4394-a505-7d8a22659702    13 calls   1 figma  (new)
+  41f7b06e-63cd-45fe-80ea-45e35776a7f9    15 calls   1 figma  (new)
+  8bf51a2f-2855-4060-b64a-d10568327016     4 calls   1 figma  (new)
+  8caa2afa-e1c6-4dd1-87d8-9c09b7037b18    41 calls   9 figma  (new)
+  0ef451ab-ce2c-4dc8-a4dc-ea645e0f6fe2    56 calls  12 figma  (new)
+  8ad309aa-1f72-4f1d-9196-c2b8d91045ec     5 calls   1 figma  (new)
+  98b9c5fb-de33-449d-98d3-98c1b13272bd     2 calls   1 figma  (new)
+  087bd997-8e00-4c3e-952e-2da99490cf5d   313 calls   3 figma  (new)
+  ec9d6e90-b68c-41f3-b033-84ed24115476   369 calls  12 figma  (new)
+  32ede50a-369c-443a-9961-3ed6b437b245   183 calls  11 figma  (new)
+[2026-08-19 14:54:52] Stage B — analyze sessions (cap 25)
+[2026-08-19 14:54:52]   sessions needing analysis: 16
+Analysis complete. Session 40 (`0ef451ab`, vip-workflows, remote transport, 56 calls / 22 min) is analyzed and the tracker is updated.
+
+## What the session did
+Restyled the `StageStartMarker` component twice — first to match the Figma `StageNode/Terminal` variant, then (after reading the actual `.wf-terminal-node` CSS and finding the Figma variant didn't reflect it) to match the shipped pill styling. That mid-course correction, costing four cheap local `Bash`/`Read` calls, was the session's best move.
+
+## Findings — all verified against current code, not just the transcript
+
+**New (6):**
+
+| ID | Finding |
+|---|---|
+| **BUG-020** (P1) | `use_file` has only a `channel` param. The agent passed `url:` (then a bare fileKey via `url:`) — silently dropped by non-strict Zod, and the rejection message says *what* to pass but never names the parameter, so following it loops. Worse, the message doesn't match `ERROR_TEXT_PREFIX` (`instance.ts:85`), so a **failed file selection ships `is_error: false`**. Six calls to select a file it had the URL for. |
+| **TOOL-024** (P1) | `get_design_system` returned `{"variables":[],"collections":[]}` **four times** and `lint` scanned **0 nodes** saying "Create variables first" — because the file is fully tokenized against *enabled libraries* with zero local variables. Neither tool consults `getAvailableLibraryVariableCollectionsAsync()`, which the plugin already calls at `styles.js:1184`. |
+| **TOOL-025** (P1) | `minWidth`/`letterSpacing`/`lineHeight` are bindable-to-a-variable but have no direct-value field on `nodeOpSchema`; `textCase` exists nowhere. Forced both `run_script` escape hatches. |
+| **BUG-021** (P2) | `grep` rejects scalar `type: "COMPONENT"` with a raw Zod dump and no stated fix; unknown params are dropped silently rather than named. |
+| **AGENT-023** (P2) | `grep` defaults to current page — a weak default on remote, where there's no live selection. |
+| **AGENT-024** (P2) | The agent "verified" a variable binding with `detail: "layout"`, which omits `variableBindings` entirely — a confident but vacuous confirmation. |
+
+**Recurrences (2):** **TOOL-015** (cornerRadius binds only one corner) hit its 3rd session — root cause now pinpointed to `FIELD_MAP` mapping `cornerRadius: "topLeftRadius"` at `styles.js:1128`, so I raised it P2→P1. **AGENT-020** hit its 2nd; TOOL-024 is its durable tool-side form.
+
+## Caveats worth your attention
+- The raw error count (7) overstates things — 3 were user permission rejections. The real story is the opposite: two `use_file` failures shipped **unflagged** as successes.
+- I hit an **ID collision**: `BUG-019` was already taken by closed issue #102. I renumbered to BUG-020/021 and re-validated — `sync-issues --dry-run` now reports 6 create, **0 drift**.
+- Only **BUG-021** got a fix plan (`.claude/plans/2026-08-19-BUG-021.md`) — it's the one matching the skill's type-coercion allowlist. **TOOL-015** and **BUG-020** are mechanically safe one-file fixes but fall outside that allowlist, so I annotated them as needing an explicit go-ahead rather than generating auto-plans. TOOL-015 in particular is a one-line fan-out that has now cost three sessions.
+
+Nothing is committed (branch is `feat/auto-improve-pipeline`, matching prior pipeline behavior). 15 sessions remain unanalyzed — mostly 1–2 minute `archivist` `run_script` one-offs, plus three substantial ones (313, 369, and 183 calls).
+[2026-08-19 15:04:59]   sessions needing analysis: 15
+Analyzed **session 41** — `8caa2afa` (2026-06-29, vip-workflows, remote transport, 41 main + 7 sub-agent calls, 18 min). It's a direct sequel to session 40, same Figma file: reconciling the `StageNode` COMPONENT_SET to the repo's `StageNode.js` + CSS.
+
+**Written:** `.claude/analysis/figma-mcp-session41-analysis.md`
+
+## Headline findings
+
+**Two bugs root-caused in source**, not just observed:
+
+1. **`write({parentId})` silently drops `layoutSizing*: "FILL"`** (new `[BUG-022]`, P1). `create.js:386` — the "apply FILL after append" pass is gated on `parentNode`, the *in-tree* parent, which is only set for children inside the same `write` tree. Attaching to an existing node via `parentId` (resolved separately as `targetParent` at `create.js:215–227`) skips it entirely. Three creates each emitted a `fill_not_applied` warning whose stated fix — "ensure parent has layoutMode" — was **wrong**; the parent already had horizontal auto-layout. Fix: `parentNode || node.parent`.
+
+2. **`screenshot` `-32602` root cause found** (`[BUG-016]`, escalated **P1 → P0**, 4th session). `export.ts:98–113` builds `{ type: "image", data: result.imageData }` with no check that `imageData` exists — an undefined value produces a content block that's neither valid `text` nor `image`, so the SDK rejects the whole result. That's exactly the observed `invalid_union`. Two adjacent holes in the same file: the catch block omits `isError: true`, and the batch path only flags zero images as an error when `errors` is *also* populated — which is why call 6 returned `Exported 0 node(s): none` with `is_error: false`.
+
+**Recurrences:** `[TOOL-024]` (`get_design_system` blind to library-only files) escalated **P1 → P0** — three more empty `{"variables":[],"collections":[]}` responses, the same progressive-filter-loosening dead end as session 40, in the same file 13 minutes later.
+
+**Also new:** `[TOOL-026]` `get_enabled_library_variables` needs a query array (4 calls → 1, and it echoes 11 empty collections per response); `[TOOL-027]` `edit` exposes no `layoutPositioning`/`clipsContent`, forcing `run_script` for the connection handles — second consecutive session where pure property-setting fell to a script.
+
+**What worked:** near-optimal `edit` batching (19 node-ops in 4 calls), the code-read sub-agent running in parallel with all Figma reads, and the `scope_mismatch` pre-check catching a fill-scoped token bound to a stroke — the agent adapted in one turn with no retry.
+
+Tracker, metrics table, and manifest updated (sessions analyzed: 41; 14 Figma sessions remain unanalyzed). No fix plans were generated — none of the three new issues match the Phase 6 allowlist (sync-to-async / type-coercion / missing-batch-tool), so each entry carries the pinned file:line and old→new instead. `[BUG-022]` and `[BUG-016]` are both small, verified, and precisely located if you want plan files for them.
+[2026-08-19 15:11:54]   sessions needing analysis: 14
+Analyzed the queue down from 14 sessions to 2, producing two documents.
+
+## Session 42 — dispatching a false-positive cohort
+
+The 11 oldest "Figma sessions" in the queue turned out to contain **no Figma work at all**. They're from an unrelated `~/Github/archivist` project, and nine of the thirteen Figmagent calls across them literally read `run_script {code: "return \"not applicable\";"}` / `"placeholder"` / `"not a figma task"` — connectivity probes, all correctly rejected with `No Figma file selected`.
+
+I collapsed them into one document rather than generating 11 near-empty analyses, and filed the real finding as **`[INFRA-005]`** (P1): `refresh-manifest.ts` classifies a session as `figma` on ≥1 Figmagent call, which can't distinguish design work from a no-op probe. Because the queue is chronological, these sat *ahead of* the three substantive sessions — under the nightly loop they'd have burned 11 full analysis runs.
+
+## Session 43 — `087bd997`, vip-workflows, 313 calls
+
+A code-led session that used Figma read-only as the spec of record. That isolated the verify path, and it failed hard.
+
+**`[BUG-016]` recurred for the 5th time — and this session falsifies the standing hypothesis.** The tracker attributed it to "larger/complex nodes." Here it fired on a **261×202 frame with 11 descendants** at `scale: 4`. The real variable is raster payload size, and the source confirms it: `document.js:609` defines `EXPORT_MAX_PAYLOAD_CHARS` with a comment stating the cap exists *because* `use_figma` does `JSON.stringify` with no size guard — but that cap is applied **only in the batch path**. `exportSingleNode` (`document.js:626–651`) has no cap at all, so `export.ts:105–112` emits `{type:"image", data: undefined}` → `invalid_union`. This reconciles every prior data point: batch is capped and survives, single is uncapped and fails past a threshold.
+
+Two things worth your attention beyond the root cause:
+
+- **Recovery cost was the worst on record**: 17 calls and ~8 minutes. The agent spent a `ToolSearch` locating the *competing* tool, then made 4 `mcp__plugin_figma_figma__get_screenshot` calls with `curl`+`Read` round trips each. This is the benchmark risk made concrete — it's the one failure that makes an agent abandon Figmagent mid-task.
+- **`format: "SVG"` is a verified workaround** — two batch SVG calls succeeded on the same file and nodes two minutes later. That's a zero-code mitigation you could ship in the tool description today.
+
+Also new: **`[TOOL-028]`** (P2) — those SVG exports came back as 182–707 byte *text* files emitted as binary image blobs, forcing two `Bash cat` calls to read them. Same file as the `[BUG-016]` fix; worth doing in one pass, since it turns the workaround from "usable after a cat" into "usable directly."
+
+**`[BUG-014]`** hit its 4th onboarding occurrence (`read` before `use_file` on remote, URL in hand the whole time). And `[BUG-020]` gained confirming evidence: passing the URL as `channel:` worked first try, so the session-40 failure was purely the parameter *name*, not the value — favoring accepting `url` as an alias over renaming.
+
+## State
+
+Tracker, metrics table, and manifest updated; `sync-issues --dry-run` reports 11 create, **0 drift**, no ID collisions. Nothing committed (branch `feat/auto-improve-pipeline`, matching prior pipeline behavior).
+
+No fix plans generated — neither new issue matches the Phase 6 allowlist (sync-to-async / type-coercion / missing-batch-tool), so each carries pinned `file:line` locations instead. Flagging one judgment call for you: **`[BUG-016]` is now P0 across 5 sessions with a precisely located one-line-ish fix** (mirror the existing cap into `exportSingleNode`, guard `imageData`), but it falls outside the allowlist so I did not auto-plan it.
+[2026-08-19 15:19:20]   sessions needing analysis: 2
+Analysis complete. Session 44 (`ec9d6e90`) — a 192-minute, 369-call remote build session from `~/Github/vip-workflows`.
+
+**Written:**
+- `.claude/analysis/figma-mcp-session44-analysis.md`
+- `.claude/analysis/improvement-tracker.md` — 3 new entries, 5 recurrence updates, metrics row, header (90 → 93 issues, 43 → 44 sessions)
+- `.claude/analysis/sessions.json` — session marked analyzed
+
+**What this session showed**
+
+It's the largest remote *build* session on record and the first run entirely through the escape hatch: **119 `run_script` calls, zero `write`/`edit`/`lint`/`grep`**. The escape hatch's own limits became the bottleneck.
+
+Three new issues:
+
+- **`[TOOL-029]` P0** — `assembleRunScript` prepends the stdlib to every script unconditionally. I measured the bundle against this repo: **30,375 of 49,000 chars (62%)**, leaving 18.6K for user code. Only **21 of 119 scripts (17.6%)** referenced `fig.` at all. When a 19.5K builder was rejected, the agent invented a document-plugin-data module cache re-hydrated with `new Function` — 8 setup calls, decode preamble on 38% of scripts. Gating on `fig.` usage is a few lines and returns 2.6× the budget.
+- **`[BUG-023]` P1** — `SyntaxError: expecting '}'` came back with no line, column, or source, while *runtime* errors from the same VM do carry positions. The agent hand-bisected for 15 calls / ~6 minutes and never found the cause. Caused by TOOL-029's workaround, so fixing that removes most of the exposure.
+- **`[AGENT-025]` P1** — tracking entry for the `run_script` monoculture; 54% of scripts were diagnostic, not build work.
+
+**`[BUG-016]` is now 6 sessions deep and cost 62 calls here** — worst on record by 3.6×. Three consecutive failures at 16:40, then the agent spent a `ToolSearch` locating the official Figma MCP and ran `get_screenshot` → `curl` → `Read` **31 times over the next 2h20m**, never returning to Figmagent's `screenshot`. Two hypothesis updates: `scale: 1` failed, so payload size is reached by node *dimensions* not just scale; and the failure was deterministic per node, not flaky. The v3 fix in the tracker is unchanged — the uncapped `exportSingleNode` still explains every data point.
+
+Also recurring: `[BUG-014]` (6th — and this time the *original* page-enumeration half, which is why `read` was abandoned 90 seconds in), `[TOOL-021]` (2nd, one run of 10 consecutive icon searches), `[TOOL-022]` (2nd), `[TOOL-026]` (2nd).
+
+No fix plans generated — none of the three new issues matches the Phase 6 allowlist (sync-to-async / type-coercion / missing-batch-tool); each entry records why. One session remains in the queue (`32ede50a`, 183 calls).
+[2026-08-19 15:28:17]   sessions needing analysis: 1
+Analysis complete. Session 45 (`32ede50a`) analyzed — the queue is now empty (50 Figma sessions, 0 pending).
+
+## Session 45 — VIP Workflow Settings surface, remote transport
+
+183 tool calls / 63 min. **This is the counterweight to session 44**: same repo, same Figma file, same libraries — but built with first-class tools instead of a `run_script` monoculture.
+
+| | S44 | S45 |
+|---|---|---|
+| `run_script` share of Figmagent calls | 69% | **28%** |
+| `write`/`edit`/`lint`/`grep` calls | **0** | **43** |
+| Figmagent error rate | 9.8% | **5.3%** |
+| Nodes created / edited | — | 349 / 272 |
+
+That drop is strong evidence session 44's monoculture was driven by capability gaps, not agent preference — the residual 32 scripts map almost one-to-one onto tracked issues.
+
+**The headline finding is worse, though.** `[BUG-016]` (remote `screenshot` → `-32602 invalid_union`) recurred for the 7th time, and the defection to the official Figma MCP has crossed from behavior into *state*: call #2 of the session read a memory file written at the end of session 44 that says verbatim *"Figmagent's `screenshot` tool is broken here — use `mcp__plugin_figma_figma__get_screenshot` and `curl` the returned URL instead."* The agent tried once, failed, and ran the competitor for 41 minutes — 35 calls to accomplish 11 visual checks (24 net waste, ~7 min). Three of those official-MCP calls returned unusable 1×1 PNGs, so the fallback isn't even reliable. **Landing the code fix is no longer sufficient — that memory file has to be corrected in the same pass.**
+
+Four new bugs, all pinned to source:
+- `[BUG-024]` `set_focus` on remote prints `Focused on node "undefined" (ID: undefined)` — `remote/transport.ts:30–34` returns a `note` that `tools/scan.ts:144–152` discards.
+- `[BUG-025]` `create.js:161` calls `importComponentByKeyAsync` bare, no `fail(message, fix)` — the only branch in that block without one. Rejected a variant key the agent had harvested 13 min earlier.
+- `[BUG-026]` `script.ts:147–155` returns the `mode:"read"` rejection without `isError: true` — a script that never ran reads as success.
+- `[TOOL-030]` no variant-property filter on `get_component_variants`, and no way to read a published component's nested property API without instantiating it in a scratch frame (~9 `run_script` calls).
+
+Plus `[AGENT-026]`: script #164 set nine properties `edit` already exposes — including `clipsContent`, the already-shipped half of `[TOOL-027]`.
+
+Recurrences logged: `BUG-014` (7th), `TOOL-021` (3rd), `TOOL-026` (3rd), `TOOL-025` (2nd). No new auto-fix plans — none of the five match the Phase 6 allowlist.
+[2026-08-19 15:39:13]   sessions needing analysis: 0
+[2026-08-19 15:39:13] Stage C — sync improvement tracker → GitHub issues
+tracker→issues: 86 unique entries · 19 create, 0 close, 0 reopen, 0 drift, 67 in-sync/skip
+CREATE  [BUG-020] (P1) `use_file` drops an unknown `url` param and reports the failed selection as success
+CREATE  [TOOL-024] (P0) `get_design_system` and `lint` are blind to library-only files
+CREATE  [TOOL-025] (P1) `edit` has no direct-value fields for `letterSpacing` / `textCase` / `minWidth`
+CREATE  [BUG-021] (P2) `grep` rejects scalar `type`/`componentId` with a raw Zod dump, and drops unknown params silently
+CREATE  [AGENT-023] (P2) `grep` defaults to the current page — pass `scope: "DOCUMENT"` on remote
+CREATE  [AGENT-024] (P2) Verify variable bindings with `detail: "full"`, not `detail: "layout"`
+CREATE  [BUG-022] (P1) `write({parentId})` silently drops `layoutSizing*: "FILL"` and warns with the wrong fix
+CREATE  [TOOL-026] (P2) `get_enabled_library_variables` has no multi-query batch and echoes empty collections
+CREATE  [TOOL-027] (P1) `edit` can't set `layoutPositioning: "ABSOLUTE"` or `clipsContent` — forces `run_script`
+CREATE  [TOOL-028] (P2) `screenshot(format:"SVG")` returns text SVGs as binary blobs — forces a `Bash cat`
+CREATE  [INFRA-005] (P1) Manifest classifies any session with ≥1 Figmagent call as a "figma" session
+CREATE  [TOOL-029] (P0) `run_script` stdlib bundle consumes 62% of the char budget with no opt-out
+CREATE  [BUG-023] (P1) Remote VM `SyntaxError` carries no line, column, or source context
+CREATE  [AGENT-025] (P1) Whole-session `run_script` monoculture — first-class tools go untouched
+CREATE  [TOOL-030] (P1) No way to resolve a published variant key by variant properties, or read a component's nested property API
+CREATE  [BUG-024] (P2) `set_focus`/`set_selections` report success with `undefined` name and id on remote
+CREATE  [BUG-025] (P2) `write`'s `componentKey` path throws Figma's raw error with no stated fix
+CREATE  [BUG-026] (P2) `run_script` mode-mismatch rejection is reported as `is_error: false`
+CREATE  [AGENT-026] (P2) `run_script` used for property assignment `edit` already supports
+[2026-08-19 15:39:46] Stage D — skipped (AUTO_IMPROVE_DISPATCH=0)
+[2026-08-19 15:39:46] run complete
