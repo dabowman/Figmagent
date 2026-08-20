@@ -322,3 +322,21 @@ Figma sessions: 50, needs analysis: 0
 [2026-08-20 03:00:21] Stage B — analyze sessions (cap 25)
 [2026-08-20 03:00:22]   sessions needing analysis: 0
 [2026-08-20 03:00:22] committing analysis artifacts to main (local, no push)
+[2026-08-20 03:00:22] Stage C — sync improvement tracker → GitHub issues
+tracker→issues: 86 unique entries · 0 create, 0 close, 0 reopen, 0 drift, 86 in-sync/skip
+[2026-08-20 03:00:24] Stage D — dispatch draft fix PRs
+Dispatch run complete. No PRs opened — every candidate was correctly skipped.
+
+**Candidates evaluated** (P0/P1 + `Auto-fixable: yes` + status `identified`/`planned`):
+
+| Issue | Priority | Result |
+|---|---|---|
+| **TOOL-006** — Type coercion for tool parameters | P1 | **skipped: already in flight** — preflight exit 4; branch `auto-fix/TOOL-006` exists on origin and draft PR [#108](https://github.com/dabowman/Figmagent/pull/108) is already open |
+| **TOOL-015** — `apply` cornerRadius binding should expand to all corners | P1 | **skipped: no plan file** (constraint 3) |
+| **BUG-020** — `use_file` drops unknown `url` param, reports failure as success | P1 | **skipped: no plan file** (constraint 3) |
+| **BUG-021** — `grep` rejects scalar `type`/`componentId` | P2 | **skipped: priority below P1** (constraint 2) — has a plan, so it becomes eligible if ever raised to P1 |
+
+No worktree was created (setup never ran), so there is nothing to clean up. The `agent-*` worktrees present in `.claude/worktrees/` are from unrelated agent-isolation sessions, not this stage — no `auto-fix-*` worktrees exist.
+
+One thing worth flagging for the pipeline's health: TOOL-006 was the only tracker entry with a matching plan file, and it's already dispatched. TOOL-015 and BUG-020 both satisfy constraints 1, 2, and 4 but have no `.claude/plans/` file, so Stage D can't act on them. Since the plan file is the load-bearing artifact here, this stage will keep returning empty until `analyze-session` writes plans for those two (or a human does).
+[2026-08-20 03:02:08] run complete

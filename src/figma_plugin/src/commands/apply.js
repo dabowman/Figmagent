@@ -91,6 +91,12 @@ function applyStrokeColor(node, colorSpec) {
 // The warning carries `message` (what happened) and `fix` (how to resolve) as
 // separate structured fields, so consumers (apply.js batch path, the stdlib
 // fig.bindVariable throw path) never have to parse a fix back out of a string.
+// [TOOL-015] "cornerRadius" is a shorthand: Figma exposes four separately
+// bindable corner properties and no single bindable uniform radius. FIELD_MAP
+// resolves it to topLeftRadius, so binding it applied 1 of 4 corners and still
+// reported success — a silent 3/4 loss that cost three sessions to notice.
+const CORNER_RADIUS_FIELDS = ["topLeftRadius", "topRightRadius", "bottomLeftRadius", "bottomRightRadius"];
+
 export async function bindVariableToNode(node, field, variableId) {
   const variable = await figma.variables.getVariableByIdAsync(variableId);
   if (!variable)
@@ -147,6 +153,41 @@ export async function bindVariableToNode(node, field, variableId) {
     const paintCopy = JSON.parse(JSON.stringify(node[figmaField]));
     paintCopy[0] = figma.variables.setBoundVariableForPaint(paintCopy[0], "color", variable);
     node[figmaField] = paintCopy;
+  } else if (field === "cornerRadius") {
+    // Fan out to every corner this node actually exposes.
+    const bound = [];
+    const unsupported = [];
+    for (let ci = 0; ci < CORNER_RADIUS_FIELDS.length; ci++) {
+      const corner = CORNER_RADIUS_FIELDS[ci];
+      if (corner in node) {
+        node.setBoundVariable(corner, variable);
+        bound.push(corner);
+      } else {
+        unsupported.push(corner);
+      }
+    }
+    if (bound.length === 0) {
+      fail(
+        "Node does not support corner radius binding: " + node.id + " (type: " + node.type + ")",
+        "bind cornerRadius on a node type with corner properties (FRAME, RECTANGLE, COMPONENT, INSTANCE)",
+      );
+    }
+    if (unsupported.length > 0) {
+      return {
+        nodeId: node.id,
+        check: "partial_corner_binding",
+        message:
+          "Bound cornerRadius on " +
+          node.id +
+          " (" +
+          node.type +
+          ") to " +
+          bound.join(", ") +
+          "; this node type has no " +
+          unsupported.join(", "),
+        fix: "no action needed if the node is not a rectangle-like shape; otherwise bind the individual corner fields you need",
+      };
+    }
   } else {
     node.setBoundVariable(figmaField, variable);
   }

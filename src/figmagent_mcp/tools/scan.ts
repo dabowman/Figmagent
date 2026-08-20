@@ -196,17 +196,37 @@ server.tool(
   },
 );
 
+/**
+ * [BUG-020] use_file target resolution. The Zod object is non-strict, so an
+ * agent calling use_file({ url: "https://figma.com/design/<key>/..." }) had the
+ * key silently dropped, channel defaulted to "", and the handler returned its
+ * empty-input message — which names the value to pass but never the parameter,
+ * so an agent following it verbatim loops. Accept the names agents reach for.
+ * Explicit channel wins; then url; then fileKey.
+ */
+export function resolveFileTarget(channel?: string, url?: string, fileKey?: string): string {
+  return channel || url || fileKey || "";
+}
+
 // Use File Tool — select the Figma file to work in
 server.tool(
   "use_file",
-  "Select the Figma file to work in. On the plugin transport this joins a relay channel: with no argument it auto-discovers active channels and joins if exactly one is found; you usually don't need to call it — the server auto-joins on first command and auto-recovers on timeout. Call it explicitly when (1) auto-recovery fails after repeated timeouts, or (2) you need to switch between multiple open Figma files; named channels are validated against the relay and nonexistent ones return the available options. On the remote transport (FIGMA_TRANSPORT=remote) there are no channels — pass a Figma file URL (https://www.figma.com/design/<fileKey>/...) or a bare fileKey to select the target file.",
+  "Select the Figma file to work in. On the plugin transport this joins a relay channel: with no argument it auto-discovers active channels and joins if exactly one is found; you usually don't need to call it — the server auto-joins on first command and auto-recovers on timeout. Call it explicitly when (1) auto-recovery fails after repeated timeouts, or (2) you need to switch between multiple open Figma files; named channels are validated against the relay and nonexistent ones return the available options. On the remote transport (FIGMA_TRANSPORT=remote) there are no channels — pass a Figma file URL (https://www.figma.com/design/<fileKey>/...) or a bare fileKey to select the target file, as `channel` (`url` and `fileKey` are accepted as aliases for it).",
   {
     channel: z
       .string()
       .describe("Channel name (plugin transport) or Figma file URL / fileKey (remote transport)")
       .default(""),
+    // [BUG-020] Zod objects are non-strict here, so an agent calling
+    // use_file({ url: "https://figma.com/design/<key>/..." }) had the key
+    // silently dropped and got the empty-input message back — which names the
+    // value to pass but not the parameter, so following it verbatim loops.
+    // Accept the two names agents actually reach for.
+    url: z.string().optional().describe("Alias for channel — a Figma file URL (remote transport)"),
+    fileKey: z.string().optional().describe("Alias for channel — a bare Figma fileKey (remote transport)"),
   },
-  async ({ channel }: any) => {
+  async ({ channel, url, fileKey }: any) => {
+    channel = resolveFileTarget(channel, url, fileKey);
     try {
       if (getTransport().name === "remote") {
         if (!channel) {
@@ -214,17 +234,24 @@ server.tool(
             content: [
               {
                 type: "text",
-                text: "Remote transport selects files by fileKey, not channels. Pass a Figma file URL (e.g. https://www.figma.com/design/<fileKey>/...) or a bare fileKey.",
+                text:
+                  `Error: no file specified. Pass the Figma file URL or fileKey as use_file's "channel" parameter — ` +
+                  `e.g. use_file({ channel: "https://www.figma.com/design/<fileKey>/..." }). ` +
+                  `"url" and "fileKey" are accepted as aliases. The remote transport has no channels.`,
               },
             ],
+            // Without this the text failed looksLikeError's start-anchored match and a
+            // FAILED file selection shipped as is_error: false, so agents moved on
+            // to the next call instead of retrying.
+            isError: true,
           };
         }
-        const fileKey = setFileKey(channel);
+        const selectedKey = setFileKey(channel);
         return {
           content: [
             {
               type: "text",
-              text: `Now targeting Figma file ${fileKey} on the remote transport.`,
+              text: `Now targeting Figma file ${selectedKey} on the remote transport.`,
             },
           ],
         };

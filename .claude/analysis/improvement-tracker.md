@@ -422,7 +422,7 @@ Sessions analyzed: 45 (session 42 covers an 11-session placeholder cohort)
 - **Proposed fix**: Add to CLAUDE.md/agent prompts: "If join_channel succeeds immediately after a timeout, the connection is healthy — the operation is slow. After 3 such cycles, skip and retry later instead of reconnecting again."
 
 ### [TOOL-015] `apply` cornerRadius variable binding should expand to all corners
-- **Status**: identified
+- **Status**: implemented
 - **Priority**: P1 (raised from P2 — 3rd recurrence, exact fix location known)
 - **Category**: plugin-bug
 - **First seen**: Session 19 (2026-03-19)
@@ -432,6 +432,7 @@ Sessions analyzed: 45 (session 42 covers an 11-session placeholder cohort)
 - **Proposed fix**: In `bindVariableToNode` (`src/figma_plugin/src/commands/apply.js`), expand a `cornerRadius` field to all four corner properties (`topLeftRadius`, `topRightRadius`, `bottomLeftRadius`, `bottomRightRadius`) instead of the single `FIELD_MAP` lookup; at minimum return a warning naming the corners that were not bound.
 - **Auto-fixable**: yes (fan-out at the `FIELD_MAP` lookup in `apply.js`; one file, no schema change)
 - **Note**: outside the Phase 6 auto-fix allowlist (it changes binding *semantics*, not just a type or signature) — no auto-plan generated despite 3 recurrences; needs an explicit go-ahead.
+- **Fixed 2026-08-20**: `bindVariableToNode` (`apply.js`) now fans a `cornerRadius` field out to all four corner properties instead of the single `FIELD_MAP` lookup. Nodes exposing only some corners bind what they have and return a `partial_corner_binding` warning naming the rest; a node with no corner properties fails via `fail()` with the node types that do. `FIELD_MAP` is unchanged (still used for the explicit per-corner fields, which continue to bind exactly one corner). 6 tests in `tests/corner-radius-and-use-file.test.ts`, including a regression test pinning that a FRAME gets 4 binds rather than the old 1. Closes #94.
 
 ### [AGENT-015] Prefer Figma API variable IDs over local config files
 - **Status**: identified
@@ -754,7 +755,7 @@ Sessions analyzed: 45 (session 42 covers an 11-session placeholder cohort)
 - **Note**: Missing-tool (single capability, not a batch variant) — not in the Phase 6 auto-fix allowlist (sync-to-async / type-coercion / missing-batch-tool); no auto-plan generated. Rare in single-page design sessions; recurs in any multi-page or harness workflow.
 
 ### [BUG-020] `use_file` drops an unknown `url` param and reports the failed selection as success
-- **Status**: identified
+- **Status**: implemented
 - **Priority**: P1
 - **Category**: plugin-bug
 - **First seen**: Session 40 (2026-06-29, external vip-workflows, remote transport)
@@ -765,6 +766,7 @@ Sessions analyzed: 45 (session 42 covers an 11-session placeholder cohort)
 - **Auto-fixable**: yes (parameter alias + error-prefix string change, both in `tools/scan.ts`)
 - **Note**: mechanically safe, but the fix pattern (param alias + error-sentinel prefix) is outside the Phase 6 auto-fix allowlist (sync-to-async / type-coercion / missing-batch-tool) — no auto-plan generated; needs an explicit go-ahead.
 - **Confirming evidence**: Session 43 (2026-07-31, remote) passed the full `figma.com/design/<key>/…` URL as **`channel:`** and it worked first try (`Now targeting Figma file uwhEpCvlz26oQeK0rql95G on the remote transport`). So the parameter *accepts* a URL on remote — the session 40 failure was purely the parameter **name** (`url:` silently dropped by non-strict Zod), not the value. Strengthens the case for accepting `url` as an alias rather than renaming.
+- **Fixed 2026-08-20**: all three defects addressed in `tools/scan.ts`. (a) `url` and `fileKey` are now declared optional params and resolved by the exported `resolveFileTarget(channel, url, fileKey)` helper — explicit `channel` wins, then `url`, then `fileKey` — so the previously silent Zod drop cannot recur. (b) The remote empty-input message now names the **parameter**, not just the value: `Error: no file specified. Pass the Figma file URL or fileKey as use_file's "channel" parameter — e.g. use_file({ channel: "…" })`. (c) It starts with the `Error: ` sentinel AND sets `isError: true` explicitly, so a failed file selection no longer ships as `is_error: false`. 8 tests, including one pinning that the OLD message did not match `looksLikeError` — the actual cause of the agent proceeding to `get_selection`. Closes #109.
 
 ### [TOOL-024] `get_design_system` and `lint` are blind to library-only files
 - **Status**: identified
