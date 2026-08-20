@@ -606,6 +606,13 @@ const EXPORT_MAX_NODES = 20;
 // with no size guard of its own (remote/executor.ts only budgets the input
 // script). Over-budget nodes are reported in `truncated` so the caller can
 // re-request them in a follow-up batch.
+//
+// BUG-016: the cap applies to single-node mode as well. An uncapped oversized
+// render made the remote drop `imageData` from the result, which reached the
+// MCP layer as an image content block with `data: undefined` and got rejected
+// by the SDK as a protocol error instead of a diagnosable failure. Single mode
+// throws a fix-stated error (there is nothing to truncate to); batch mode keeps
+// truncating, since it can still return the nodes that fit.
 const EXPORT_MAX_PAYLOAD_CHARS = 4000000;
 
 function mimeTypeForFormat(format) {
@@ -623,7 +630,7 @@ function mimeTypeForFormat(format) {
   }
 }
 
-async function exportSingleNode(nodeId, format, scale) {
+async function exportSingleNode(nodeId, format, scale, maxPayloadChars) {
   const node = await figma.getNodeByIdAsync(nodeId);
   if (!node) {
     fail(`Node not found with ID: ${nodeId}`, "Verify the node ID with `grep` or `read` — it may be stale after a delete.");
@@ -640,6 +647,17 @@ async function exportSingleNode(nodeId, format, scale) {
 
   const bytes = await node.exportAsync(settings);
   const base64 = customBase64Encode(bytes);
+
+  // Enforce the payload ceiling when the caller returns this image straight to
+  // the MCP layer (single-node mode). Batch mode passes no cap: it applies
+  // EXPORT_MAX_PAYLOAD_CHARS itself across the whole batch and reports the
+  // over-budget nodes in `truncated` instead of failing.
+  if (maxPayloadChars !== undefined && base64.length > maxPayloadChars) {
+    fail(
+      `Exported image for node ${nodeId} is too large to return: ${base64.length} chars (max ${maxPayloadChars})`,
+      `Re-request at a lower \`scale\` (current scale: ${scale}; try 0.5 or 1), or use \`format: "SVG"\` — vector output is far smaller than a raster render of a large board. Exporting a smaller child node instead of the whole board also works.`,
+    );
+  }
 
   return {
     nodeId,
@@ -721,5 +739,5 @@ export async function exportNodeAsImage(params) {
     fail("Missing nodeId parameter", "Pass `nodeId` for one node or `nodeIds` for a batch.");
   }
 
-  return await exportSingleNode(nodeId, format, scale);
+  return await exportSingleNode(nodeId, format, scale, EXPORT_MAX_PAYLOAD_CHARS);
 }

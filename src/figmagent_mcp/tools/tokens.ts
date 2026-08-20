@@ -22,7 +22,9 @@ For large design systems (88K+ chars is common), FILTER instead of raising maxOu
 - includeVariables/includeStyles: skip entire sections (omitted keys are absent from the response, not null)
 - includeScopes: include each variable's scopes array (e.g. ["TEXT_FILL","STROKE_COLOR"]) to verify what update_variables set
 
-A truncated response lists the available collection names so you can pick one in a single follow-up call.`,
+A truncated response lists the available collection names so you can pick one in a single follow-up call.
+
+Library-backed files: if variables/collections come back EMPTY and the response carries a "message" plus "libraryCollections", this file's tokens live in enabled team libraries, not local variables. Do NOT loosen filters and retry — an empty result is indistinguishable from a bad filter, and that dead end has cost 3-4 calls per session. Enumerate with get_enabled_library_variables, then bind with import_library_variable + edit({variables}).`,
   {
     maxOutputChars: z.coerce
       .number()

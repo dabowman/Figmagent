@@ -1,6 +1,7 @@
 /**
  * run_script — escape-hatch tool (Task 4.4, plan D4). Executes a raw Figma
- * Plugin API script in the remote VM with the fig.* stdlib preloaded.
+ * Plugin API script in the remote VM, with the fig.* stdlib preloaded only
+ * when the script actually needs it ([TOOL-029]).
  * Remote transport only; the plugin transport refuses with the fix.
  *
  * mode: "read" is enforced by a best-effort server-side static deny-list scan
@@ -61,20 +62,51 @@ export function findWriteCall(code: string): string | null {
   return null;
 }
 
+// ─── stdlib inclusion ────────────────────────────────────────────────────────
+
+/**
+ * Does the user code actually reference the fig.* stdlib?
+ *
+ * The bundle is 30K of the 49K script budget, so prepending it to every script
+ * costs 62% of the budget for the ~82% of scripts that only use raw figma.*
+ * ([TOOL-029]). Two shapes count as a reference:
+ *   - a bare `fig.` call — `fig.prop(n, "x")`, `await fig.serialize(id)`
+ *   - an explicit global — `globalThis.fig.check(ids)`, `self.fig.prop(...)`
+ *
+ * The negative lookbehind on the bare form rejects `myfig.`, `$fig.` and
+ * member reads like `config.fig.enabled`; the second alternation re-admits the
+ * `globalThis.fig` form specifically, since that is how the bundle attaches
+ * (and how the mode "write" postlude below calls it).
+ */
+const STDLIB_REFERENCE_RE = /(?<![\w$.])fig\.|(?:globalThis|self|window)\.fig\b/;
+
+export function referencesStdlib(code: string): boolean {
+  return STDLIB_REFERENCE_RE.test(code);
+}
+
 // ─── Script assembly ─────────────────────────────────────────────────────────
 
 /**
- * stdlib bundle + user code (wrapped so the return value is captured) +
- * for mode "write": the { nodeIds } post-run convention — fig.check runs over
- * the returned ids in the same script and warnings ride the response.
+ * [conditional stdlib bundle] + user code (wrapped so the return value is
+ * captured) + for mode "write": the { nodeIds } post-run convention — fig.check
+ * runs over the returned ids in the same script and warnings ride the response.
+ *
+ * The bundle is prepended only when the code references fig.* or the mode is
+ * "write" (the write postlude calls fig.check), and never when the caller
+ * passes stdlib: false. Omitting it returns ~48.6K of the 49K budget to the
+ * user's code instead of ~18.6K.
  */
-export async function assembleRunScript(code: string, mode: "read" | "write"): Promise<string> {
-  const stdlib = await getDomainBundle("stdlib");
-  const lines = [stdlib, "const __userScript = async () => {", code, "};", "const __result = await __userScript();"];
+export async function assembleRunScript(code: string, mode: "read" | "write", stdlib = true): Promise<string> {
+  const includeStdlib = stdlib !== false && (referencesStdlib(code) || mode === "write");
+  const lines: string[] = [];
+  if (includeStdlib) lines.push(await getDomainBundle("stdlib"));
+  lines.push("const __userScript = async () => {", code, "};", "const __result = await __userScript();");
   if (mode === "write") {
     lines.push(
+      // globalThis.fig is absent only when the caller forced stdlib: false on a
+      // write script — then the post-run check is skipped, not thrown-and-caught.
       "let __warnings = [];",
-      "if (__result && typeof __result === 'object' && Array.isArray(__result.nodeIds)) {",
+      "if (globalThis.fig && __result && typeof __result === 'object' && Array.isArray(__result.nodeIds)) {",
       "  try { __warnings = await globalThis.fig.check(__result.nodeIds); } catch (_e) {}",
       "}",
       "const __out = { result: __result === undefined ? null : __result };",
@@ -93,7 +125,7 @@ server.tool(
   "run_script",
   `LAST RESORT — execute a raw Figma Plugin API script in the remote VM. Use ONLY when no first-class tool (read/grep/edit/write/lint/screenshot, variables/styles/components tools) covers the operation. Remote transport only (FIGMA_TRANSPORT=remote).
 
-The script runs with top-level await and return, with the fig.* stdlib preloaded:
+The script runs with top-level await and return. The fig.* stdlib is preloaded ONLY when your code references fig. or mode is "write" (see Budget) — raw figma.* scripts get the full budget instead:
 - fig.prop(node, name) — strict-guard-safe property read (the remote VM throws on properties missing from a node type; always use this for optional props)
 - fig.setCharacters(node, text) — font-safe text replacement (handles mixed-font nodes)
 - fig.loadFont(family, weightOrStyle) — load a font; numeric weight maps to style (600 → "Semi Bold"), falls back to Inter Regular; returns the loaded FontName
@@ -106,7 +138,8 @@ Conventions:
 - mode: "read" (default) is enforced by a best-effort static scan for mutating API names; the real protection is per-script rollback — a thrown error means nothing was applied. Mutating scripts MUST pass mode: "write".
 - When a mode: "write" script returns { nodeIds: [...] }, fig.check runs over those ids in the same execution and warnings are appended to the response — so return the ids you created/modified.
 - Atomic rollback + fig.bindVariable: a mode "write" script runs atomically — one thrown error discards ALL prior writes in the script. So a loop that binds many nodes and hits one scope mismatch midway rolls back every earlier bind too. If you need persist-the-good-ones-skip-the-bad behavior, use the edit tool (it collects per-bind warnings and continues), or pre-validate scopes with get_design_system, or split into one run_script per node.
-- Budget: stdlib + your code must fit 49,000 chars combined (~19K for your code).
+- Budget: the assembled script must fit 49,000 chars. The fig.* stdlib bundle costs 30,375 of those and is prepended ONLY when (a) your code references fig. (bare \`fig.x\` or \`globalThis.fig.x\` — \`.fig.\` inside a longer path and \`myfig.\` don't count) or (b) mode is "write" (the post-run fig.check needs it). So: raw figma.*-only read scripts get ~48.6K for your code; scripts that use fig.* (or any write script) get ~18.6K. Pass stdlib: false to force the bundle off and reclaim the full ~48.6K — on a write script that also disables the post-run fig.check warnings, and any fig.* call in your code will throw at runtime.
+- Prefer raw figma.* over fig.* for large scripts: dropping one fig.prop() call for a plain property read can be the difference between fitting and having to split the script.
 - Every script is session-logged in full; recurring scripts become first-class tools.`,
   {
     code: z
@@ -120,8 +153,17 @@ Conventions:
       .default("read")
       .describe("'read' (default) rejects scripts that call mutating APIs; 'write' allows mutations."),
     description: z.string().describe("One-line description of what the script does (logged + sent to Figma)."),
+    stdlib: z
+      .boolean()
+      .default(true)
+      .describe(
+        "Set false to force the 30,375-char fig.* stdlib bundle out of the script and reclaim the budget " +
+          "(~48.6K for your code). Default true means 'include it when needed' — auto-detected from a fig. " +
+          "reference in your code, or forced on by mode: 'write'. With false, fig.* calls throw at runtime " +
+          "and mode: 'write' scripts get no post-run fig.check warnings.",
+      ),
   },
-  (params: { code: string; mode: "read" | "write"; description: string }) => runScriptHandler(params),
+  (params: { code: string; mode: "read" | "write"; description: string; stdlib: boolean }) => runScriptHandler(params),
 );
 
 /** Tool handler — exported for direct unit testing. */
@@ -129,10 +171,12 @@ export async function runScriptHandler({
   code,
   mode,
   description,
+  stdlib = true,
 }: {
   code: string;
   mode: "read" | "write";
   description: string;
+  stdlib?: boolean;
 }) {
   try {
     if (getTransport().name !== "remote") {
@@ -156,7 +200,7 @@ export async function runScriptHandler({
     }
 
     const fileKey = resolveFileKey();
-    const script = await assembleRunScript(code, mode);
+    const script = await assembleRunScript(code, mode, stdlib);
     const result = await executeRawScript({
       fileKey,
       code: script,
