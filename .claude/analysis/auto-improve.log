@@ -300,3 +300,16 @@ CREATE  [BUG-026] (P2) `run_script` mode-mismatch rejection is reported as `is_e
 CREATE  [AGENT-026] (P2) `run_script` used for property assignment `edit` already supports
 [2026-08-19 15:39:46] Stage D — skipped (AUTO_IMPROVE_DISPATCH=0)
 [2026-08-19 15:39:46] run complete
+
+========================= auto-improve 2026-08-19 18:12:46 =========================
+[2026-08-19 18:12:46] Stage A — extract Figmagent sessions across all repos
+
+0 extracted, 28 up-to-date. Output: /Users/davidbowman/Github/cursor-talk-to-figma-mcp/.claude/sessions-json
+Figma sessions: 50, needs analysis: 0
+[2026-08-19 18:12:59] Stage B — analyze sessions (cap 25)
+[2026-08-19 18:13:01]   sessions needing analysis: 0
+[2026-08-19 18:13:01] not on main (on 'feat/auto-improve-pipeline') — leaving analysis artifacts uncommitted
+[2026-08-19 18:13:01] Stage C — sync improvement tracker → GitHub issues
+tracker→issues: 86 unique entries · 0 create, 0 close, 0 reopen, 0 drift, 86 in-sync/skip
+[2026-08-19 18:13:04] Stage D — skipped (not on main, on 'feat/auto-improve-pipeline')
+[2026-08-19 18:13:04] run complete
