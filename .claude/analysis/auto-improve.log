@@ -313,3 +313,12 @@ Figma sessions: 50, needs analysis: 0
 tracker→issues: 86 unique entries · 0 create, 0 close, 0 reopen, 0 drift, 86 in-sync/skip
 [2026-08-19 18:13:04] Stage D — skipped (not on main, on 'feat/auto-improve-pipeline')
 [2026-08-19 18:13:04] run complete
+
+========================= auto-improve 2026-08-20 03:00:05 =========================
+[2026-08-20 03:00:05] Stage A — extract Figmagent sessions across all repos
+
+0 extracted, 28 up-to-date. Output: /Users/davidbowman/Github/cursor-talk-to-figma-mcp/.claude/sessions-json
+Figma sessions: 50, needs analysis: 0
+[2026-08-20 03:00:21] Stage B — analyze sessions (cap 25)
+[2026-08-20 03:00:22]   sessions needing analysis: 0
+[2026-08-20 03:00:22] committing analysis artifacts to main (local, no push)
