@@ -340,3 +340,12 @@ No worktree was created (setup never ran), so there is nothing to clean up. The 
 
 One thing worth flagging for the pipeline's health: TOOL-006 was the only tracker entry with a matching plan file, and it's already dispatched. TOOL-015 and BUG-020 both satisfy constraints 1, 2, and 4 but have no `.claude/plans/` file, so Stage D can't act on them. Since the plan file is the load-bearing artifact here, this stage will keep returning empty until `analyze-session` writes plans for those two (or a human does).
 [2026-08-20 03:02:08] run complete
+
+========================= auto-improve 2026-08-21 03:00:05 =========================
+[2026-08-21 03:00:05] Stage A — extract Figmagent sessions across all repos
+
+0 extracted, 28 up-to-date. Output: /Users/davidbowman/Github/cursor-talk-to-figma-mcp/.claude/sessions-json
+Figma sessions: 50, needs analysis: 0
+[2026-08-21 03:00:51] Stage B — analyze sessions (cap 25)
+[2026-08-21 03:00:55]   sessions needing analysis: 0
+[2026-08-21 03:00:57] committing analysis artifacts to main (local, no push)
