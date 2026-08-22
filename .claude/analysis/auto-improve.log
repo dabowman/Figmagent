@@ -349,3 +349,27 @@ Figma sessions: 50, needs analysis: 0
 [2026-08-21 03:00:51] Stage B — analyze sessions (cap 25)
 [2026-08-21 03:00:55]   sessions needing analysis: 0
 [2026-08-21 03:00:57] committing analysis artifacts to main (local, no push)
+[2026-08-21 03:00:57] Stage C — sync improvement tracker → GitHub issues
+tracker→issues: 86 unique entries · 0 create, 0 close, 0 reopen, 0 drift, 86 in-sync/skip
+[2026-08-21 03:01:00] Stage D — dispatch draft fix PRs
+Dispatch run complete — **no PRs opened this run.**
+
+Candidate scan of `.claude/analysis/improvement-tracker.md` found exactly one entry meeting constraints 1–4 (`Auto-fixable: yes` + P0/P1 + status `identified`/`planned` + a plan file), and it was already in flight:
+
+- **TOOL-006** (Type coercion for tool parameters, P1, plan `.claude/plans/2026-06-22-TOOL-006.md`) — **skipped**: `preflight` exited 4, branch `auto-fix/TOOL-006` already on origin with open draft PR [#108](https://github.com/dabowman/Figmagent/pull/108) ("fix(TOOL-006): coerce string numeric params to numbers").
+- **BUG-021** (`grep` scalar `type`/`componentId` rejection, plan `.claude/plans/2026-08-19-BUG-021.md`) — **skipped**: priority is **P2**, below the P0/P1 bar. It is otherwise eligible (type-coercion pattern, status `identified`, `Auto-fixable: yes`), so it becomes dispatchable the moment a future session bumps it to P1.
+
+No worktrees were created and none were left behind (the `agent-*` dirs under `.claude/worktrees/` predate this run and belong to the Agent tool, not this stage). No branches pushed, no non-draft PRs exist.
+
+One thing worth flagging for the pipeline's health: the tracker now has 90+ entries but only two carry a plan file, and only one of those is P0/P1. Stage D is throughput-limited by plan authorship in the `analyze-session` skill (Phase 6), not by the dispatch cap of 2 — this stage will keep idling until more P0/P1 entries get plans written.
+SessionEnd hook [/Users/davidbowman/Github/archivist/.venv/bin/python3.14 -m archivist.cli capture] failed: Hook cancelled
+[2026-08-21 03:04:37] run complete
+
+========================= auto-improve 2026-08-22 03:00:05 =========================
+[2026-08-22 03:00:05] Stage A — extract Figmagent sessions across all repos
+
+0 extracted, 28 up-to-date. Output: /Users/davidbowman/Github/cursor-talk-to-figma-mcp/.claude/sessions-json
+Figma sessions: 50, needs analysis: 0
+[2026-08-22 03:00:23] Stage B — analyze sessions (cap 25)
+[2026-08-22 03:00:26]   sessions needing analysis: 0
+[2026-08-22 03:00:26] committing analysis artifacts to main (local, no push)
