@@ -373,3 +373,28 @@ Figma sessions: 50, needs analysis: 0
 [2026-08-22 03:00:23] Stage B — analyze sessions (cap 25)
 [2026-08-22 03:00:26]   sessions needing analysis: 0
 [2026-08-22 03:00:26] committing analysis artifacts to main (local, no push)
+[2026-08-22 03:00:27] Stage C — sync improvement tracker → GitHub issues
+tracker→issues: 86 unique entries · 0 create, 0 close, 0 reopen, 0 drift, 86 in-sync/skip
+[2026-08-22 03:00:30] Stage D — dispatch draft fix PRs
+Dispatch run complete — no PRs opened this run.
+
+**Candidates evaluated (full tracker scan, 90 entries):**
+
+| ID | Result |
+|---|---|
+| TOOL-006 | **skipped: already in flight** — `preflight` exit 4; branch `auto-fix/TOOL-006` exists on origin and draft PR [#108](https://github.com/dabowman/Figmagent/pull/108) ("fix(TOOL-006): coerce string numeric params to numbers") is open awaiting review |
+| BUG-021 | **skipped: P2** — has a plan file and `Auto-fixable: yes`, but priority fails the P0/P1 constraint |
+
+TOOL-006 was the only entry in the tracker satisfying all four judgement constraints (`Auto-fixable: yes` + P0/P1 + plan file + status `identified`/`planned`), and it's already dispatched. No worktree was created, nothing was pushed, and no PR was left in a non-draft state.
+
+The queue is drained until the analyzer produces new P0/P1 auto-fixable entries with plan files — Stage D will stay idle until then, or until #108 is reviewed and merged.
+[2026-08-22 03:02:24] run complete
+
+========================= auto-improve 2026-08-23 03:00:05 =========================
+[2026-08-23 03:00:05] Stage A — extract Figmagent sessions across all repos
+
+0 extracted, 28 up-to-date. Output: /Users/davidbowman/Github/cursor-talk-to-figma-mcp/.claude/sessions-json
+Figma sessions: 50, needs analysis: 0
+[2026-08-23 03:00:24] Stage B — analyze sessions (cap 25)
+[2026-08-23 03:00:27]   sessions needing analysis: 0
+[2026-08-23 03:00:27] committing analysis artifacts to main (local, no push)
