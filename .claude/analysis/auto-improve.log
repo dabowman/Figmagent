@@ -398,3 +398,27 @@ Figma sessions: 50, needs analysis: 0
 [2026-08-23 03:00:24] Stage B — analyze sessions (cap 25)
 [2026-08-23 03:00:27]   sessions needing analysis: 0
 [2026-08-23 03:00:27] committing analysis artifacts to main (local, no push)
+[2026-08-23 03:00:28] Stage C — sync improvement tracker → GitHub issues
+tracker→issues: 86 unique entries · 0 create, 0 close, 0 reopen, 0 drift, 86 in-sync/skip
+[2026-08-23 03:00:30] Stage D — dispatch draft fix PRs
+Dispatch run complete — no PRs opened.
+
+**Results:**
+- **TOOL-006** — skipped: preflight exit 4, branch `auto-fix/TOOL-006` already exists on origin (in flight from a prior run).
+- **BUG-021** — skipped: priority is P2, below the P0/P1 threshold.
+
+No other tracker entries meet all four constraints: `.claude/plans/` holds only two ID-bearing plan files (`2026-06-22-TOOL-006.md`, `2026-08-19-BUG-021.md`); the remaining three (`find-tool`, `official-mcp-port`, `port-dev-spec`) carry no issue ID, so no other candidate satisfies constraint 3.
+
+No worktree was created and no branch was pushed. The `agent-*` worktrees present under `.claude/worktrees/` predate this run and belong to subagent isolation, not `dispatch-fix.ts` — left untouched.
+
+Stage D is effectively saturated: every P0/P1 auto-fixable entry with a plan has already been dispatched. Future runs stay inert until the analyzer writes a new plan file and flips an entry to `planned`.
+[2026-08-23 03:02:04] run complete
+
+========================= auto-improve 2026-08-24 03:00:05 =========================
+[2026-08-24 03:00:05] Stage A — extract Figmagent sessions across all repos
+
+0 extracted, 28 up-to-date. Output: /Users/davidbowman/Github/cursor-talk-to-figma-mcp/.claude/sessions-json
+Figma sessions: 50, needs analysis: 0
+[2026-08-24 03:00:23] Stage B — analyze sessions (cap 25)
+[2026-08-24 03:00:26]   sessions needing analysis: 0
+[2026-08-24 03:00:27] committing analysis artifacts to main (local, no push)
