@@ -422,3 +422,58 @@ Figma sessions: 50, needs analysis: 0
 [2026-08-24 03:00:23] Stage B — analyze sessions (cap 25)
 [2026-08-24 03:00:26]   sessions needing analysis: 0
 [2026-08-24 03:00:27] committing analysis artifacts to main (local, no push)
+[2026-08-24 03:00:27] Stage C — sync improvement tracker → GitHub issues
+tracker→issues: 86 unique entries · 0 create, 0 close, 0 reopen, 0 drift, 86 in-sync/skip
+[2026-08-24 03:00:29] Stage D — dispatch draft fix PRs
+Dispatch run complete — no PRs opened.
+
+**Candidate scan** (`.claude/analysis/improvement-tracker.md` + `.claude/plans/`): only two entries have an ID-matched plan file, and neither was dispatchable.
+
+| ID | Result |
+|---|---|
+| TOOL-006 | skipped: preflight exit 4 — `auto-fix/TOOL-006` already in flight as open draft [PR #108](https://github.com/dabowman/Figmagent/pull/108) |
+| BUG-021 | skipped: P2 (constraint requires P0/P1); plan `2026-08-19-BUG-021.md` exists but priority gates it out |
+
+Every other `identified`/`planned` + `Auto-fixable: yes` tracker entry lacks a `.claude/plans/*<ID>*.md` file, so constraint 3 blocks them — the analyzer has been writing tracker entries without plan files, which is why the dispatchable pool is down to these two. The three remaining plans (`2026-03-13-find-tool.md`, `2026-06-10-official-mcp-port.md`, `2026-06-10-port-dev-spec.md`) carry no issue ID and are feature specs, not mechanical fixes.
+
+No worktree was created, nothing was pushed, and no `auto-fix-*` worktrees are left behind (the `agent-*` worktrees listed under `.claude/worktrees/` predate this run and belong to the Agent tool, not the dispatcher). The only dirty file is the pre-existing `.claude/analysis/auto-improve.log` modification from the session start.
+[2026-08-24 03:02:23] run complete
+
+========================= auto-improve 2026-08-25 03:00:05 =========================
+[2026-08-25 03:00:05] Stage A — extract Figmagent sessions across all repos
+  a2201e93-585a-4c71-b050-8f09dfa87973 → 217 messages, 100 tool calls
+
+1 extracted, 28 up-to-date. Output: /Users/davidbowman/Github/cursor-talk-to-figma-mcp/.claude/sessions-json
+Figma sessions: 51, needs analysis: 1
+  a2201e93-585a-4c71-b050-8f09dfa87973   100 calls   7 figma  (new)
+[2026-08-25 03:01:06] Stage B — analyze sessions (cap 25)
+[2026-08-25 03:01:13]   sessions needing analysis: 1
+Analyzed session `a2201e93` (2026-08-24, vip-workflows, remote) → `.claude/analysis/figma-mcp-session46-analysis.md`. Manifest now reports 0 unanalyzed Figma sessions.
+
+## The headline: BUG-016's fix is half-verified, half-falsified
+
+This was the first live remote session after commit `0af2c9a` landed. Both things it was supposed to do, it did:
+
+- **Zero `-32602 invalid_union` protocol crashes** across 11 export failures — every one arrived as readable text with `is_error: true`.
+- **Zero calls to the official Figma MCP**, under heavier provocation than either prior session (11 failures vs 3 in session 44, 1 in session 45). Sessions 44 and 45 defected and lost 62 and 24 calls. This agent diagnosed the gap in-line, verified by sub-frame screenshots plus `run_script` measurement, and shipped. Correcting the downstream memory file alongside the code is what made that hold.
+
+But the export failure itself is untouched, and **the new error message misdiagnoses it**. `screenshot` failed 11/25 (44%), all blaming the "~4MB return cap". Four proofs that's wrong:
+
+1. The cap's own error (`document.js:655`, naming the actual char count) never appears — the observed text is the `export.ts` fallback guard, which fires on absent `imageData` and *guesses*.
+2. `2377:38` is **220×132 px** and failed at `scale: 2`. `2372:2` is 248×327 at `scale: 1`.
+3. All three recommended remedies were tried and all failed — lower `scale`, `format: "SVG"`, smaller child node.
+4. `screenshot(2372:24, scale:1)` **succeeded at 22:46:30 and failed at 22:53:00**. Size can't explain a result that flips in seven minutes.
+
+Batch mode also drops healthy nodes with sick ones: a 3-node batch returned `Exported 0 node(s): none` with no `Errors:` block, then the same node exported cleanly alone five seconds later.
+
+## New finding: the same hole is open in `read`
+
+One `read` returned a well-formed, empty, **`is_error: false`** FSGN document for a node that call #5 had just listed as present. The `meta` block was missing `nodeId`/`name`/`type` — which `tools/document.ts:87–90` copies unconditionally — proving the handler got an empty object and serialized it as success. `nodeCount: 0` is impossible from `getNodeTree`, which increments before any filter. Same silent-empty-result condition as BUG-016, but strictly worse: screenshot at least says something failed, `read` reports success. The agent accepted `nodes: []` and never inspected that subtree.
+
+Filed as **[BUG-027]** (P0) with the fix: mirror `export.ts`'s `hasImageData` guard, and audit the other remote result-builders — `0af2c9a` closed this for one file and left it open everywhere else. Also filed **[BUG-028]** (`read` emits absolute coords, `edit` writes parent-local, neither says so — cost 2 recovery scripts and a 2656px misplacement) and **[AGENT-027]** (frame resize rescales SCALE-constrained children). `[TOOL-026]` logged its 4th consecutive recurrence.
+
+BUG-016 gets a v4 fix proposal: return `payloadChars` from `exportSingleNode` so the guard can say "the plugin rendered 41,204 chars but the transport returned none" instead of asserting a cap that never fired — and suppress the scale/SVG remedies when the payload is nowhere near the limit.
+
+No fix plans generated — none of the new issues match the Phase 6 auto-fix allowlist. The four changed/added files are written but unstaged.
+[2026-08-25 03:13:16]   sessions needing analysis: 0
+[2026-08-25 03:13:16] committing analysis artifacts to main (local, no push)

@@ -1363,7 +1363,7 @@
       "toolCalls": 102,
       "figmaToolCalls": 0,
       "durationMinutes": 7091,
-      "sourceModified": 1785604315.83,
+      "sourceModified": 1786979838.38,
       "sessionType": "dev",
       "skip": true
     },
@@ -1439,7 +1439,7 @@
       "toolCalls": 86,
       "figmaToolCalls": 0,
       "durationMinutes": 2692,
-      "sourceModified": 1782945744.15,
+      "sourceModified": 1786979838.38,
       "sessionType": "dev",
       "skip": true
     },
@@ -1447,7 +1447,7 @@
       "toolCalls": 28,
       "figmaToolCalls": 0,
       "durationMinutes": 8,
-      "sourceModified": 1782945741.24,
+      "sourceModified": 1786979838.38,
       "sessionType": "dev",
       "skip": true
     },
@@ -1463,7 +1463,7 @@
       "toolCalls": 75,
       "figmaToolCalls": 0,
       "durationMinutes": 40,
-      "sourceModified": 1782945747.78,
+      "sourceModified": 1786979838.38,
       "sessionType": "dev",
       "skip": true
     },
@@ -1519,7 +1519,7 @@
       "toolCalls": 213,
       "figmaToolCalls": 0,
       "durationMinutes": 4357,
-      "sourceModified": 1782945737.47,
+      "sourceModified": 1786979838.38,
       "sessionType": "dev",
       "skip": true
     },
@@ -1650,7 +1650,7 @@
       "toolCalls": 160,
       "figmaToolCalls": 0,
       "durationMinutes": 7479,
-      "sourceModified": 1785604306.6,
+      "sourceModified": 1786979838.38,
       "sessionType": "dev",
       "skip": true
     },
@@ -1903,9 +1903,9 @@
       "skip": true
     },
     "7c060e9d-9351-4e1f-819f-0876d59f19b0": {
-      "toolCalls": 1,
+      "toolCalls": 60,
       "figmaToolCalls": 0,
-      "durationMinutes": 0,
+      "durationMinutes": 11,
       "sourceModified": 1787175553.23,
       "sessionType": "dev",
       "skip": true
@@ -1943,10 +1943,69 @@
       "skip": true
     },
     "ef861452-0b87-474f-83dd-fea4a5b5b1e7": {
-      "toolCalls": 18,
+      "toolCalls": 107,
       "figmaToolCalls": 0,
-      "durationMinutes": 36,
+      "durationMinutes": 1136,
       "sourceModified": 1787254277.5,
+      "sessionType": "dev",
+      "skip": true
+    },
+    "a2201e93-585a-4c71-b050-8f09dfa87973": {
+      "toolCalls": 100,
+      "figmaToolCalls": 7,
+      "durationMinutes": 124,
+      "sourceModified": 1787648413.51,
+      "sessionType": "figma",
+      "sourceSignature": "100:7",
+      "analysis": "figma-mcp-session46-analysis.md",
+      "analyzedAt": 1787649076.67,
+      "analyzedSignature": "100:7"
+    },
+    "08c20e63-3c9a-4f9c-8d8c-4047df894146": {
+      "toolCalls": 9,
+      "figmaToolCalls": 0,
+      "durationMinutes": 2,
+      "sourceModified": 1787562139.74,
+      "sessionType": "dev",
+      "skip": true
+    },
+    "39b93186-d871-47e4-afdf-459228ee8c5b": {
+      "toolCalls": 7,
+      "figmaToolCalls": 0,
+      "durationMinutes": 2,
+      "sourceModified": 1787389339.62,
+      "sessionType": "dev",
+      "skip": true
+    },
+    "591f51b9-c7c4-478f-886b-314e8a44b4f2": {
+      "toolCalls": 9,
+      "figmaToolCalls": 0,
+      "durationMinutes": 1,
+      "sourceModified": 1787216527.77,
+      "sessionType": "dev",
+      "skip": true
+    },
+    "a6805d60-e08a-424b-8257-f7b17a04bfae": {
+      "toolCalls": 1,
+      "figmaToolCalls": 0,
+      "durationMinutes": 0,
+      "sourceModified": 1787649193.15,
+      "sessionType": "dev",
+      "skip": true
+    },
+    "b228227b-00b7-45d1-8351-66de7eb9e9b3": {
+      "toolCalls": 7,
+      "figmaToolCalls": 0,
+      "durationMinutes": 2,
+      "sourceModified": 1787303067.77,
+      "sessionType": "dev",
+      "skip": true
+    },
+    "bdec0a54-8b61-4b39-9789-74c4221a1ba9": {
+      "toolCalls": 7,
+      "figmaToolCalls": 0,
+      "durationMinutes": 1,
+      "sourceModified": 1787475723.74,
       "sessionType": "dev",
       "skip": true
     }
