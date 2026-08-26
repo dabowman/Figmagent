@@ -477,3 +477,88 @@ BUG-016 gets a v4 fix proposal: return `payloadChars` from `exportSingleNode` so
 No fix plans generated — none of the new issues match the Phase 6 auto-fix allowlist. The four changed/added files are written but unstaged.
 [2026-08-25 03:13:16]   sessions needing analysis: 0
 [2026-08-25 03:13:16] committing analysis artifacts to main (local, no push)
+[2026-08-25 03:13:16] Stage C — sync improvement tracker → GitHub issues
+tracker→issues: 89 unique entries · 3 create, 0 close, 0 reopen, 0 drift, 86 in-sync/skip
+CREATE  [BUG-027] (P0) `read` renders an empty transport result as a successful, empty document
+CREATE  [BUG-028] (P1) `read` reports absolute coordinates, `edit` writes parent-local ones — neither says which
+CREATE  [AGENT-027] (P2) Frame resize rescales children with SCALE constraints
+[2026-08-25 03:13:32] Stage D — dispatch draft fix PRs
+Dispatch run complete — no PRs opened this run.
+
+**Candidate scan** (`.claude/analysis/improvement-tracker.md`, 100+ entries): only two entries have a matching plan file at `.claude/plans/*<ID>*.md`, and both were filtered out:
+
+- **TOOL-006** (Type coercion for tool parameters) — passed constraints 1–4 (P1, `type-coercion`, `Auto-fixable: yes`, status `identified`, plan at `.claude/plans/2026-06-22-TOOL-006.md`). **Skipped: already in flight** — `preflight` exited 4; branch `auto-fix/TOOL-006` exists on origin and draft PR [#108](https://github.com/dabowman/Figmagent/pull/108) is open.
+- **BUG-021** (`grep` rejects scalar `type`/`componentId`) — **Skipped: priority P2**, fails constraint 2 (P0/P1 only).
+
+No worktree was created and no `auto-fix-*` worktrees are left behind (the `agent-*` worktrees listed by `git worktree list` belong to unrelated Agent-tool isolation, not this stage).
+
+Worth flagging for the next run: this stage is now supply-limited, not judgement-limited. The tracker holds many P0/P1 `Auto-fixable: yes` entries, but only two have plan files, and constraint 3 makes the plan the load-bearing artifact — so Stage D will keep returning empty until the `analyze-session` skill writes more plans (and sets `Status: planned` when it does). BUG-021 also carries a `**Plan**:` tracker link while TOOL-006 does not, so that field isn't a reliable index either.
+[2026-08-25 03:15:05] run complete
+
+========================= auto-improve 2026-08-26 03:00:05 =========================
+[2026-08-26 03:00:06] Stage A — extract Figmagent sessions across all repos
+  d0dbcc2f-aff0-4593-833b-3b68a8785144 → 401 messages, 192 tool calls
+  af9f2a17-fd0b-44ba-96e6-826866abdba9 → 140 messages, 69 tool calls
+  a2201e93-585a-4c71-b050-8f09dfa87973 → 217 messages, 100 tool calls
+
+3 extracted, 28 up-to-date. Output: /Users/davidbowman/Github/cursor-talk-to-figma-mcp/.claude/sessions-json
+Figma sessions: 53, needs analysis: 2
+  af9f2a17-fd0b-44ba-96e6-826866abdba9    69 calls   6 figma  (new)
+  d0dbcc2f-aff0-4593-833b-3b68a8785144   192 calls  15 figma  (new)
+[2026-08-26 03:00:32] Stage B — analyze sessions (cap 25)
+[2026-08-26 03:00:36]   sessions needing analysis: 2
+Analysis complete for session 47.
+
+## What I found
+
+**Session 47** (`af9f2a17`, 2026-08-25, external `site-foundry`, remote transport): 69 tool calls / 20 min, reconciling the "Site Foundry" Figma page against the shipped plugin source — 7 frames created, 6 updated, all via `run_script`.
+
+Two results matter beyond this session:
+
+**1. [BUG-016]'s root cause is one line, and it's not where nine sessions of analysis had been looking.**
+
+`remote/client.ts:110–114` does `try { return JSON.parse(text) } catch { return text }` — so when the `use_figma` response text isn't parseable JSON, the **raw string escapes as if it were the result object**. Every downstream builder then reads fields off a string and gets `undefined`:
+
+- `buildSingleExportResult` → no `imageData` → fires the "~4MB cap" guess
+- `buildBatchExportResult` → no `images` → `ids`, `allIds` *and* `dataless` all empty → `Exported 0 node(s): none` with **no** `Errors:` and **no** `Returned no image data` block. That's session 47 #44's exact signature, session 46 #69's, and session 41's — and nothing else empties all three at once, since the plugin loop always records each id in `images` or `errors`.
+- `buildFsgn` → `rootId`/`nodeCount`/`rawTree` undefined → **[BUG-027]'s empty-document output, field for field**.
+
+Two bugs, one line. It also explains what payload size never could: SVG failing, and session 46's same-node-same-scale succeed-then-fail. This session added two fresh falsifications of the cap story — a **440×655** frame failing at `scale: 0.7`, and `34:4` failing at `format: "SVG"`, the description's own recommended fallback.
+
+**2. The behavioural half of the v3 fix is now verified unbiased.** Zero official-Figma-MCP calls across 8 consecutive screenshot failures — in a project with **no** corrected memory file. Session 46's zero-defection could be credited to the memory correction shipped in `0af2c9a`; site-foundry never reads that file. The readable `is_error: true` message alone is sufficient.
+
+**[TOOL-029] moved to `verified`** — first live session to use `stdlib: false` (7/7 write scripts), with none of session 44's oversized-script rejections, module-cache workaround, or [BUG-023] bisect.
+
+## Files changed
+
+- `.claude/analysis/figma-mcp-session47-analysis.md` — new
+- `.claude/analysis/improvement-tracker.md` — BUG-016 9th recurrence + v5 fix proposal; BUG-027 linked to the same line; TOOL-029 → verified (Resolved); AGENT-025 metric refinement (3rd consecutive 100%-of-writes-via-script session, call-share metric is diluted); new **[TOOL-031]** (`run_script` preamble reuse); metrics row 47
+- `.claude/analysis/sessions.json` — session marked analyzed
+
+No fix plan generated: the v5 repair is a transport-layer serialization change, outside the Phase 6 auto-fix allowlist (sync-to-async / type-coercion / missing-batch-tool). One session remains unanalyzed (`d0dbcc2f`, 192 calls).
+[2026-08-26 03:11:59]   sessions needing analysis: 1
+Analysis complete.
+
+## Session 48 — `site-foundry`, remote, 192 calls, 51 min
+
+Analyzed the one remaining unanalyzed session: an 8-frame Figma build of the Site Foundry admin page, drawn from the shipped plugin source. Manifest now reports **0 sessions needing analysis**.
+
+**Three findings dominate:**
+
+**1. [BUG-016] payload-size hypothesis falsified twice more** (10th recurrence, 13/41 screenshots failed). Two new data points that size cannot explain:
+- `5:4` is **784×453** and failed at `scale: 1` — the smallest absolute render on record to fail, ~an order of magnitude under the 4MB cap the error text names.
+- `5:591` failed at **`scale: 0.35`** while `8:2`, the *largest* board in the file, succeeded at **`scale: 0.28`** 68 seconds later. Ordering is backwards for a size story.
+
+`format: "SVG"` failed again (2nd confirmation after S47). The agent tried all three remedies the guard text recommends and two failed — the message is now demonstrably misleading, not just imprecise. All consistent with the v5 root cause (`remote/client.ts:110–114`). The behavioural half of the fix held for a 3rd session: zero official-Figma-MCP calls across 13 failures.
+
+**2. [BUG-018] confirmed outside the benchmark, with a zero-code workaround.** `import_library_components` failed 10/10; `write({type:"INSTANCE", componentKey})` placed the same seven components first try. Escalated P1→P0 — the description change can ship ahead of the fix.
+
+**3. New [BUG-029], P0** — `get_enabled_library_variables` returned **2 collections at 18:04 and 14 at 18:25**, same file, same session, nothing in between. The agent read the short answer as "no tokens here", hardcoded every colour as a raw RGB literal across ~250 nodes, then spent 38 calls / 17 min retro-binding 457 properties. I recorded the observation and both candidate mechanisms without picking one — the agent's own attribution (component instantiation) doesn't fit the timing, since instances existed 17 minutes before `lint` still answered 2.
+
+**Also filed**: [TOOL-032] (`write` can't bind variables at create time — forced all 457 bindings into a second pass), [BUG-030] (`edit` rejects `variables:{fontWeight}` with a 10,040-char Zod dump, discarding 69 valid ops). **Recurrences**: TOOL-026 (5th), TOOL-021 (4th), BUG-024 (2nd — escalated P2→P1, its false success caused a wasted import retry), TOOL-024.
+
+No fix plans generated — none of the new issues match the `sync-to-async` / `type-coercion` / `missing-batch-tool` allowlist, and the two batch-tool recurrences sit well under the 20-consecutive-call trigger, consistent with prior sessions.
+
+Files written: `.claude/analysis/figma-mcp-session48-analysis.md`, plus tracker and manifest updates. Nothing committed — the nightly `auto-improve` job owns that.
+[2026-08-26 03:25:30]   sessions needing analysis: 0
+[2026-08-26 03:25:30] committing analysis artifacts to main (local, no push)
