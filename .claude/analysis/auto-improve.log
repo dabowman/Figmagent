@@ -562,3 +562,125 @@ No fix plans generated — none of the new issues match the `sync-to-async` / `t
 Files written: `.claude/analysis/figma-mcp-session48-analysis.md`, plus tracker and manifest updates. Nothing committed — the nightly `auto-improve` job owns that.
 [2026-08-26 03:25:30]   sessions needing analysis: 0
 [2026-08-26 03:25:30] committing analysis artifacts to main (local, no push)
+[2026-08-26 03:25:31] Stage C — sync improvement tracker → GitHub issues
+tracker→issues: 93 unique entries · 4 create, 1 close, 0 reopen, 0 drift, 88 in-sync/skip
+CLOSE   #120 [TOOL-029] (status: verified)
+CREATE  [TOOL-031] (P2) `run_script` is stateless per call — no supported way to reuse a preamble
+CREATE  [BUG-029] (P0) `get_enabled_library_variables` returned 2 collections, then 14, for the same file in one session
+CREATE  [TOOL-032] (P1) `write` cannot bind variables at create time
+CREATE  [BUG-030] (P2) `edit` rejects `variables: {fontWeight}` with a 10,040-char Zod dump and discards the whole batch
+[2026-08-26 03:25:50] Stage D — dispatch draft fix PRs
+Dispatch complete — **no PRs opened this run**.
+
+**Candidates evaluated** (all tracker entries with `Auto-fixable: yes`):
+
+| ID | Result |
+|---|---|
+| **TOOL-006** — Type coercion for tool parameters | **skipped: already in flight** — preflight exit 4; branch `auto-fix/TOOL-006` exists on origin with open draft PR [#108](https://github.com/dabowman/Figmagent/pull/108) |
+| **BUG-021** — `grep` rejects scalar `type`/`componentId` | skipped: priority P2 (constraint requires P0/P1), despite plan file + `Auto-fixable: yes` |
+| **BUG-020** — `use_file` drops unknown `url` param | skipped: status `implemented`, no plan file |
+| **BUG-005** — `get_node_info` depth coercion | skipped: status `verified` |
+| **TOOL-015** — `cornerRadius` binding fan-out | skipped: status `implemented` |
+
+No worktree was created (preflight failed before setup), and no `auto-fix-*` worktrees are leftover — the `agent-*` worktrees listed are from unrelated Agent isolation. No PRs left in non-draft state.
+
+One piece of drift worth noting for the next analyzer pass: TOOL-006's tracker status is still `identified` even though its draft PR #108 has been open and unmerged; the entry will keep being re-picked and re-skipped until it's advanced to `planned`/`implemented` or the PR lands.
+[2026-08-26 03:27:59] run complete
+
+========================= auto-improve 2026-08-27 03:00:05 =========================
+[2026-08-27 03:00:05] Stage A — extract Figmagent sessions across all repos
+  68f20fe0-a365-45ad-a46c-0217ee9c0aee → 287 messages, 138 tool calls
+  8a79f270-5e91-4743-bbb9-8f4bc16864d5 → 536 messages, 261 tool calls
+  d0dbcc2f-aff0-4593-833b-3b68a8785144 → 401 messages, 192 tool calls
+  af9f2a17-fd0b-44ba-96e6-826866abdba9 → 140 messages, 69 tool calls
+  d7149612-6431-44b5-87c3-c2338f5dfc8e → 255 messages, 126 tool calls
+
+5 extracted, 29 up-to-date. Output: /Users/davidbowman/Github/cursor-talk-to-figma-mcp/.claude/sessions-json
+Figma sessions: 56, needs analysis: 3
+  d7149612-6431-44b5-87c3-c2338f5dfc8e   126 calls  10 figma  (new)
+  8a79f270-5e91-4743-bbb9-8f4bc16864d5   261 calls  12 figma  (new)
+  68f20fe0-a365-45ad-a46c-0217ee9c0aee   138 calls   4 figma  (new)
+[2026-08-27 03:00:22] Stage B — analyze sessions (cap 25)
+[2026-08-27 03:00:24]   sessions needing analysis: 3
+Session 49 analyzed. Manifest now shows 2 remaining.
+
+## Session 49 — `loupe` WPDS pattern board (126 calls, 70 min, remote)
+
+Built 26 `pattern/*` preview cards across 5 sections on a 1792×14718 board from real published Gutenberg/WPDS library instances — entirely through `run_script` (28 calls, 126,546 chars; zero `write`/`edit`/`lint`).
+
+**Three findings:**
+
+**[BUG-016], 11th recurrence — the decisive control.** Two batch `screenshot` calls returned `Exported 0 node(s): none`, and every constituent node then exported cleanly one-by-one **at a larger scale** seconds later (`scale: 0.6` batch fails → members at 0.8 succeed). Holding the nodes fixed kills any size-based explanation. Two more single-path falsifications: a **552×273** frame failed at `scale: 0.8` (new smallest-render record), and the board failed at **`scale: 0.06`**. All consistent with the pinned v5 root cause at `remote/client.ts:110-114` and nothing else. The v3 guards held again — zero protocol crashes, and **zero official-MCP defection in a project with no corrected memory file**, now 4 sessions across 3 repos.
+
+**[AGENT-028] — `resize()` on an auto-layout primary axis silently flips it to `FIXED`.** A helper did `primaryAxisSizingMode='AUTO'` then `resize(w, 1)`, pinning **17 frames at height 1**. It read as a *rendering* fault (null render bounds, 149-byte PNGs), so the agent burned 10 calls and ~8 minutes on reflow/rasterization/viewport hypotheses before isolating it. Sibling to [AGENT-027] — same call, second silent side effect.
+
+**[BUG-031] — the remote VM throws `Node not found` for instance-descendant IDs it just returned.** `.children`/`findAll()` hand out `I<a>;<b>;<c>` IDs that the next property read refuses to resolve. Three scripts died atomically, discarding **35,304 chars** of authored script.
+
+Filed **AGENT-028**, **BUG-031**, **TOOL-033** (`run_script` emits no post-write assertions, and no assertion covers height collapse — this consolidates a caveat repeated in five existing entries and finally costs it). Recurrences logged: TOOL-021 (5th), AGENT-025 (4th), TOOL-031 (3rd).
+
+Also generated `.claude/plans/2026-08-27-TOOL-021.md` — TOOL-021 has crossed into the `missing-batch-tool` allowlist at 5 recurrences across 3 repos with a stable spec, and the plan covers TOOL-026's identical change in the same pass. Marked `planned`.
+
+One cross-reference worth flagging: session 45 attributed **149-byte 1×1 PNGs** to a defect in the official-MCP fallback path. This session got the same 149 bytes from Figma's own `exportAsync` on height-collapsed nodes — a zero-render source is the simpler explanation, so that should be checked before any effort goes into hardening that fallback.
+[2026-08-27 03:12:49]   sessions needing analysis: 2
+Analysis complete. Session 50 is written, the tracker is updated, and the manifest is marked.
+
+## What I analyzed
+
+**Session `8a79f270`** — 2026-08-26, external `site-foundry` on branch `wpds-audit`, remote transport, 261 tool calls (222 Figmagent) over 201 min wall / ~70 min agent-active. Task: recreate the 11-state Build-a-Site flow on an empty Figma page from shipped React/SCSS, using real WPDS library instances and variables. Delivered 502 nodes via 76 `write`, 576 node-ops via 52 `edit`, 271 variable bindings, **zero `run_script`**.
+
+## Three findings that mattered
+
+**🆕 [TOOL-034] `write` can't clone more than one node per call.** `fromNodeId` is explicitly mutually exclusive with `nodes` (`create.ts:183`, `:204`), and there's no `count`. 30 of 76 writes were clones; **27 sat inside 7 consecutive runs**. ~20 calls lost. Both batch shapes are needed — same-source×N and N distinct source→parent pairs.
+
+**🆕 [TOOL-035] `edit` can't set per-side stroke weight.** None of `strokeTopWeight`/`Bottom`/`Left`/`Right` exists anywhere in `src/`. The agent named this as its reason for **deleting three finished component variants and re-cloning them** to inherit a bottom-only card-header stroke. 8 calls where ~2 would do, plus every override re-authored. Third member of the `nodeOpSchema` field-gap family — ship with TOOL-025 and TOOL-027 in one pass.
+
+**🔎 [BUG-016] 12th recurrence — 100% failure (5/5), worst on record.** Two of the failing nodes were built by this session minutes earlier, so no size story applies; the batch signature (`allIds`/`ids`/`dataless` all empty) recurs a 5th time, matching the v5 root cause and nothing else. Two things are new and independently actionable:
+- `buildBatchExportResult` emits `OVERSIZED_FIX` only in the `dataless.length > 0` branch, so an empty-`images` batch returns **`Exported 0 node(s): none` with `isError: true` and no fix text** — a direct violation of the no-error-without-a-fix rule. Three lines, independent of the transport fix.
+- The cost shape is new: the agent **didn't** defect (zero official-MCP calls, 5th consecutive session, 3rd project), so it paid in 28 read-after-write geometry checks, a `set_focus` pointing the user at the canvas, and reading the user's own hand-edits back off Figma. The 2.3% error rate looks healthy precisely *because* the agent stopped probing after minute 16.
+
+**One escalation worth flagging:** TOOL-033's missing `height_collapse` assertion was filed as a `run_script` gap. This session used zero scripts and hit it anyway — `write` returned `"height":32` in its own response body with no warning, and the agent burned ~5 calls rediscovering it. That makes part (a) shippable alone, ahead of the harder script-node-tracking half.
+
+No fix plans generated — none of the three new items match the Phase 6 allowlist (TOOL-034's longest run is 6, under the 20-consecutive trigger). One session remains unanalyzed (`68f20fe0`, 138 calls).
+[2026-08-27 03:26:31]   sessions needing analysis: 1
+Analysis complete. Session 51 analyzed, tracker updated, one fix plan generated.
+
+## What the session was
+
+`68f20fe0` — 138 calls, 45 min, external `site-foundry` on branch `wpds-audit`, remote transport. It's the **inverse of session 50**: where S50 built the Figma board from React/SCSS, this session read that board back *as the spec* to implement `BlueprintCard` and a DataViews `TemplatePicker` in code. All 30 Figmagent calls were read-only — zero `write`, `edit`, or `run_script`.
+
+## Headline finding
+
+**[BUG-016] and [BUG-027] are proven to be one bug** — the first behavioural demonstration, not just a code-reading inference:
+
+The two nodes whose `read` silently returned `nodes: []` (`43:22`, `66:719`) are **the same two nodes** whose `screenshot` failed, 90 seconds apart. Both `meta` blocks were missing `nodeId`/`name`/`type` — the fingerprint of a non-object reaching the result builders from `remote/client.ts:110-114`'s `catch { return text }`.
+
+That also **retires the "~4MB image cap" model**. The real variable is *response* size, not *image* size:
+
+| Call | Result |
+|---|---|
+| `read(43:22, structure, d3)` | 40 nodes |
+| `read(43:22, layout, d4)` | empty |
+| `read(66:719, layout, d1)` | full COMPONENT_SET |
+| `read(66:719, full, d4)` | empty |
+
+No image is involved in either pair. Five sessions have now falsified the cap hypothesis.
+
+## The costly part
+
+The `screenshot` guard **asserts a cause it never measured**, and the agent obeyed it into four dead retries — `43:14` at `scale: 0.5` and `103:1135` at `format: "SVG"` each returned the *byte-identical* error. A 764×344 COMPONENT_SET failed at scale 1 while its siblings exported as SVG at 210 and 372 bytes. A wrong stated fix is worse than none, because agents act on the text.
+
+Notably, [AGENT-001] ("stop after 2 identical errors") **doesn't fire here** — the agent changed its input each time, exactly as instructed. That gap became new entry **AGENT-029**.
+
+## Changes made
+
+- `figma-mcp-session51-analysis.md` — full analysis
+- **BUG-016** 13th recurrence, **BUG-027** 2nd, **TOOL-022** 3rd
+- **BUG-031 scope narrowed** — `read` resolved three `I…;…` instance-descendant IDs cleanly, so that defect is specific to the `run_script` VM proxy; `read`'s path is a working reference implementation for the proposed fix
+- New: **AGENT-029** (prescribed-fix exhaustion), **AGENT-030** (anchored `grep` misses `Group/`-prefixed names)
+- **`.claude/plans/2026-08-27-TOOL-022.md`** — the node-ID normalization, planned at its 3rd recurrence. The prior "touches multiple handlers" objection is answered by Zod `.transform()`, which leaves every handler body untouched.
+
+`sync-issues --dry-run` parses the tracker cleanly: 100 entries, 7 creates queued, 0 drift. Manifest reports 0 sessions needing analysis. Files are left uncommitted, matching how the nightly pipeline batches its `auto-improve: session analyses` commit.
+
+One thing worth flagging beyond the mechanics: the behavioural fix held for a **6th consecutive session across a 3rd project** — zero official-MCP defection despite a 72.7% screenshot failure rate, historically the exact trigger for it. The agent substituted structural reads to recover copy it couldn't see rendered. That's real, but it means the error count (2.3% in S50, 30% here) systematically *understates* the cost, because a well-behaved agent absorbs the gap instead of erroring on it.
+[2026-08-27 03:37:05]   sessions needing analysis: 0
+[2026-08-27 03:37:05] committing analysis artifacts to main (local, no push)
