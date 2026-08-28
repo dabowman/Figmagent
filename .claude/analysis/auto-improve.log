@@ -684,3 +684,62 @@ Notably, [AGENT-001] ("stop after 2 identical errors") **doesn't fire here** —
 One thing worth flagging beyond the mechanics: the behavioural fix held for a **6th consecutive session across a 3rd project** — zero official-MCP defection despite a 72.7% screenshot failure rate, historically the exact trigger for it. The agent substituted structural reads to recover copy it couldn't see rendered. That's real, but it means the error count (2.3% in S50, 30% here) systematically *understates* the cost, because a well-behaved agent absorbs the gap instead of erroring on it.
 [2026-08-27 03:37:05]   sessions needing analysis: 0
 [2026-08-27 03:37:05] committing analysis artifacts to main (local, no push)
+[2026-08-27 03:37:06] Stage C — sync improvement tracker → GitHub issues
+tracker→issues: 100 unique entries · 7 create, 0 close, 0 reopen, 0 drift, 93 in-sync/skip
+CREATE  [AGENT-028] (P1) `resize()` on an auto-layout primary axis silently flips it to `FIXED` — 17 frames collapsed to height 1
+CREATE  [BUG-031] (P1) Remote VM throws `Node not found` for instance-descendant IDs it just returned
+CREATE  [TOOL-033] (P1) `run_script` returns no post-write assertions, and no assertion covers height collapse
+CREATE  [TOOL-034] (P1) `write` cannot clone more than one node per call — `fromNodeId` is mutually exclusive with `nodes`
+CREATE  [TOOL-035] (P1) `edit` cannot set per-side stroke weight — forces delete-and-re-clone of finished variants
+CREATE  [AGENT-029] (P1) A stated fix that fails once is a wrong diagnosis — change strategy, not parameters
+CREATE  [AGENT-030] (P2) `^`-anchored `grep` name patterns miss slash-prefixed component names
+[2026-08-27 03:37:27] Stage D — dispatch draft fix PRs
+Dispatch run complete. No PRs opened this run — no candidate cleared all five constraints.
+
+**Results per candidate:**
+
+- **TOOL-006** (P1, type-coercion, `identified`, plan present) — **skipped**: preflight exit 4, branch `auto-fix/TOOL-006` already on origin with open draft PR [#108](https://github.com/dabowman/Figmagent/pull/108).
+- **TOOL-021** (P1, `planned`, plan present, preflight passed → issue #98) — **skipped**: plan is a `missing-batch-tool` pattern, which is out of scope for auto-dispatch. Commented the reason on [#98](https://github.com/dabowman/Figmagent/issues/98#issuecomment-5437177210) pointing at `/add-mcp-tool`.
+- **BUG-021** — not a candidate: Priority P2 (constraint 2 requires P0/P1).
+- **TOOL-022** — not a candidate: Priority P2.
+
+No worktrees were created, nothing was pushed, and no non-draft PRs exist.
+
+One thing worth flagging for the next run: the only two plans that pass the priority gate are TOOL-006 (already dispatched) and TOOL-021 (permanently out of scope). Both remaining plans — BUG-021 and TOOL-022 — are P2 type-coercion fixes, exactly the mechanical shape this stage handles, but the P0/P1 gate blocks them. TOOL-022 is now at 3 recurrences across 2 repos and BUG-021 at 1; if that gate isn't loosened or those entries aren't re-prioritized, stage D will keep going inert with ready plans sitting unused.
+[2026-08-27 03:39:03] run complete
+
+========================= auto-improve 2026-08-28 03:00:05 =========================
+[2026-08-28 03:00:05] Stage A — extract Figmagent sessions across all repos
+  0f978732-bb80-4197-b164-528e108d7396 → 475 messages, 233 tool calls
+
+1 extracted, 34 up-to-date. Output: /Users/davidbowman/Github/cursor-talk-to-figma-mcp/.claude/sessions-json
+Figma sessions: 57, needs analysis: 1
+  0f978732-bb80-4197-b164-528e108d7396   233 calls  18 figma  (new)
+[2026-08-28 03:00:25] Stage B — analyze sessions (cap 25)
+[2026-08-28 03:00:26]   sessions needing analysis: 1
+Analysis complete. Session 52 (`0f978732`, site-foundry brand editor, 233 calls, remote) is written up in `.claude/analysis/figma-mcp-session52-analysis.md`, with the tracker and manifest updated. The 13 duplicate IDs the validation printed are pre-existing (entries listed in both Active and Resolved sections); none of the new ones.
+
+**The headline is a fix, not a bug.** [BUG-018] (`import_library_components` fails on remote with `set_selection: The selection of a page can only include nodes in that page`) went from hypothesis to verified fix in this session. The agent ran three independent A/B pairs with the component payload held byte-identical:
+
+| Fail | Intervention | Retry |
+|---|---|---|
+| #55 → **0/17** | `await figma.setCurrentPageAsync(page)` | #57 → **17/17** |
+| #83 → **0/1** | same | #86 → **1/1** |
+| #97 → **0/3** | same | #100 → **3/3** |
+
+Two things follow that the tracker didn't have: the standing hypothesis is confirmed exactly, and **`currentPage` does not persist between remote calls** — the agent re-set it each time. So the fix belongs inside the import handler on every call, not in session setup or `use_file`.
+
+**[BUG-016] recurred for the 14th time** (24 of 67 screenshots failed, ~37 calls lost) and this session's evidence retires the error text's stated number:
+
+- `158:953` is a COMPONENT with `nodeCount: 3` — it failed at `scale: 0.6`. Three nodes cannot render 4MB at 60%.
+- `145:159` (384×224) failed at scale 1.5, 1, 1.5, *and* at `format: "SVG"` — both prescribed remedies, third session running.
+- `141:26` failed six times across a 19× pixel-area reduction (1.5 → 0.35) while other nodes exported fine at `scale: 2`.
+- The agent then isolated the real trigger: clearing `effects` on a COMPONENT made a byte-identical `screenshot({scale: 1})` of its instance succeed. Figma exports `absoluteRenderBounds` including shadow bleed — a ~1.55× area swing at a few tens of KB flipped the call. The ceiling tracks render bounds, and sits roughly two orders of magnitude below the "~4MB" claimed.
+
+I confirmed `remote/client.ts:109-114` still reads `try { return JSON.parse(text) } catch { return text }` — the line session 47 pinned, unshipped across five sessions on this file.
+
+Two new entries: **[TOOL-036]** — `lint` returns `totalIssues: 0` with `is_error` unset when it *skips* a scan on a library-only file, which reads as a pass to an agent following CLAUDE.md's "branch on `is_error`" guidance (it also couldn't verify any of the 457 bindings in session 48). **[AGENT-031]** — stop the `scale` ladder at two, and instead hold the call constant while changing one property of the target; that pattern produced both of this session's real findings in one call each.
+
+No fix plans generated — none of these match the Phase 6 allowlist (`sync-to-async` / `type-coercion` / `missing-batch-tool`), so `/dispatch-fixes` will correctly leave them alone. **[BUG-018] is the one worth a human's time next**: P0, exact fix verified, and it currently blocks library composition on remote.
+[2026-08-28 03:12:44]   sessions needing analysis: 0
+[2026-08-28 03:12:44] committing analysis artifacts to main (local, no push)
