@@ -743,3 +743,39 @@ Two new entries: **[TOOL-036]** — `lint` returns `totalIssues: 0` with `is_err
 No fix plans generated — none of these match the Phase 6 allowlist (`sync-to-async` / `type-coercion` / `missing-batch-tool`), so `/dispatch-fixes` will correctly leave them alone. **[BUG-018] is the one worth a human's time next**: P0, exact fix verified, and it currently blocks library composition on remote.
 [2026-08-28 03:12:44]   sessions needing analysis: 0
 [2026-08-28 03:12:44] committing analysis artifacts to main (local, no push)
+[2026-08-28 03:12:45] Stage C — sync improvement tracker → GitHub issues
+tracker→issues: 102 unique entries · 2 create, 0 close, 0 reopen, 0 drift, 100 in-sync/skip
+CREATE  [TOOL-036] (P1) `lint` reports a passing summary on a scan it skipped, and cannot verify library bindings
+CREATE  [AGENT-031] (P2) Stop the `scale` ladder at two — change a variable, don't shrink a number
+[2026-08-28 03:12:55] Stage D — dispatch draft fix PRs
+Dispatch run complete. No PRs opened — no candidate cleared all five constraints.
+
+**Per-candidate result:**
+
+| ID | Result |
+|---|---|
+| TOOL-006 | **Skipped** — preflight exit 4: draft PR [#108](https://github.com/dabowman/Figmagent/pull/108) already open on `auto-fix/TOOL-006` |
+| TOOL-021 | **Skipped** — `missing-batch-tool` plan; needs human design via `/add-mcp-tool`. Issue [#98](https://github.com/dabowman/Figmagent/issues/98) already carries that skip comment from the 2026-08-27 run, so I did not re-comment |
+| BUG-021 | **Skipped** — P2 (constraint 2 requires P0/P1) |
+| TOOL-022 | **Skipped** — P2 |
+
+The four ID-named plan files in `.claude/plans/` are the entire constraint-3 universe; the other three plans (`find-tool`, `official-mcp-port`, `port-dev-spec`) carry no issue ID, so no other tracker entry can qualify.
+
+No worktree was created and none was left behind — the `agent-*` entries under `.claude/worktrees/` predate this pipeline (June 17, sub-agent isolation) and are unrelated. The only open `auto-fix/*` PR is #108, and it is draft.
+
+Two things worth flagging about the pipeline's throughput, since this run was a full no-op:
+
+- **Stage D is currently blocked on a merge, not on analysis.** TOOL-006 is the only P0/P1 `type-coercion` plan in the tracker, and its draft PR has been sitting open. Until #108 is merged or closed, this stage has nothing eligible to act on and will no-op every night.
+- **TOOL-021 is structurally unreachable.** It is the highest-savings entry in the tracker (6 recurrences across 3 repos, ~10–14 calls per icon-heavy session, spec unchanged since session 44), but its `missing-batch-tool` category makes it permanently ineligible for auto-dispatch by design. It needs a human `/add-mcp-tool` pass to ship.
+SessionEnd hook [/Users/davidbowman/Github/archivist/.venv/bin/python3.14 -m archivist.cli capture] failed: Hook cancelled
+[2026-08-28 03:14:50] run complete
+
+========================= auto-improve 2026-08-29 03:00:51 =========================
+[2026-08-29 03:00:51] Stage A — extract Figmagent sessions across all repos
+  0f978732-bb80-4197-b164-528e108d7396 → 475 messages, 233 tool calls
+
+1 extracted, 34 up-to-date. Output: /Users/davidbowman/Github/cursor-talk-to-figma-mcp/.claude/sessions-json
+Figma sessions: 57, needs analysis: 0
+[2026-08-29 03:05:12] Stage B — analyze sessions (cap 25)
+[2026-08-29 03:05:14]   sessions needing analysis: 0
+[2026-08-29 03:05:14] committing analysis artifacts to main (local, no push)
