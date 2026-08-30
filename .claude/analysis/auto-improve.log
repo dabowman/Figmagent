@@ -779,3 +779,26 @@ Figma sessions: 57, needs analysis: 0
 [2026-08-29 03:05:12] Stage B — analyze sessions (cap 25)
 [2026-08-29 03:05:14]   sessions needing analysis: 0
 [2026-08-29 03:05:14] committing analysis artifacts to main (local, no push)
+[2026-08-29 03:05:14] Stage C — sync improvement tracker → GitHub issues
+tracker→issues: 102 unique entries · 0 create, 0 close, 0 reopen, 0 drift, 102 in-sync/skip
+[2026-08-29 03:05:16] Stage D — dispatch draft fix PRs
+Dispatch run complete — no PRs opened this run. All plan-backed tracker entries were evaluated and skipped:
+
+- **TOOL-006** — skipped: preflight exit 4, `auto-fix/TOOL-006` already in flight (draft PR [#108](https://github.com/dabowman/Figmagent/pull/108) open).
+- **TOOL-021** — skipped: category is `missing-batch-tool`, which needs human design via `/add-mcp-tool`. Issue #98 already carries the stage-D skip comment from a prior run, so no duplicate comment posted.
+- **TOOL-022** — skipped: Priority P2 (constraint requires P0/P1).
+- **BUG-021** — skipped: Priority P2.
+
+No worktrees left behind (`.claude/worktrees/auto-fix-*` is empty; the `agent-*` worktrees listed belong to unrelated sessions), and no PR was left in non-draft state.
+
+One thing worth flagging for the next run: the only P1 auto-fixable plan is TOOL-006, and it's now permanently in flight — the pipeline will keep skipping it at preflight until PR #108 is merged or closed. TOOL-021 (six recurrences, three repos) is the highest-value outstanding item, and it's blocked on the `missing-batch-tool` rule rather than on a missing plan.
+[2026-08-29 03:45:16] run complete
+
+========================= auto-improve 2026-08-30 03:05:23 =========================
+[2026-08-30 03:05:23] Stage A — extract Figmagent sessions across all repos
+
+0 extracted, 35 up-to-date. Output: /Users/davidbowman/Github/cursor-talk-to-figma-mcp/.claude/sessions-json
+Figma sessions: 57, needs analysis: 0
+[2026-08-30 03:09:06] Stage B — analyze sessions (cap 25)
+[2026-08-30 03:09:07]   sessions needing analysis: 0
+[2026-08-30 03:09:07] committing analysis artifacts to main (local, no push)
