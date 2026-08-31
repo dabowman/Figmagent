@@ -802,3 +802,31 @@ Figma sessions: 57, needs analysis: 0
 [2026-08-30 03:09:06] Stage B — analyze sessions (cap 25)
 [2026-08-30 03:09:07]   sessions needing analysis: 0
 [2026-08-30 03:09:07] committing analysis artifacts to main (local, no push)
+[2026-08-30 03:09:07] Stage C — sync improvement tracker → GitHub issues
+tracker→issues: 102 unique entries · 0 create, 0 close, 0 reopen, 0 drift, 102 in-sync/skip
+[2026-08-30 03:09:10] Stage D — dispatch draft fix PRs
+No PRs to open this run.
+
+**Candidate evaluation** — one entry in `.claude/analysis/improvement-tracker.md` met constraints 1–4 (`Auto-fixable: yes` + P0/P1 + plan file + status `identified`/`planned`):
+
+- **TOOL-006** (P1, `type-coercion`, plan `.claude/plans/2026-06-22-TOOL-006.md`) — **skipped: already in flight.** `preflight` exited 4; draft PR [#108](https://github.com/dabowman/Figmagent/pull/108) "fix(TOOL-006): coerce string numeric params to numbers" is open on branch `auto-fix/TOOL-006` awaiting human review.
+
+Everything else was filtered out before preflight:
+
+- **TOOL-021** (P1, `planned`, has a plan) — `missing-batch-tool`, outside the auto-fix patterns. Issue #98 already carries the skip comment from 2026-08-27; not re-commented to avoid nightly duplicates.
+- **BUG-021**, **TOOL-022** — both P2, below the priority floor.
+- The remaining 26 open P0/P1 entries (`missing-tool`, `plugin-bug`, `agent-behavior`, `infrastructure`, `pipeline-bug`) carry no `Auto-fixable: yes` field and no ID-matching plan file.
+
+No worktrees were created, so none needed cleanup — the `.claude/worktrees/agent-*` directories present are from Agent-tool isolation, not this stage (which uses `auto-fix-<ID>`). No non-draft PRs exist. Stage D is complete for this run; it will produce PRs again once the analyzer marks new `type-coercion` or `sync-to-async` entries auto-fixable at P0/P1 with a plan file, or once #108 lands and frees TOOL-006.
+[2026-08-30 04:37:09] run complete
+
+========================= auto-improve 2026-08-31 03:00:04 =========================
+[2026-08-31 03:00:04] Stage A — extract Figmagent sessions across all repos
+  a2201e93-585a-4c71-b050-8f09dfa87973 → 217 messages, 100 tool calls
+  0f978732-bb80-4197-b164-528e108d7396 → 475 messages, 233 tool calls
+
+2 extracted, 33 up-to-date. Output: /Users/davidbowman/Github/cursor-talk-to-figma-mcp/.claude/sessions-json
+Figma sessions: 57, needs analysis: 0
+[2026-08-31 03:00:25] Stage B — analyze sessions (cap 25)
+[2026-08-31 03:00:26]   sessions needing analysis: 0
+[2026-08-31 03:00:26] committing analysis artifacts to main (local, no push)
