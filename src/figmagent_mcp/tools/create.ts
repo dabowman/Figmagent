@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { server } from "../instance.js";
 import { sendCommandToFigma } from "../connection.js";
-import { formatWarningsBlock } from "../utils.js";
+import { formatWarningsBlock, normalizeNodeId } from "../utils.js";
 
 // Text-only spec properties — rejected at schema level when the spec's type
 // is known to be non-TEXT (boundary validation, Phase 4.3).
@@ -175,9 +175,10 @@ FILL sizing is applied in a second pass after children exist, so it works correc
 Use parentId to append the created node(s) inside an existing frame.
 Colors use RGBA 0-1 range (e.g. { r: 0.2, g: 0.4, b: 1.0 }), not 0-255.`,
   {
-    parentId: z.string().optional().describe("Parent node ID to append the created node(s) or clone to"),
+    parentId: z.string().transform(normalizeNodeId).optional().describe("Parent node ID to append the created node(s) or clone to"),
     fromNodeId: z
       .string()
+      .transform(normalizeNodeId)
       .optional()
       .describe(
         "Clone this existing node instead of creating from a spec. Combine with parentId to clone into a different parent (the reparent recipe). Mutually exclusive with 'nodes'.",

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { server } from "../instance.js";
 import { sendCommandToFigma } from "../connection.js";
 import type { getInstanceOverridesResult, setInstanceOverridesResult } from "../types.js";
+import { normalizeNodeId } from "../utils.js";
 
 // Component sets with more than this many variants drop the full variants array
 // (id/name/key per variant). The compact variantIds map is kept up to VARIANT_ID_CAP.
@@ -123,7 +124,7 @@ server.tool(
   "Combine multiple COMPONENT nodes into a COMPONENT_SET (variant group). Each component's name should follow the variant format (e.g. 'Layout=Table', 'Layout=List'). Figma will parse the names into variant properties. The resulting COMPONENT_SET automatically gets horizontal wrap auto-layout (20px spacing, 40px padding, HUG sizing) so variants don't pile up.",
   {
     componentIds: z.array(z.string()).min(1).describe("Array of COMPONENT node IDs to combine"),
-    parentId: z.string().optional().describe("Optional parent node ID for the resulting COMPONENT_SET"),
+    parentId: z.string().transform(normalizeNodeId).optional().describe("Optional parent node ID for the resulting COMPONENT_SET"),
   },
   async ({ componentIds, parentId }: any) => {
     try {
@@ -177,7 +178,7 @@ Example — bind existing properties to child nodes:
 
 Returns updated componentPropertyDefinitions after all operations.`,
   {
-    nodeId: z.string().describe("The ID of the COMPONENT or COMPONENT_SET node"),
+    nodeId: z.string().transform(normalizeNodeId).describe("The ID of the COMPONENT or COMPONENT_SET node"),
     operations: z
       .array(
         z.object({

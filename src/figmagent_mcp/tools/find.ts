@@ -2,7 +2,7 @@ import { z } from "zod";
 import { server } from "../instance.js";
 import { sendCommandToFigma } from "../connection.js";
 import { serializeYaml } from "../yaml.js";
-import { guardOutput, extractYamlMeta, paginateGroups, DEFAULT_MAX_OUTPUT_CHARS } from "../utils.js";
+import { guardOutput, extractYamlMeta, paginateGroups, DEFAULT_MAX_OUTPUT_CHARS, normalizeNodeId } from "../utils.js";
 
 server.tool(
   "grep",
@@ -29,6 +29,7 @@ Large text extractions (e.g. enumerating every TEXT node in a multi-slide deck) 
   {
     scope: z
       .string()
+      .transform(normalizeNodeId)
       .optional()
       .describe('Node ID to search within, or "DOCUMENT" to search all pages (default: current page)'),
     componentId: z.array(z.string()).optional().describe("Find instances of these component or component_set IDs"),

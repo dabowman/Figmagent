@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { server } from "../instance.js";
 import { sendCommandToFigma } from "../connection.js";
-import { guardOutput, extractJsonSummary } from "../utils.js";
+import { guardOutput, extractJsonSummary, normalizeNodeId } from "../utils.js";
 
 /**
  * Meta-extractor for the lint truncation path. Builds on the generic JSON
@@ -57,7 +57,7 @@ Pass multiple root IDs (an array) to lint several frames/pages in one call. With
 Library-backed files: if the file has no local variables but has enabled team libraries, the response names those collections instead of telling you to create variables. Note that lint matches LOCAL variables only — import_library_variable produces a *remote* variable that lint still will not match, so re-running lint after importing will not surface library tokens.`,
   {
     nodeId: z
-      .union([z.string(), z.array(z.string()).min(1)])
+      .union([z.string().transform(normalizeNodeId), z.array(z.string().transform(normalizeNodeId)).min(1)])
       .describe(
         "Root node ID(s) to scan. All visible descendants are linted. Accepts a single ID string, or an array of IDs to lint several frames/pages in one call. Accepts PAGE node IDs (e.g. '0:1') to lint all top-level components on a page. Duplicate IDs are de-duplicated.",
       ),

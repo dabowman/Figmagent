@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { server } from "../instance.js";
 import { sendCommandToFigma } from "../connection.js";
-import { formatWarningsBlock } from "../utils.js";
+import { formatWarningsBlock, normalizeNodeId } from "../utils.js";
 
 // Color schema shared across fill/stroke/font
 const colorSchema = z
@@ -50,7 +50,7 @@ const variableFieldEnum = z.enum([
 export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
   z
     .object({
-      nodeId: z.string().describe("ID of the existing node to modify"),
+      nodeId: z.string().transform(normalizeNodeId).describe("ID of the existing node to modify"),
 
       // Structural operations
       x: z.number().optional().describe("New X position (moves the node; does NOT change parent)"),

@@ -206,3 +206,18 @@ export function extractJsonSummary(text: string): string | null {
     return text.slice(0, 500) + "...";
   }
 }
+
+/**
+ * Figma deep-link URLs encode node IDs with a hyphen (`?node-id=43-14`) while the
+ * Plugin API expects a colon (`43:14`). Agents routinely lift an ID straight out of
+ * a URL the user pasted and get a bare "Node not found" — and `use_file` already
+ * tolerates the full hyphenated URL, so within one session the same ID format is
+ * accepted by one tool and rejected by the next.
+ *
+ * Only the unambiguous URL shape is normalized. Instance-descendant IDs
+ * (`I103:1135;66:19`), the `0:0` document sentinel, the "DOCUMENT" scope keyword
+ * and every other string pass through untouched.
+ */
+export function normalizeNodeId(id: string): string {
+  return /^\d+-\d+$/.test(id) ? id.replace("-", ":") : id;
+}

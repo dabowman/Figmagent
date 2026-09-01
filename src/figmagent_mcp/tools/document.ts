@@ -2,7 +2,7 @@ import { z } from "zod";
 import { server } from "../instance.js";
 import { sendCommandToFigma } from "../connection.js";
 import { serializeYaml } from "../yaml.js";
-import { guardOutput, extractYamlMeta } from "../utils.js";
+import { guardOutput, extractYamlMeta, normalizeNodeId } from "../utils.js";
 
 // ─── FSGN helpers ────────────────────────────────────────────────────────────
 
@@ -157,9 +157,10 @@ Instances are leaf nodes by default — call read on the instance ID to expand i
   {
     nodeId: z
       .string()
+      .transform(normalizeNodeId)
       .optional()
       .describe("ID of a single node to read. Omit (and nodeIds) for the document overview."),
-    nodeIds: z.array(z.string()).optional().describe("IDs of multiple nodes to read in parallel"),
+    nodeIds: z.array(z.string().transform(normalizeNodeId)).optional().describe("IDs of multiple nodes to read in parallel"),
     detail: z
       .enum(["structure", "layout", "full"])
       .optional()

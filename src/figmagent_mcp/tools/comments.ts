@@ -2,6 +2,7 @@ import { z } from "zod";
 import { server } from "../instance.js";
 import { sendCommandToFigma } from "../connection.js";
 import { getFileComments, postFileComment, deleteFileComment } from "../figma_rest_api.js";
+import { normalizeNodeId } from "../utils.js";
 
 // Get Comments Tool
 server.tool(
@@ -11,7 +12,7 @@ server.tool(
     fileKey: z
       .string()
       .describe("The Figma file key. Extract from a Figma URL: https://www.figma.com/design/<fileKey>/..."),
-    nodeId: z.string().optional().describe("Optional node ID to filter comments pinned to a specific node"),
+    nodeId: z.string().transform(normalizeNodeId).optional().describe("Optional node ID to filter comments pinned to a specific node"),
     includeResolved: z
       .boolean()
       .optional()
@@ -165,7 +166,7 @@ server.tool(
 
 Categories are only included in the response when annotations are found. To discover all annotated nodes in a subtree, use \`grep(hasAnnotation: true)\` instead — it searches an entire page in one call. Use \`get_annotations\` only when you already know which node IDs to read annotations from. Supports batch reads via the \`nodeIds\` array parameter.`,
   {
-    nodeId: z.string().optional().describe("Single node ID to get annotations for (includes subtree)"),
+    nodeId: z.string().transform(normalizeNodeId).optional().describe("Single node ID to get annotations for (includes subtree)"),
     nodeIds: z
       .array(z.string())
       .optional()
@@ -209,7 +210,7 @@ server.tool(
   "set_annotation",
   "Create or update an annotation on a node. If annotationIndex is provided, replaces the annotation at that position (0-based). If omitted and the node already has annotations, replaces the first one. If the node has no annotations, adds a new one.",
   {
-    nodeId: z.string().describe("The ID of the node to annotate"),
+    nodeId: z.string().transform(normalizeNodeId).describe("The ID of the node to annotate"),
     annotationIndex: z
       .number()
       .int()
@@ -264,11 +265,11 @@ server.tool(
   "set_multiple_annotations",
   "Set multiple annotations parallelly in a node",
   {
-    nodeId: z.string().describe("The ID of the node containing the elements to annotate"),
+    nodeId: z.string().transform(normalizeNodeId).describe("The ID of the node containing the elements to annotate"),
     annotations: z
       .array(
         z.object({
-          nodeId: z.string().describe("The ID of the node to annotate"),
+          nodeId: z.string().transform(normalizeNodeId).describe("The ID of the node to annotate"),
           labelMarkdown: z.string().describe("The annotation text in markdown format"),
           categoryId: z.string().optional().describe("The ID of the annotation category"),
           annotationIndex: z

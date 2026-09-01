@@ -4,13 +4,14 @@ import { sendCommandToFigma } from "../connection.js";
 import { joinChannel, discoverChannels } from "../connection.js";
 import { getTransport } from "../transport.js";
 import { setFileKey } from "../remote/filecontext.js";
+import { normalizeNodeId } from "../utils.js";
 
 // Get Reactions Tool
 server.tool(
   "get_reactions",
   "Get Figma Prototyping Reactions from multiple nodes. CRITICAL: The output MUST be processed using the 'reaction_to_connector_strategy' prompt IMMEDIATELY to generate parameters for connector lines via the 'create_connections' tool.",
   {
-    nodeIds: z.array(z.string()).min(1).describe("Array of node IDs to get reactions from"),
+    nodeIds: z.array(z.string().transform(normalizeNodeId)).min(1).describe("Array of node IDs to get reactions from"),
   },
   async ({ nodeIds }: any) => {
     try {
@@ -137,7 +138,7 @@ server.tool(
   "set_focus",
   "Set focus on a specific node in Figma by selecting it and scrolling viewport to it",
   {
-    nodeId: z.string().describe("The ID of the node to focus on"),
+    nodeId: z.string().transform(normalizeNodeId).describe("The ID of the node to focus on"),
   },
   async ({ nodeId }: any) => {
     try {
@@ -169,7 +170,7 @@ server.tool(
   "set_selections",
   "Set selection to multiple nodes in Figma and scroll viewport to show them",
   {
-    nodeIds: z.array(z.string()).min(1).describe("Array of node IDs to select"),
+    nodeIds: z.array(z.string().transform(normalizeNodeId)).min(1).describe("Array of node IDs to select"),
   },
   async ({ nodeIds }: any) => {
     try {
