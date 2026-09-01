@@ -910,3 +910,16 @@ Session 53 analyzed: `.claude/analysis/figma-mcp-session53-analysis.md`, tracker
 No fix plans generated — neither new issue matches the Phase 6 allowlist (both are error-handling/message fixes), though BUG-032's fix is three lines and named exactly in the tracker.
 [2026-09-01 16:41:28]   sessions needing analysis: 0
 [2026-09-01 16:41:28] committing analysis artifacts to main (local, no push)
+[2026-09-01 16:41:28] Stage C — sync improvement tracker → GitHub issues
+tracker→issues: 104 unique entries · 2 create, 0 close, 0 reopen, 0 drift, 102 in-sync/skip
+CREATE  [BUG-032] (P1) `edit` reports "Text style not found or not cached" when the real failure is an unloadable font
+CREATE  [BUG-033] (P1) The remote VM cannot load a file's own custom fonts, and every failure mode misreports it
+[2026-09-01 16:41:33] Stage D — dispatch draft fix PRs
+Run complete. No PRs opened.
+
+- **TOOL-006** — skipped: already in flight (draft PR [#108](https://github.com/dabowman/Figmagent/pull/108), branch `auto-fix/TOOL-006` on origin).
+- **TOOL-021** — skipped: `missing-batch-tool` plan, needs human design via `/add-mcp-tool`; issue #98 already carries that skip comment, so no duplicate posted.
+- **BUG-021**, **TOOL-022** — skipped: P2, below the P0/P1 bar.
+
+No other tracker entry has both a `.claude/plans/` file and `Auto-fixable: yes` + P0/P1 + `identified`/`planned`. No worktrees or non-draft PRs left behind (the `agent-*` dirs under `.claude/worktrees/` predate this run).
+[2026-09-01 16:42:24] run complete

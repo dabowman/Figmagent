@@ -21,6 +21,12 @@
  *   - active entry, issue closed        → report drift (reopen only with --reopen)
  *   - resolved entry, no issue          → skip (don't create just to close)
  *
+ * The summary line always reports create/close/reopen/drift/in-sync/
+ * resolved-unfiled, and appends DANGLING (tracker points at an issue number that
+ * is not on the repo) and DEFERRED (entry needs an issue but --limit was hit,
+ * so it is NOT on GitHub) only when non-zero — those two mean findings are
+ * missing from GitHub and should stand out in the nightly log.
+ *
  * "Resolved" derivation: the same ID can appear under both "## Active Issues"
  * and "## Resolved Issues". The ACTIVE occurrence's Status is authoritative — if
  * an entry is active with Status `identified`, a stale Resolved-section recap
@@ -300,7 +306,12 @@ let created = 0;
 let closed = 0;
 let reopened = 0;
 let drift = 0;
-let skipped = 0;
+// `skipped` was one bucket for four unrelated outcomes, so a run that filed
+// nothing looked identical to a run that was in sync. Count them separately.
+let inSync = 0; // matched an issue in the state the tracker wants
+let unfiled = 0; // resolved and never filed — deliberate, no noise
+let dangling = 0; // tracker refs an issue number that isn't on the repo
+let deferred = 0; // needed an issue but hit --limit; NOT on GitHub yet
 const actions: string[] = [];
 
 for (const t of trackerIssues) {
@@ -311,7 +322,7 @@ for (const t of trackerIssues) {
 		const state = stateByNumber.get(num);
 		if (state === undefined) {
 			actions.push(`MISSING [${t.id}] → #${num} not found on ${REPO}; skipping`);
-			skipped++;
+			dangling++;
 		} else if (!wantOpen && state === "open") {
 			actions.push(`CLOSE   #${num} [${t.id}] (${t.resolvedReason || "resolved"})`);
 			if (!dryRun) {
@@ -330,17 +341,22 @@ for (const t of trackerIssues) {
 				drift++;
 			}
 		} else {
-			skipped++; // already in sync
+			inSync++; // already in sync
 		}
 		continue;
 	}
 
 	if (!wantOpen) {
-		skipped++; // resolved and never filed — no noise
+		unfiled++; // resolved and never filed — no noise
 		continue;
 	}
 	if (created >= createLimit) {
-		skipped++;
+		// The one genuinely silent case: a finding that belongs on GitHub and
+		// isn't there yet. Name it, or the next run's summary hides the backlog.
+		actions.push(
+			`DEFERRED [${t.id}] (${t.priority || "—"}) needs an issue; --limit ${createLimit} reached`,
+		);
+		deferred++;
 		continue;
 	}
 	actions.push(`CREATE  [${t.id}] (${t.priority || "—"}) ${t.cleanTitle}`);
@@ -357,6 +373,9 @@ for (const t of trackerIssues) {
 
 console.log(
 	`${dryRun ? "[DRY RUN] " : ""}tracker→issues: ${trackerIssues.length} unique entries · ` +
-		`${created} create, ${closed} close, ${reopened} reopen, ${drift} drift, ${skipped} in-sync/skip`,
+		`${created} create, ${closed} close, ${reopened} reopen, ${drift} drift, ` +
+		`${inSync} in-sync, ${unfiled} resolved-unfiled` +
+		`${dangling ? `, ${dangling} DANGLING` : ""}` +
+		`${deferred ? `, ${deferred} DEFERRED` : ""}`,
 );
 if (actions.length) console.log(actions.join("\n"));
