@@ -45,6 +45,38 @@ function replaceRefs(
   }
 }
 
+/**
+ * BUG-027 — an empty transport envelope is not an empty document. When the
+ * remote path returns a result with no `rootId` (a dropped/failed `get_node_tree`),
+ * `buildFsgn` happily serializes `nodeId: undefined` with `nodeCount: 0` and the
+ * caller reads a *successful* response describing a document with nothing in it —
+ * the worst possible failure mode, because nothing about it looks like an error.
+ * Mirrors the `hasImageData` guard in `export.ts` (BUG-016), which closed the same
+ * hole for image results and left it open everywhere else.
+ */
+export function hasNodeTree(raw: any): boolean {
+  return !!raw && typeof raw === "object" && typeof raw.rootId === "string" && raw.rootId.length > 0;
+}
+
+/** Fix-stating result for reads whose transport returned no tree (BUG-027). */
+export function buildMissingTreeResult(missingIds: string[]) {
+  const target = missingIds.length === 1 ? `node ${missingIds[0]}` : `nodes ${missingIds.join(", ")}`;
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text:
+          `Error reading nodes: the request for ${target} returned no node tree. ` +
+          "The read did not reach the document, so an empty result here means a transport " +
+          "failure — not that the node is empty. " +
+          "Fix: retry the read; if it fails again, confirm the node ID belongs to the selected " +
+          "file (use_file) and that the id is in colon form (e.g. 43:14, not 43-14).",
+      },
+    ],
+    isError: true,
+  };
+}
+
 function buildFsgn(raw: any, params: any): string {
   const detail: string = params.detail ?? "layout";
   const depth: number | undefined = params.depth;
@@ -231,6 +263,11 @@ Instances are leaf nodes by default — call read on the instance ID to expand i
       const results = await Promise.all(
         ids.map((id) => sendCommandToFigma("get_node_tree", { ...params, nodeId: id, nodeIds: undefined }, 60000)),
       );
+
+      // A result with no rootId never reached the document — refuse to render it
+      // as an empty-but-successful read (BUG-027).
+      const missing = ids.filter((_id, i) => !hasNodeTree(results[i]));
+      if (missing.length > 0) return buildMissingTreeResult(missing);
 
       // Build FSGN for each result
       const yamls = results.map((result) => buildFsgn(result, params));
