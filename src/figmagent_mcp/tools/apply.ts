@@ -78,15 +78,55 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
       // Visual properties (direct values)
       fillColor: colorSchema.describe("Fill color (also sets font color on TEXT nodes)"),
       strokeColor: colorSchema.describe("Stroke color"),
-      strokeWeight: z.number().positive().optional().describe("Stroke weight"),
+      strokeWeight: z.number().positive().optional().describe("Stroke weight (sets all four sides)"),
+      strokeTopWeight: z.coerce
+        .number()
+        .min(0)
+        .optional()
+        .describe(
+          "Top-side stroke weight (frame-like nodes). Use the four per-side fields for partial borders — e.g. a bottom-only card-header rule: { strokeBottomWeight: 1, strokeTopWeight: 0, strokeLeftWeight: 0, strokeRightWeight: 0 }. 0 is allowed (unlike strokeWeight). Applied after strokeWeight, so combining them sets a base then overrides one side.",
+        ),
+      strokeBottomWeight: z.coerce.number().min(0).optional().describe("Bottom-side stroke weight (frame-like nodes)."),
+      strokeLeftWeight: z.coerce.number().min(0).optional().describe("Left-side stroke weight (frame-like nodes)."),
+      strokeRightWeight: z.coerce.number().min(0).optional().describe("Right-side stroke weight (frame-like nodes)."),
       cornerRadius: z.number().min(0).optional().describe("Corner radius"),
       opacity: z.number().min(0).max(1).optional().describe("Node opacity (0-1)"),
       clipsContent: z
         .boolean()
         .optional()
         .describe("Clip content (frames only). true = overflow hidden, false = overflow visible."),
+      visible: z
+        .boolean()
+        .optional()
+        .describe(
+          "Show or hide the node. Works on instance-override sub-nodes (I<instanceId>;<nodeId>) to hide unused slots without detaching.",
+        ),
       width: z.number().positive().optional().describe("Width (resizes the node)"),
       height: z.number().positive().optional().describe("Height (resizes the node)"),
+      minWidth: z.coerce
+        .number()
+        .min(0)
+        .nullable()
+        .optional()
+        .describe("Minimum width constraint (auto-layout frames). Pass null to clear it."),
+      maxWidth: z.coerce
+        .number()
+        .min(0)
+        .nullable()
+        .optional()
+        .describe("Maximum width constraint (auto-layout frames). Pass null to clear it."),
+      minHeight: z.coerce
+        .number()
+        .min(0)
+        .nullable()
+        .optional()
+        .describe("Minimum height constraint (auto-layout frames). Pass null to clear it."),
+      maxHeight: z.coerce
+        .number()
+        .min(0)
+        .nullable()
+        .optional()
+        .describe("Maximum height constraint (auto-layout frames). Pass null to clear it."),
 
       // Font properties (TEXT nodes only — loads fonts automatically)
       fontFamily: z.string().optional().describe("Font family (e.g. 'Inter', 'Space Grotesk'). TEXT nodes only."),
@@ -109,6 +149,31 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
         .positive()
         .optional()
         .describe("Max lines before truncation. Requires textTruncation: ENDING. TEXT nodes only."),
+      letterSpacing: z
+        .union([z.coerce.number(), z.object({ value: z.coerce.number(), unit: z.enum(["PIXELS", "PERCENT"]) })])
+        .optional()
+        .describe(
+          "Letter spacing. A bare number is PIXELS (CSS letter-spacing: 0.4px → 0.4); pass { value, unit: 'PERCENT' } for percentage. TEXT nodes only.",
+        ),
+      lineHeight: z
+        .union([
+          z.coerce.number(),
+          z.literal("AUTO"),
+          z.object({ unit: z.literal("AUTO") }),
+          z.object({ value: z.coerce.number(), unit: z.enum(["PIXELS", "PERCENT"]) }),
+        ])
+        .optional()
+        .describe(
+          "Line height. A bare number is PIXELS; 'AUTO' restores automatic; pass { value, unit: 'PERCENT' } for percentage. TEXT nodes only.",
+        ),
+      textCase: z
+        .enum(["ORIGINAL", "UPPER", "LOWER", "TITLE", "SMALL_CAPS", "SMALL_CAPS_FORCED"])
+        .optional()
+        .describe("Letter casing (CSS text-transform). UPPER = uppercase. TEXT nodes only."),
+      textDecoration: z
+        .enum(["NONE", "UNDERLINE", "STRIKETHROUGH"])
+        .optional()
+        .describe("Text decoration (CSS text-decoration). TEXT nodes only."),
 
       // Layout properties
       layoutMode: z.enum(["NONE", "HORIZONTAL", "VERTICAL"]).optional().describe("Auto-layout direction"),
@@ -119,6 +184,12 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
       paddingLeft: z.number().optional(),
       primaryAxisAlignItems: z.enum(["MIN", "MAX", "CENTER", "SPACE_BETWEEN"]).optional(),
       counterAxisAlignItems: z.enum(["MIN", "MAX", "CENTER", "BASELINE"]).optional(),
+      layoutPositioning: z
+        .enum(["AUTO", "ABSOLUTE"])
+        .optional()
+        .describe(
+          "ABSOLUTE lifts the node out of its parent's auto-layout flow so x/y position it freely — the standard idiom for badges, notification dots, drag handles and overlays. Requires an auto-layout PARENT. Pair with clipsContent: false on the parent for children that straddle its border.",
+        ),
       layoutSizingHorizontal: z.enum(["FIXED", "HUG", "FILL"]).optional(),
       layoutSizingVertical: z.enum(["FIXED", "HUG", "FILL"]).optional(),
       itemSpacing: z.number().optional().describe("Spacing between children"),
@@ -185,7 +256,7 @@ server.tool(
   "edit",
   `Edit one or more existing Figma nodes: visual properties, font properties, text content, layout, position, name, stacking order, design token variables, styles, component operations, and deletion.
 
-Handles fill color, stroke, corner radius, opacity, width, height, x/y position, rename, reorder (index), text content (characters), font family/weight/size/color, layout mode, padding, alignment, sizing, spacing, variable bindings, text style application, variant swapping (swapVariantId), exposed instances (isExposedInstance), component-property values on instances (componentProperties), and deletion (delete: true).
+Handles fill color, stroke (all sides via strokeWeight, or one side each via strokeTop/Bottom/Left/RightWeight), corner radius, opacity, visibility (visible), width, height, min/max width/height, x/y position, rename, reorder (index), text content (characters), font family/weight/size/color, letter spacing, line height, text case, text decoration, layout mode, padding, alignment, sizing, spacing, absolute positioning (layoutPositioning), content clipping (clipsContent), variable bindings, text style application, variant swapping (swapVariantId), exposed instances (isExposedInstance), component-property values on instances (componentProperties), and deletion (delete: true).
 
 For a single node:
   { nodes: [{ nodeId: "123", fillColor: { r: 1, g: 0, b: 0 } }] }

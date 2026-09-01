@@ -194,13 +194,9 @@ export async function bindVariableToNode(node, field, variableId) {
   return null;
 }
 
-async function applyTextStyle(node, styleId, styleCache) {
-  if (node.type !== "TEXT") throw new Error("Not a TEXT node: " + node.id + " (type: " + node.type + ")");
-
-  const style = styleCache[styleId];
-  if (!style) throw new Error("Text style not found or not cached: " + styleId);
-
-  // Load the node's current fonts before restyling
+// Load every font a TEXT node currently uses, so its text properties can be
+// mutated. Handles the mixed-font case by loading each range's font.
+async function loadNodeFonts(node) {
   if (node.fontName !== figma.mixed) {
     await figma.loadFontAsync(node.fontName);
   } else {
@@ -216,6 +212,35 @@ async function applyTextStyle(node, styleId, styleCache) {
       await figma.loadFontAsync(fontsToLoad[fontEntries[j]]);
     }
   }
+}
+
+// Figma models letterSpacing/lineHeight as { value, unit }; agents naturally pass
+// the CSS number ("letter-spacing: 0.4px" -> 0.4). Accept both — a bare number
+// means PIXELS.
+function toLetterSpacing(value) {
+  if (value !== null && typeof value === "object") {
+    return { value: toNumber(value.value, 0), unit: value.unit || "PIXELS" };
+  }
+  return { value: toNumber(value, 0), unit: "PIXELS" };
+}
+
+function toLineHeight(value) {
+  if (value === "AUTO") return { unit: "AUTO" };
+  if (value !== null && typeof value === "object") {
+    if (value.unit === "AUTO") return { unit: "AUTO" };
+    return { value: toNumber(value.value, 0), unit: value.unit || "PIXELS" };
+  }
+  return { value: toNumber(value, 0), unit: "PIXELS" };
+}
+
+async function applyTextStyle(node, styleId, styleCache) {
+  if (node.type !== "TEXT") throw new Error("Not a TEXT node: " + node.id + " (type: " + node.type + ")");
+
+  const style = styleCache[styleId];
+  if (!style) throw new Error("Text style not found or not cached: " + styleId);
+
+  // Load the node's current fonts before restyling
+  await loadNodeFonts(node);
 
   await node.setTextStyleIdAsync(styleId);
 }
@@ -427,6 +452,10 @@ async function processNode(op, styleCache, ctx) {
       "textAutoResize",
       "textTruncation",
       "maxLines",
+      "letterSpacing",
+      "lineHeight",
+      "textCase",
+      "textDecoration",
     ];
     const requested = [];
     for (let tp = 0; tp < TEXT_PROPS.length; tp++) {
@@ -460,6 +489,39 @@ async function processNode(op, styleCache, ctx) {
         " — " +
         node.type +
         " nodes don't clip. Fix: apply clipsContent to a FRAME or COMPONENT node.",
+    });
+  }
+
+  // Per-side stroke weights and min/max sizing only exist on frame/rect-like
+  // nodes. Warn rather than let the `in node` guards below skip in silence.
+  const SHAPE_ONLY_PROPS = [
+    "strokeTopWeight",
+    "strokeBottomWeight",
+    "strokeLeftWeight",
+    "strokeRightWeight",
+    "minWidth",
+    "maxWidth",
+    "minHeight",
+    "maxHeight",
+  ];
+  const unsupportedShapeProps = [];
+  for (let sp = 0; sp < SHAPE_ONLY_PROPS.length; sp++) {
+    const name = SHAPE_ONLY_PROPS[sp];
+    if (op[name] !== undefined && !(name in node)) unsupportedShapeProps.push(name);
+  }
+  if (unsupportedShapeProps.length > 0) {
+    warnings.push({
+      nodeId: op.nodeId,
+      check: "inapplicable_property",
+      message:
+        unsupportedShapeProps.join(", ") +
+        " ignored on " +
+        op.nodeId +
+        " — " +
+        node.type +
+        " nodes do not expose " +
+        (unsupportedShapeProps.length === 1 ? "it" : "them") +
+        ". Fix: apply to a FRAME, COMPONENT, INSTANCE or RECTANGLE node.",
     });
   }
 
@@ -552,6 +614,34 @@ async function processNode(op, styleCache, ctx) {
   if (op.cornerRadius !== undefined && "cornerRadius" in node) node.cornerRadius = toNumber(op.cornerRadius, 0);
   if (op.opacity !== undefined && "opacity" in node) node.opacity = toNumber(op.opacity, 1);
   if (op.clipsContent !== undefined && "clipsContent" in node) node.clipsContent = !!op.clipsContent;
+  if (op.visible !== undefined && "visible" in node) node.visible = !!op.visible;
+
+  // Per-side stroke weights (TOOL-035). After strokeWeight, which writes all four.
+  if (op.strokeTopWeight !== undefined && "strokeTopWeight" in node) {
+    node.strokeTopWeight = toNumber(op.strokeTopWeight, 0);
+  }
+  if (op.strokeBottomWeight !== undefined && "strokeBottomWeight" in node) {
+    node.strokeBottomWeight = toNumber(op.strokeBottomWeight, 0);
+  }
+  if (op.strokeLeftWeight !== undefined && "strokeLeftWeight" in node) {
+    node.strokeLeftWeight = toNumber(op.strokeLeftWeight, 0);
+  }
+  if (op.strokeRightWeight !== undefined && "strokeRightWeight" in node) {
+    node.strokeRightWeight = toNumber(op.strokeRightWeight, 0);
+  }
+
+  if (op.minWidth !== undefined && "minWidth" in node) {
+    node.minWidth = op.minWidth === null ? null : toNumber(op.minWidth, 0);
+  }
+  if (op.maxWidth !== undefined && "maxWidth" in node) {
+    node.maxWidth = op.maxWidth === null ? null : toNumber(op.maxWidth, 0);
+  }
+  if (op.minHeight !== undefined && "minHeight" in node) {
+    node.minHeight = op.minHeight === null ? null : toNumber(op.minHeight, 0);
+  }
+  if (op.maxHeight !== undefined && "maxHeight" in node) {
+    node.maxHeight = op.maxHeight === null ? null : toNumber(op.maxHeight, 0);
+  }
 
   if (op.width !== undefined && op.height !== undefined && "resize" in node) {
     node.resize(toNumber(op.width, node.width), toNumber(op.height, node.height));
@@ -564,21 +654,7 @@ async function processNode(op, styleCache, ctx) {
   // Phase 2.5: Font properties (TEXT nodes only — load current font first, then apply new one)
   if (node.type === "TEXT" && (op.fontFamily || op.fontWeight || op.fontSize)) {
     // Load current font to allow property mutations
-    if (node.fontName !== figma.mixed) {
-      await figma.loadFontAsync(node.fontName);
-    } else {
-      const len = node.characters.length;
-      const fontsToLoad = {};
-      for (let i = 0; i < len; i++) {
-        const f = node.getRangeFontName(i, i + 1);
-        const key = f.family + ":" + f.style;
-        if (!fontsToLoad[key]) fontsToLoad[key] = f;
-      }
-      const fontEntries = Object.keys(fontsToLoad);
-      for (let j = 0; j < fontEntries.length; j++) {
-        await figma.loadFontAsync(fontsToLoad[fontEntries[j]]);
-      }
-    }
+    await loadNodeFonts(node);
 
     const weightMap = {
       100: "Thin",
@@ -612,6 +688,23 @@ async function processNode(op, styleCache, ctx) {
     if (op.fontSize !== undefined) {
       node.fontSize = toNumber(op.fontSize, 14);
     }
+  }
+
+  // Phase 2.6: Text style properties (TEXT only). Separate from Phase 2.5 on
+  // purpose: that block resolves and REASSIGNS fontName, flattening a mixed-font
+  // node to Inter Regular. Setting letter spacing should not change anyone's font.
+  if (
+    node.type === "TEXT" &&
+    (op.letterSpacing !== undefined ||
+      op.lineHeight !== undefined ||
+      op.textCase !== undefined ||
+      op.textDecoration !== undefined)
+  ) {
+    await loadNodeFonts(node);
+    if (op.letterSpacing !== undefined) node.letterSpacing = toLetterSpacing(op.letterSpacing);
+    if (op.lineHeight !== undefined) node.lineHeight = toLineHeight(op.lineHeight);
+    if (op.textCase !== undefined) node.textCase = op.textCase;
+    if (op.textDecoration !== undefined) node.textDecoration = op.textDecoration;
   }
 
   // Snapshot dimensions BEFORE the width-0 TEXT recovery (below) or any sizing
@@ -709,6 +802,29 @@ async function processNode(op, styleCache, ctx) {
   if (op.layoutSizingVertical !== undefined && "layoutSizingVertical" in node && !sizingContextMissing) {
     node.layoutSizingVertical = op.layoutSizingVertical;
   }
+  // TOOL-027: layoutPositioning ABSOLUTE only means anything inside an
+  // auto-layout parent — outside one, every child is already free-positioned and
+  // the assignment is a no-op. Mirror the layoutSizing* pre-check rather than
+  // letting it pass silently.
+  if (op.layoutPositioning !== undefined && "layoutPositioning" in node) {
+    if (op.layoutPositioning === "ABSOLUTE" && !parentHasAutoLayout(node)) {
+      const absParent = prop(node, "parent");
+      warnings.push({
+        nodeId: op.nodeId,
+        check: "inapplicable_property",
+        message:
+          "layoutPositioning: 'ABSOLUTE' on " +
+          op.nodeId +
+          " skipped — parent " +
+          (absParent ? absParent.id + ' ("' + absParent.name + '")' : "the parent") +
+          " has no auto-layout, so the node is already free-positioned and the setting is a no-op. " +
+          "Fix: drop layoutPositioning and set x/y directly, or give the parent layoutMode first.",
+      });
+    } else {
+      node.layoutPositioning = op.layoutPositioning;
+    }
+  }
+
   if (wantsSizing && !sizingContextMissing && ctx) {
     ctx.sizingRequests.push({
       id: node.id,

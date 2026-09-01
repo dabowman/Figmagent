@@ -47,7 +47,7 @@ Runs inside Figma. Source lives in `src/figma_plugin/src/` as ES modules, bundle
 - `src/setcharacters.js` — font-safe text replacement (handles mixed fonts)
 - `src/commands/document.js` — getDocumentInfo, getSelection, getNodeTree (FSGN traversal), exportNodeAsImage
 - `src/commands/create.js` — create (single nodes and nested trees, including COMPONENT and INSTANCE types)
-- `src/commands/apply.js` — unified node modification (backs the `edit` tool): fill, stroke, corner radius, opacity, font properties, layout, move/rename/reorder, text content (via setcharacters.js), variables, text styles, variant swapping, exposed instances, instance component-property values (`componentProperties` → `instance.setProperties`), delete
+- `src/commands/apply.js` — unified node modification (backs the `edit` tool): fill, stroke (all sides, or per-side via `strokeTop/Bottom/Left/RightWeight`), corner radius, opacity, `visible`, font properties, text style properties (`letterSpacing`/`lineHeight`/`textCase`/`textDecoration`), layout, min/max sizing, `layoutPositioning`/`clipsContent`, move/rename/reorder, text content (via setcharacters.js), variables, text styles, variant swapping, exposed instances, instance component-property values (`componentProperties` → `instance.setProperties`), delete
 - `src/commands/modify.js` — moveNode, resizeNode, renameNode, deleteNode, cloneNode, cloneAndModify, reorderChildren
 - `src/commands/text.js` — setTextContent, setMultipleTextContents
 - `src/commands/components.js` — createComponent, combineAsVariants, instance overrides, component properties, exposed instances, etc.
