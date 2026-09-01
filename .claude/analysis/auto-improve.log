@@ -830,3 +830,32 @@ Figma sessions: 57, needs analysis: 0
 [2026-08-31 03:00:25] Stage B — analyze sessions (cap 25)
 [2026-08-31 03:00:26]   sessions needing analysis: 0
 [2026-08-31 03:00:26] committing analysis artifacts to main (local, no push)
+[2026-08-31 03:00:27] Stage C — sync improvement tracker → GitHub issues
+tracker→issues: 102 unique entries · 0 create, 0 close, 0 reopen, 0 drift, 102 in-sync/skip
+[2026-08-31 03:00:29] Stage D — dispatch draft fix PRs
+Dispatch run complete — **no PRs opened**, nothing left in flight or uncleaned.
+
+Candidate evaluation against the constraints (only 4 tracker IDs have plan files, so the pool was those four):
+
+| Issue | Result |
+|---|---|
+| **TOOL-006** (P1, `identified`, type-coercion) | **Skipped** — preflight exit 4: branch `auto-fix/TOOL-006` already on origin as open draft PR #108 |
+| **TOOL-021** (P1, `planned`) | **Skipped** — `missing-batch-tool` plan; needs human design via `/add-mcp-tool`. Skip comment already posted on issue #98 on 2026-08-27, so not re-commented |
+| **TOOL-022** (P2, `planned`) | **Skipped** — priority below P1 |
+| **BUG-021** (P2, `identified`) | **Skipped** — priority below P1 |
+
+The one genuinely dispatchable issue this run was TOOL-006, and it is already covered by draft PR #108 awaiting human review. Stage D stays blocked on that merge — until #108 lands (or the two P2 type-coercion entries, TOOL-022 and BUG-021, get promoted to P1), subsequent runs will have no eligible work.
+
+No worktrees were created; the `.claude/worktrees/agent-*` entries present are from unrelated subagent isolation, not this stage.
+[2026-08-31 03:02:04] run complete
+
+========================= auto-improve 2026-09-01 03:00:05 =========================
+[2026-09-01 03:00:05] Stage A — extract Figmagent sessions across all repos
+  a2201e93-585a-4c71-b050-8f09dfa87973 → 217 messages, 100 tool calls
+  0f978732-bb80-4197-b164-528e108d7396 → 475 messages, 233 tool calls
+
+2 extracted, 33 up-to-date. Output: /Users/davidbowman/Github/cursor-talk-to-figma-mcp/.claude/sessions-json
+Figma sessions: 57, needs analysis: 0
+[2026-09-01 03:00:28] Stage B — analyze sessions (cap 25)
+[2026-09-01 03:00:29]   sessions needing analysis: 0
+[2026-09-01 03:00:30] committing analysis artifacts to main (local, no push)
