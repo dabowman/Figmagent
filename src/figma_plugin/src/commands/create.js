@@ -243,6 +243,16 @@ export async function create(params) {
       }
     }
 
+    // BUG-022 — `parentNode` is only set for CHILD specs; the root of a
+    // write({parentId}) tree is built with buildNode(tree, null) and appended via
+    // the parentId branch above, so `parentNode` stays null even though the node
+    // now has a real parent. Every parent-dependent decision below must read the
+    // parent the node actually ended up under, or FILL sizing is silently dropped
+    // on exactly the nodes that asked for it.
+    const effectiveParent = parentNode || prop(node, "parent");
+    const effectiveParentIsAutoLayout =
+      !!effectiveParent && "layoutMode" in effectiveParent && effectiveParent.layoutMode !== "NONE";
+
     // Record post-write validation context for this node
     assertCtx.nodeIds.push(node.id);
     if (spec.height !== undefined) assertCtx.explicitHeightIds.push(node.id);
@@ -348,8 +358,7 @@ export async function create(params) {
       // Default TEXT in an auto-layout parent to FILL + HEIGHT (matches Figma UI).
       // Only when the parent has active auto-layout and the spec sets neither
       // layoutSizingHorizontal nor textAutoResize — explicit specs are respected.
-      const parentIsAutoLayout =
-        parentNode && "layoutMode" in parentNode && parentNode.layoutMode !== "NONE";
+      const parentIsAutoLayout = effectiveParentIsAutoLayout;
       let effectiveLayoutSizingHorizontal = spec.layoutSizingHorizontal;
       let effectiveTextAutoResize = spec.textAutoResize;
       if (parentIsAutoLayout && effectiveLayoutSizingHorizontal === undefined && effectiveTextAutoResize === undefined) {
@@ -383,7 +392,7 @@ export async function create(params) {
       }
     }
 
-    if (parentNode && "layoutMode" in parentNode && parentNode.layoutMode !== "NONE" && nodeType !== "TEXT") {
+    if (effectiveParentIsAutoLayout && nodeType !== "TEXT") {
       if (spec.layoutSizingHorizontal === "FILL") {
         node.layoutSizingHorizontal = "FILL";
       }

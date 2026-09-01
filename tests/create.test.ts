@@ -267,3 +267,61 @@ describe("create: INSTANCE override paths for TEXT children (#43)", () => {
     expect(res.tree.textOverrides).toBeUndefined();
   });
 });
+
+// BUG-022 — the root of a write({parentId}) tree is built with
+// buildNode(tree, null) and appended via the parentId branch, so the old
+// `parentNode &&` guards saw no parent and silently skipped both the FILL pass
+// and the TEXT auto-layout default. Children were unaffected (they get
+// parentNode), which is why this only ever bit the node the caller named.
+describe("create: parentId root gets parent-dependent sizing (BUG-022)", () => {
+  test("root FRAME with layoutSizingHorizontal FILL applies under an auto-layout parentId", async () => {
+    const parent = makeFrame();
+    parent.layoutMode = "VERTICAL";
+
+    const res = await create({
+      parentId: parent.id,
+      tree: { type: "FRAME", layoutSizingHorizontal: "FILL" },
+    });
+
+    const root = nodesById[res.tree.id];
+    expect(root.parent.id).toBe(parent.id);
+    expect(root.layoutSizingHorizontal).toBe("FILL");
+  });
+
+  test("root FRAME with layoutSizingVertical FILL applies under an auto-layout parentId", async () => {
+    const parent = makeFrame();
+    parent.layoutMode = "HORIZONTAL";
+
+    const res = await create({
+      parentId: parent.id,
+      tree: { type: "FRAME", layoutSizingVertical: "FILL" },
+    });
+
+    expect(nodesById[res.tree.id].layoutSizingVertical).toBe("FILL");
+  });
+
+  test("root TEXT under an auto-layout parentId still gets the FILL + HEIGHT default", async () => {
+    const parent = makeFrame();
+    parent.layoutMode = "VERTICAL";
+
+    const res = await create({
+      parentId: parent.id,
+      tree: { type: "TEXT", text: "Hello" },
+    });
+
+    const text = nodesById[res.tree.id];
+    expect(text.layoutSizingHorizontal).toBe("FILL");
+    expect(text.textAutoResize).toBe("HEIGHT");
+  });
+
+  test("a non-auto-layout parentId does not force FILL", async () => {
+    const parent = makeFrame(); // layoutMode stays NONE
+
+    const res = await create({
+      parentId: parent.id,
+      tree: { type: "FRAME", layoutSizingHorizontal: "FILL" },
+    });
+
+    expect(nodesById[res.tree.id].layoutSizingHorizontal).toBeUndefined();
+  });
+});
