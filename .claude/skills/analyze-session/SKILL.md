@@ -285,6 +285,7 @@ Update `.claude/analysis/improvement-tracker.md`:
    - Set status to `identified`
    - Set priority based on estimated call savings: P0 (>50 calls), P1 (10-50 calls), P2 (<10 calls)
    - **Always add an explicit `- **Auto-fixable**: yes` or `- **Auto-fixable**: no` line** (`yes` only when it matches a Phase 6 safe pattern). Stage D (`/dispatch-fixes`) keys on this field — an entry missing it is never auto-fixed.
+   - **Every `[ID]` you name in the analysis document must get a tracker entry.** The tracker — not the analysis doc — is what Stage C syncs to GitHub, so an ID that appears only in prose never becomes an issue. `sync-issues` warns on any such orphan (`⚠️ N finding ID(s) appear in analysis docs but have no `### [ID]` entry`); if you cite an ID, either add the entry or use the existing ID it duplicates.
 
 2. **Update existing issues**: For each tracker entry:
    - If the issue was not observed in this session and the fix is confirmed working → advance to `verified`, move to Resolved Issues

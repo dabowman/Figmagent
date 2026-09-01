@@ -44,10 +44,11 @@
  *   bun scripts/sync-tracker-issues.ts --reopen    # reopen issues that regressed
  */
 
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { $ } from "bun";
 
 const TRACKER = ".claude/analysis/improvement-tracker.md";
+const ANALYSIS_DIR = ".claude/analysis";
 const REPO = process.env.AUTO_IMPROVE_REPO || "dabowman/Figmagent";
 const LABEL = "figmagent-improvement";
 
@@ -195,6 +196,45 @@ commit();
 if (collisions.size > 0) {
 	console.error(
 		`⚠️  Duplicate tracker IDs with different titles — renumber them (each maps to one GitHub issue): ${[...collisions].join(", ")}`,
+	);
+}
+
+// ---- upstream check: every ID written into an analysis doc reached the tracker
+// The tracker is the source of truth for the GitHub sync, so a finding that an
+// analysis doc names but that never got a tracker entry is invisible to every
+// later stage — it silently never becomes an issue. Nothing else checks this
+// direction. Warn (don't fail): the sync itself is still correct, and Stage C
+// aborting would stop Stage D for an unrelated authoring slip.
+// Generic `[PREFIX-N]` shape, not a hardcoded prefix list, so a new category is
+// caught rather than skipped. Prefixes seen so far: BUG, TOOL, AGENT, INFRA.
+const ID_IN_PROSE = /\[([A-Z]{2,}-\d+)\]/g;
+const trackerBase = TRACKER.slice(TRACKER.lastIndexOf("/") + 1);
+const missingFromTracker = new Map<string, Set<string>>(); // id → docs naming it
+try {
+	const docs = (await readdir(ANALYSIS_DIR))
+		.filter((f) => f.endsWith(".md") && f !== trackerBase)
+		.sort();
+	for (const doc of docs) {
+		const text = await readFile(`${ANALYSIS_DIR}/${doc}`, "utf-8");
+		for (const m of text.matchAll(ID_IN_PROSE)) {
+			const id = m[1];
+			if (id === undefined || byId.has(id)) continue;
+			const seen = missingFromTracker.get(id) ?? new Set<string>();
+			seen.add(doc);
+			missingFromTracker.set(id, seen);
+		}
+	}
+} catch (e) {
+	console.error(`⚠️  Could not scan ${ANALYSIS_DIR} for orphaned finding IDs: ${e}`);
+}
+if (missingFromTracker.size > 0) {
+	const lines = [...missingFromTracker.entries()]
+		.sort(([a], [b]) => a.localeCompare(b))
+		.map(([id, docs]) => `      ${id} — named in ${[...docs].sort().join(", ")}`);
+	console.error(
+		`⚠️  ${missingFromTracker.size} finding ID(s) appear in analysis docs but have no ` +
+			`\`### [ID]\` entry in ${trackerBase}, so they will never reach GitHub. ` +
+			`Add a tracker entry (or fix the ID in the doc):\n${lines.join("\n")}`,
 	);
 }
 
