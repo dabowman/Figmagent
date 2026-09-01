@@ -4,6 +4,22 @@ import { sendCommandToFigma } from "../connection.js";
 import { serializeYaml } from "../yaml.js";
 import { guardOutput, extractYamlMeta, paginateGroups, DEFAULT_MAX_OUTPUT_CHARS } from "../utils.js";
 
+// BUG-021 — the four array criteria were bare z.array(z.string()), so a single
+// value passed as a bare string ("COMPONENT") — the natural shape, and the shape
+// every scalar param in this tool takes — came back as a raw MCP -32602 Zod dump
+// with no stated fix. Accept the scalar and comma-separated forms and normalize.
+// Array-valued sibling of TOOL-006 / BUG-005, which covered scalar numerics.
+export const stringArray = z.array(z.string()).or(
+  z
+    .string()
+    .transform((v) =>
+      v
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean),
+    ),
+);
+
 server.tool(
   "grep",
   `Search a Figma subtree for nodes matching a regex pattern or other criteria. Returns matches grouped by nearest component/frame ancestor with ancestry paths.
@@ -31,21 +47,20 @@ Large text extractions (e.g. enumerating every TEXT node in a multi-slide deck) 
       .string()
       .optional()
       .describe('Node ID to search within, or "DOCUMENT" to search all pages (default: current page)'),
-    componentId: z.array(z.string()).optional().describe("Find instances of these component or component_set IDs"),
-    variableId: z
-      .array(z.string())
+    componentId: stringArray.optional().describe("Find instances of these component or component_set IDs"),
+    variableId: stringArray
       .optional()
       .describe("Find nodes with direct variable bindings to these variable IDs"),
-    styleId: z
-      .array(z.string())
+    styleId: stringArray
       .optional()
       .describe("Find nodes using these style IDs (fill, stroke, text, effect, or grid styles)"),
     text: z.string().optional().describe("Find TEXT nodes whose content matches this regex pattern"),
     name: z.string().optional().describe("Find nodes whose name matches this regex pattern"),
-    type: z
-      .array(z.string())
+    type: stringArray
       .optional()
-      .describe("Find nodes of these types (e.g. FRAME, TEXT, INSTANCE, COMPONENT, COMPONENT_SET)"),
+      .describe(
+        "Find nodes of these types (e.g. FRAME, TEXT, INSTANCE, COMPONENT, COMPONENT_SET). Accepts one type as a bare string, an array, or a comma-separated string.",
+      ),
     annotation: z.string().optional().describe("Find nodes whose annotation label matches this regex pattern"),
     hasAnnotation: z.boolean().optional().describe("Find all nodes that have any annotation (set to true)"),
     excludeDefinitions: z
@@ -118,7 +133,11 @@ Large text extractions (e.g. enumerating every TEXT node in a multi-slide deck) 
         content: [
           {
             type: "text" as const,
-            text: "Error: at least one search criterion is required (componentId, variableId, styleId, text, name, type, annotation, or hasAnnotation)",
+            text:
+              "Error: no search criterion recognized. Valid criteria: componentId, variableId, styleId, " +
+              "text, name, type, annotation, hasAnnotation. Fix: if you passed something else, it was " +
+              "silently dropped — `pattern`, `searchIn` and `nodeTypes` are not parameters of this tool; " +
+              "use `name` or `text` for regex matching and `type` for node types.",
           },
         ],
       };
