@@ -1,6 +1,14 @@
 // Component commands: create, combine, instances, swap, main component, instance overrides
 
-import { fail } from "../helpers.js";
+import { fail, prop } from "../helpers.js";
+
+// Walk up to the PAGE a node lives on. Returns null for a node that is not yet
+// in the document tree.
+function pageOf(node) {
+  let cur = node;
+  while (cur && cur.type !== "PAGE") cur = prop(cur, "parent");
+  return cur && cur.type === "PAGE" ? cur : null;
+}
 
 export async function createComponent(params) {
   const { x = 0, y = 0, width = 100, height = 100, name = "Component", parentId } = params || {};
@@ -225,8 +233,30 @@ export async function importLibraryComponent(params) {
     instance.name = nameOverride;
   }
 
-  figma.currentPage.selection = [instance];
-  figma.viewport.scrollAndZoomIntoView([instance]);
+  // BUG-018 — the instance was just appended under `parentNodeId`, which on the
+  // remote `use_figma` VM routinely lives on a page that is NOT `figma.currentPage`:
+  // every remote call starts a fresh VM whose currentPage is the file's default
+  // page, so this is the normal case there, not an edge case. Assigning
+  // `currentPage.selection` across that boundary throws "The selection of a page
+  // can only include nodes in that page" — and because remote scripts are atomic,
+  // that failure rolled back an import that had already succeeded. One session lost
+  // 21/21 components to it; setting the page first was verified to fix it 3/3 with
+  // the component payload held byte-identical.
+  //
+  // So: move to the instance's own page first, and never let selection or viewport
+  // fail the import. Both are advisory — and no-ops in a headless VM with no live
+  // selection (cf. BUG-024) — so they have no business failing real work.
+  try {
+    const page = pageOf(instance);
+    if (page && page !== figma.currentPage) {
+      if (typeof page.loadAsync === "function") await page.loadAsync();
+      await figma.setCurrentPageAsync(page);
+    }
+    figma.currentPage.selection = [instance];
+    figma.viewport.scrollAndZoomIntoView([instance]);
+  } catch (_focusErr) {
+    // Advisory only — the instance is placed; leaving it unselected is not a failure.
+  }
 
   return {
     instanceId: instance.id,
