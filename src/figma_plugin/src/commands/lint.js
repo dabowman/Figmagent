@@ -4,6 +4,7 @@
 // Flags ambiguous matches (multiple scope-compatible variables at same distance).
 
 import { sendProgressUpdate, generateCommandId, delay, rgbaToHex, prop, fail } from "../helpers.js";
+import { describeEnabledLibraryVariables } from "./styles.js";
 
 // ─── Color Distance (CIE76 deltaE in CIELAB) ───────────────────────────────
 
@@ -582,7 +583,21 @@ export async function lintDesign(params) {
   const scalarIndex = indexes.scalarIndex;
 
   if (colorIndex.length === 0 && scalarIndex.FLOAT.length === 0 && scalarIndex.STRING.length === 0) {
-    sendProgressUpdate(commandId, "lint_design", "completed", 100, 0, 0, "No local variables found in file");
+    // Nothing to lint against locally — but "create variables first" is flat
+    // wrong for a fully tokenized file whose tokens all live in enabled team
+    // libraries (issue TOOL-024). Ask the team-library API which case this is
+    // and route the caller accordingly; a null hint (no libraries, API absent,
+    // or the call threw) keeps the original create-variables advice.
+    const libraryHint = await describeEnabledLibraryVariables();
+    sendProgressUpdate(
+      commandId,
+      "lint_design",
+      "completed",
+      100,
+      0,
+      0,
+      libraryHint ? "No local variables — tokens come from enabled libraries" : "No local variables found in file",
+    );
     const emptyResult = {
       summary: {
         totalNodesScanned: 0,
@@ -593,8 +608,14 @@ export async function lintDesign(params) {
       },
       issues: [],
       truncated: false,
-      message: "No local variables found in this file. Create variables first to enable linting.",
+      message: libraryHint
+        ? libraryHint.message +
+          " Note: lint matches local variables only, so re-running it won't surface library tokens."
+        : "No local variables found in this file. Create variables first to enable linting.",
     };
+    if (libraryHint) {
+      emptyResult.libraryCollections = libraryHint.collections;
+    }
     if (multiRoot) {
       emptyResult.roots = rootIds.map((rid, idx) => ({
         rootNodeId: rid,

@@ -157,10 +157,27 @@ export function connectToFigma(port: number = 3055) {
 export function disconnectFromFigma(): void {
   if (ws) {
     ws.removeAllListeners();
+    // Keep a no-op error handler through teardown: a socket that is mid-connect
+    // or mid-close can still emit 'error' (e.g. ECONNREFUSED to a dead relay)
+    // after its listeners are stripped, which would otherwise surface as an
+    // unhandled error and crash the process.
+    ws.on("error", () => {});
     ws.close();
     ws = null;
   }
   currentChannel = null;
+}
+
+// Resolve once the websocket is OPEN, or reject after timeoutMs. Lets callers
+// (and tests) await a real readiness signal instead of sleeping a fixed
+// interval — the latter under-provisions on loaded CI runners and races.
+export async function waitForConnection(timeoutMs: number = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (ws && ws.readyState === WebSocket.OPEN) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`WebSocket did not reach OPEN within ${timeoutMs}ms`);
 }
 
 // Discover active channels from the relay's HTTP endpoint

@@ -1,7 +1,14 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.4.6/schema.json",
   "files": {
-    "includes": ["src/**/*.ts", "src/figma_plugin/src/**/*.js", "src/figma_plugin/build.js", "tests/**/*.ts"]
+    "includes": [
+      "src/**/*.ts",
+      "src/figma_plugin/src/**/*.js",
+      "src/figma_plugin/build.js",
+      "tests/**/*.ts",
+      "scripts/**/*.ts",
+      "!.claude/worktrees/**"
+    ]
   },
   "linter": {
     "enabled": true,

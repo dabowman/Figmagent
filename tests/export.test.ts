@@ -1,9 +1,14 @@
 // Issue #56 — batch export_node_as_image: single-node stays backward compatible,
 // `nodeIds` array returns images keyed by nodeId with per-node errors and a
 // payload cap (truncated list). Runs the plugin handler against a mocked figma.
+//
+// BUG-016 — the payload cap now also applies to single-node mode, and the MCP
+// layer never emits an image content block without real `data` (an undefined
+// `data` made the SDK reject the whole tool result with `invalid_union`).
 
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { exportNodeAsImage } from "../src/figma_plugin/src/commands/document.js";
+import { buildBatchExportResult, buildSingleExportResult } from "../src/figmagent_mcp/tools/export.js";
 
 let fakeNodes: Record<string, any>;
 
@@ -123,5 +128,151 @@ describe("exportNodeAsImage: batch mode (nodeIds array)", () => {
     const result = await exportNodeAsImage({ nodeIds: ["1:1", "bad"] });
     expect(Object.keys(result.images)).toEqual(["1:1"]);
     expect(result.errors.bad).toBe("kaboom");
+  });
+});
+
+// ─── BUG-016: single-node payload cap (plugin side) ─────────────────────────
+
+describe("exportNodeAsImage: single-node payload cap (BUG-016)", () => {
+  test("an oversized single-node render fails instead of returning an uncapped payload", async () => {
+    // 5MB raw → ~6.7M base64 chars, past the 4M-char ceiling.
+    fakeNodes["1:1"] = makeExportableNode("1:1", 5_000_000);
+    await expect(exportNodeAsImage({ nodeId: "1:1" })).rejects.toThrow(/too large to return/);
+  });
+
+  test("the failure names both remedies: lower scale and SVG", async () => {
+    fakeNodes["1:1"] = makeExportableNode("1:1", 5_000_000);
+    let message = "";
+    try {
+      await exportNodeAsImage({ nodeId: "1:1" });
+    } catch (err: any) {
+      message = err.message;
+    }
+    expect(message).toMatch(/Fix:/);
+    expect(message).toMatch(/scale/);
+    expect(message).toMatch(/SVG/);
+  });
+
+  test("a render inside the cap still returns imageData", async () => {
+    // 1.5MB raw → ~2M base64 chars, well under the ceiling.
+    fakeNodes["1:1"] = makeExportableNode("1:1", 1_500_000);
+    const result = await exportNodeAsImage({ nodeId: "1:1" });
+    expect(typeof result.imageData).toBe("string");
+    expect(result.imageData.length).toBeLessThanOrEqual(4_000_000);
+  });
+
+  test("batch mode keeps truncating (the cap is not inherited as a throw)", async () => {
+    // Same oversized node that fails in single mode is still returned by a
+    // batch — batch has its own ceiling logic and reports `truncated`.
+    fakeNodes["1:1"] = makeExportableNode("1:1", 5_000_000);
+    const result = await exportNodeAsImage({ nodeIds: ["1:1"] });
+    expect(Object.keys(result.images)).toEqual(["1:1"]);
+    expect(result.errors).toBeUndefined();
+  });
+});
+
+// ─── BUG-016: MCP result shape guards (server side) ─────────────────────────
+
+function imageBlocks(content: Array<{ type: string; data?: string }>) {
+  return content.filter((c) => c.type === "image");
+}
+
+describe("buildSingleExportResult (BUG-016)", () => {
+  test("returns an image block when imageData is present", () => {
+    const r = buildSingleExportResult({ imageData: "AAAA", mimeType: "image/png" }, "1:1");
+    expect(r.isError).toBeUndefined();
+    expect(r.content).toEqual([{ type: "image", data: "AAAA", mimeType: "image/png" }]);
+  });
+
+  test("defaults the mimeType when the plugin omits it", () => {
+    const r = buildSingleExportResult({ imageData: "AAAA" } as any, "1:1");
+    expect(r.content[0].mimeType).toBe("image/png");
+  });
+
+  test("missing imageData returns a text error, never an image block with undefined data", () => {
+    const r = buildSingleExportResult({ mimeType: "image/png" } as any, "1:1");
+    expect(r.isError).toBe(true);
+    expect(imageBlocks(r.content)).toEqual([]);
+    expect(r.content[0].type).toBe("text");
+    expect(r.content[0].text).toMatch(/no image data/);
+    expect(r.content[0].text).toMatch(/1:1/);
+  });
+
+  test("the failure text names both remedies: lower scale and SVG", () => {
+    const r = buildSingleExportResult(undefined, "1:1");
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/Fix:/);
+    expect(r.content[0].text).toMatch(/scale/);
+    expect(r.content[0].text).toMatch(/SVG/);
+  });
+
+  test("an empty-string payload is treated as missing", () => {
+    const r = buildSingleExportResult({ imageData: "", mimeType: "image/png" }, "1:1");
+    expect(r.isError).toBe(true);
+    expect(imageBlocks(r.content)).toEqual([]);
+  });
+
+  test("no content block ever carries undefined data", () => {
+    for (const bad of [undefined, null, {} as any, { imageData: undefined } as any]) {
+      const r = buildSingleExportResult(bad, "1:1");
+      for (const block of r.content) {
+        expect(block.data === undefined || typeof block.data === "string").toBe(true);
+        expect(block.type).toBe("text");
+      }
+    }
+  });
+});
+
+describe("buildBatchExportResult (BUG-016)", () => {
+  const base = { batch: true as const, format: "PNG", scale: 1 };
+
+  test("emits one marker + image pair per exported node", () => {
+    const r = buildBatchExportResult({
+      ...base,
+      images: { "1:1": { imageData: "AAAA", mimeType: "image/png" } },
+    });
+    expect(r.isError).toBeUndefined();
+    expect(imageBlocks(r.content)).toEqual([{ type: "image", data: "AAAA", mimeType: "image/png" }]);
+    expect(r.content[0].text).toMatch(/Exported 1 node/);
+  });
+
+  test("zero exported ids is an error even when the plugin reported no per-node errors", () => {
+    const r = buildBatchExportResult({ ...base, images: {} });
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/Exported 0 node\(s\): none/);
+  });
+
+  test("zero exported ids with per-node errors stays an error", () => {
+    const r = buildBatchExportResult({ ...base, images: {}, errors: { "1:1": "Node not found" } });
+    expect(r.isError).toBe(true);
+    expect(r.content.some((c) => (c.text || "").includes("Node not found"))).toBe(true);
+  });
+
+  test("a dataless entry is reported as text, not as an image block with undefined data", () => {
+    const r = buildBatchExportResult({
+      ...base,
+      images: { "1:1": { imageData: "AAAA", mimeType: "image/png" }, "2:2": {} as any },
+    });
+    expect(imageBlocks(r.content)).toEqual([{ type: "image", data: "AAAA", mimeType: "image/png" }]);
+    expect(r.isError).toBeUndefined();
+    const notice = r.content.find((c) => (c.text || "").startsWith("Returned no image data"));
+    expect(notice).toBeDefined();
+    expect(notice!.text).toMatch(/2:2/);
+    expect(notice!.text).toMatch(/SVG/);
+  });
+
+  test("every dataless entry means a total failure", () => {
+    const r = buildBatchExportResult({ ...base, images: { "1:1": {} as any } });
+    expect(r.isError).toBe(true);
+    expect(imageBlocks(r.content)).toEqual([]);
+  });
+
+  test("truncated ids are still reported", () => {
+    const r = buildBatchExportResult({
+      ...base,
+      images: { "1:1": { imageData: "AAAA", mimeType: "image/png" } },
+      truncated: ["2:2"],
+    });
+    expect(r.content.some((c) => (c.text || "").includes("Truncated"))).toBe(true);
   });
 });

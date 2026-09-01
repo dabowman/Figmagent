@@ -52,7 +52,9 @@ Severity levels:
 - near_match: variable exists within threshold (deltaE < threshold for colors, within 10% for scalars). Review suggested.
 - no_match: no matching variable found. Manual action needed.
 
-Pass multiple root IDs (an array) to lint several frames/pages in one call. With an array, each issue carries a rootNodeId and the response adds a per-root \`roots\` breakdown (nodes scanned, issues, auto-fixed); the top-level summary aggregates across all roots. A single string keeps the original response shape.`,
+Pass multiple root IDs (an array) to lint several frames/pages in one call. With an array, each issue carries a rootNodeId and the response adds a per-root \`roots\` breakdown (nodes scanned, issues, auto-fixed); the top-level summary aggregates across all roots. A single string keeps the original response shape.
+
+Library-backed files: if the file has no local variables but has enabled team libraries, the response names those collections instead of telling you to create variables. Note that lint matches LOCAL variables only — import_library_variable produces a *remote* variable that lint still will not match, so re-running lint after importing will not surface library tokens.`,
   {
     nodeId: z
       .union([z.string(), z.array(z.string()).min(1)])

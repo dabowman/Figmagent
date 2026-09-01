@@ -416,6 +416,25 @@ export async function getDesignSystem(params) {
     result.collections = collNames;
   }
 
+  // Zero LOCAL variables is ambiguous: an empty result reads the same whether
+  // the file has no tokens or every token lives in an enabled team library
+  // (issue TOOL-024). When it's the latter, say so and route the caller to the
+  // library tools instead of leaving them to loosen filters call after call.
+  if (variables) {
+    let localVariableCount = 0;
+    for (let i = 0; i < variables.length; i++) {
+      const vars = variables[i].variables;
+      localVariableCount += Array.isArray(vars) ? vars.length : 0;
+    }
+    if (localVariableCount === 0) {
+      const libraryHint = await describeEnabledLibraryVariables();
+      if (libraryHint) {
+        result.message = libraryHint.message;
+        result.libraryCollections = libraryHint.collections;
+      }
+    }
+  }
+
   return result;
 }
 
@@ -1163,6 +1182,58 @@ export var FIELD_MAP = {
 //   3. importVariableByKeyAsync(variableKey) -> import into the current file, then bind
 //
 // getLibraryVariables enumerates (steps 1-2); importLibraryVariable does step 3.
+
+// Library-backed fallback hint (issue TOOL-024).
+//
+// A file whose tokens all come from enabled team libraries has ZERO local
+// variables, so getLocalVariables (and lintDesign's variable index) come back
+// empty. A bare empty result is indistinguishable from a too-narrow filter, so
+// agents progressively loosen filters and burn calls before giving up — and
+// lint's "create variables first" advice is flat wrong for a fully tokenized
+// file. When the local set is empty, ask the team-library API whether the
+// tokens live in an enabled library and route the caller there instead.
+//
+// Guarded exactly like getLibraryVariables below: figma.teamLibrary may be
+// absent (older desktop builds, remote VM) and the call can throw. Every
+// failure path returns null so callers degrade to the previous behavior —
+// this is a routing hint, never a reason to break the tool.
+const MAX_LISTED_LIBRARY_COLLECTIONS = 12;
+
+export async function describeEnabledLibraryVariables() {
+  if (!figma.teamLibrary || typeof figma.teamLibrary.getAvailableLibraryVariableCollectionsAsync !== "function") {
+    return null;
+  }
+
+  let collections;
+  try {
+    collections = await figma.teamLibrary.getAvailableLibraryVariableCollectionsAsync();
+  } catch (_e) {
+    return null;
+  }
+  if (!Array.isArray(collections) || collections.length === 0) return null;
+
+  const names = [];
+  for (let i = 0; i < collections.length; i++) {
+    const c = collections[i];
+    if (!c) continue;
+    const name = c.name ? String(c.name) : c.libraryName ? String(c.libraryName) : null;
+    if (name) names.push(name);
+  }
+  if (names.length === 0) return null;
+
+  const shown = names.slice(0, MAX_LISTED_LIBRARY_COLLECTIONS);
+  const listed =
+    names.length > shown.length ? shown.join(", ") + ", +" + (names.length - shown.length) + " more" : shown.join(", ");
+
+  const message =
+    "No local variables — this file's tokens come from " +
+    names.length +
+    (names.length === 1 ? " enabled library collection (" : " enabled library collections (") +
+    listed +
+    "). Enumerate with get_enabled_library_variables and bind with import_library_variable + edit({variables}).";
+
+  return { collectionCount: names.length, collections: names, message: message };
+}
 
 // Enumerate library variable collections enabled for the current file, and
 // (optionally) the variables inside them. Pass collectionKey to drill into a

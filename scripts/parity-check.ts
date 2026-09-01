@@ -200,7 +200,7 @@ async function runBattery(
 
     // 2. Combine into a variant set
     const combined = await call("combine_as_variants", { componentIds: createdRoots });
-    const setId = combined.id || (combined.componentSet && combined.componentSet.id) || combined.nodeId;
+    const setId = combined.id || combined.componentSet?.id || combined.nodeId;
 
     // 3. A text component property
     await call("component_properties", {
@@ -221,7 +221,7 @@ async function runBattery(
         },
       ],
     });
-    const varId = vars.results && vars.results[0] && vars.results[0].success ? vars.results[0].id : undefined;
+    const varId = vars.results?.[0]?.success ? vars.results[0].id : undefined;
     if (varId) {
       await call("apply", { nodes: [{ nodeId: createdRoots[0], variables: { fill: varId } }] });
     } else {

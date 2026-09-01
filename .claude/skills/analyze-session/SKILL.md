@@ -52,73 +52,18 @@ Sessions with `sessionType: "figma"` (at least 1 `mcp__Figmagent__*` tool call) 
 
 ### Manifest update script
 
-Run this Python snippet via Bash to refresh the manifest before analysis:
+Refresh the manifest before analysis with:
 
 ```bash
-python3 -c "
-import json, os, glob
-
-sessions_dir = '.claude/sessions-json'
-analysis_dir = '.claude/analysis'
-manifest_path = f'{analysis_dir}/sessions.json'
-
-# Load existing manifest or start fresh
-try:
-    with open(manifest_path) as fh:
-        manifest = json.load(fh)
-except (FileNotFoundError, json.JSONDecodeError):
-    manifest = {'sessions': {}}
-
-# Scan all session JSONs
-for f in sorted(glob.glob(f'{sessions_dir}/*.json')):
-    with open(f) as fh:
-        data = json.load(fh)
-    sid = data['sessionId']
-    m = data['metadata']
-    tools = m.get('uniqueTools', [])
-    figma_tools = [t for t in tools if 'Figmagent' in t]
-    tc = m['toolCallCount']
-    source_mtime = round(os.path.getmtime(f), 2)
-
-    # Preserve existing analysis mapping if present
-    existing = manifest['sessions'].get(sid, {})
-
-    entry = {
-        'toolCalls': tc,
-        'figmaToolCalls': len(figma_tools),
-        'durationMinutes': round(m['duration']['minutes']),
-        'sourceModified': source_mtime,
-    }
-
-    if tc == 0:
-        entry['sessionType'] = 'empty'
-        entry['skip'] = True
-    elif len(figma_tools) > 0:
-        entry['sessionType'] = 'figma'
-        if 'analysis' in existing:
-            entry['analysis'] = existing['analysis']
-            # Check if analysis file still exists and get its mtime
-            af = f'{analysis_dir}/{existing[\"analysis\"]}'
-            if os.path.exists(af):
-                entry['analyzedAt'] = round(os.path.getmtime(af), 2)
-    else:
-        entry['sessionType'] = 'dev'
-        entry['skip'] = True
-
-    manifest['sessions'][sid] = entry
-
-with open(manifest_path, 'w') as fh:
-    json.dump(manifest, fh, indent=2)
-
-# Report
-figma = {k:v for k,v in manifest['sessions'].items() if v.get('sessionType') == 'figma'}
-needs = {k:v for k,v in figma.items() if 'analysis' not in v or v.get('sourceModified',0) > v.get('analyzedAt',0)}
-print(f'Figma sessions: {len(figma)}, needs analysis: {len(needs)}')
-for sid, v in sorted(needs.items(), key=lambda x: x[1]['sourceModified']):
-    status = 'new' if 'analysis' not in v else 'updated'
-    print(f'  {sid}  {v[\"toolCalls\"]:>4} calls  {v[\"figmaToolCalls\"]:>2} figma  ({status})')
-"
+bun run refresh-manifest          # rewrites .claude/analysis/sessions.json, prints the needs-analysis list
+bun run refresh-manifest --count  # prints only the integer count (used by the nightly auto-improve loop)
 ```
+
+This is [`scripts/refresh-manifest.ts`](../../../scripts/refresh-manifest.ts): it scans
+`.claude/sessions-json/*.json`, classifies each session as `figma` / `dev` / `empty`,
+preserves any existing `analysis`/`analyzedAt` mapping, and reports which figma sessions
+still need analysis (no analysis, or source newer than the analysis file). The same script
+backs Stage A of the [auto-improve pipeline](../../../scripts/launchd/README.md).
 
 ### After completing analysis
 
@@ -336,10 +281,10 @@ Update `.claude/analysis/improvement-tracker.md`:
 
 1. **Add new issues**: For each efficiency issue or error pattern identified in this analysis that doesn't already exist in the tracker:
    - Assign an ID: `[CATEGORY-NNN]` where CATEGORY is TOOL, BUG, AGENT, or INFRA
-   - Auto-increment NNN within the category
+   - **Auto-increment NNN past the highest existing number in that category across BOTH the Active and Resolved sections.** Grep `^### \[CATEGORY-` for the current max first — reusing a number collides two distinct findings onto one GitHub issue (the sync warns on this, but don't create it).
    - Set status to `identified`
    - Set priority based on estimated call savings: P0 (>50 calls), P1 (10-50 calls), P2 (<10 calls)
-   - Classify as auto-fixable if it matches a known fix pattern (see Phase 6)
+   - **Always add an explicit `- **Auto-fixable**: yes` or `- **Auto-fixable**: no` line** (`yes` only when it matches a Phase 6 safe pattern). Stage D (`/dispatch-fixes`) keys on this field — an entry missing it is never auto-fixed.
 
 2. **Update existing issues**: For each tracker entry:
    - If the issue was not observed in this session and the fix is confirmed working → advance to `verified`, move to Resolved Issues
@@ -362,7 +307,7 @@ Update `.claude/analysis/improvement-tracker.md`:
 
 ## Phase 6: Generate Fix Plans (if applicable)
 
-For issues marked `auto-fixable: yes` in the tracker, generate implementation plans. Plans go to `.claude/plans/<date>-<issue-id>.md`.
+For issues with `- **Auto-fixable**: yes` in the tracker, generate implementation plans. Plans go to `.claude/plans/<date>-<issue-id>.md`. **After writing a plan file, set that entry's `Status` to `planned`.** Stage D (`/dispatch-fixes`) gates on the plan file's existence plus a non-resolved status, so a written-but-not-marked plan would never be dispatched — keep these in lockstep.
 
 ### Safe Fix Patterns (allowlist)
 

@@ -11,6 +11,7 @@ import {
   PLUGIN_TRANSPORT_REFUSAL,
   assembleRunScript,
   findWriteCall,
+  referencesStdlib,
   runScriptHandler,
 } from "../src/figmagent_mcp/tools/script";
 
@@ -224,6 +225,129 @@ describe("script assembly", () => {
     expect(script).toContain("__warnings = await globalThis.fig.check(__result.nodeIds);");
     expect(script).toContain("if (__warnings.length > 0) __out.warnings = __warnings;");
     expect(script).toContain("return JSON.stringify(__out);");
+  }, 30000);
+});
+
+// ─── [TOOL-029]: the 30K stdlib bundle is prepended only when it is needed ───
+// Measured: the bundle is 30,375 of the 49,000-char script budget (62%), yet
+// only ~18% of real run_script calls reference fig.* at all. Gate condition:
+//   stdlib !== false && (referencesStdlib(code) || mode === "write")
+
+const FIGMA_ONLY_SCRIPT = `
+const page = figma.currentPage;
+const frames = page.children.filter((c) => c.type === "FRAME");
+return frames.map((f) => ({ id: f.id, name: f.name, width: f.width }));
+`;
+
+/**
+ * The bundle's attach site — present iff the stdlib was prepended. Matched on
+ * the minified assignment (`globalThis.fig=`), not a bare `globalThis.fig`,
+ * because the mode "write" postlude mentions globalThis.fig on its own.
+ */
+function hasStdlibBundle(script: string): boolean {
+  return script.startsWith("(()=>{") && script.includes("globalThis.fig=");
+}
+
+describe("stdlib reference detection", () => {
+  test("detects a bare fig.* call", () => {
+    expect(referencesStdlib('const n = fig.prop(node, "name");')).toBe(true);
+    expect(referencesStdlib("return await fig.serialize(id);")).toBe(true);
+    expect(referencesStdlib("  fig.check(ids)")).toBe(true);
+    // start-of-string is not a word character, so a leading fig. still matches
+    expect(referencesStdlib('fig.setCharacters(t, "hi");')).toBe(true);
+  });
+
+  test("detects the explicit global form", () => {
+    expect(referencesStdlib("await globalThis.fig.check(ids);")).toBe(true);
+    expect(referencesStdlib("self.fig.prop(n, 'x')")).toBe(true);
+  });
+
+  test("does NOT match a fig-suffixed identifier or an unrelated .fig. member", () => {
+    expect(referencesStdlib("myfig.prop(node);")).toBe(false);
+    expect(referencesStdlib("const c = config.fig.enabled;")).toBe(false);
+    expect(referencesStdlib("theme.fig.color")).toBe(false);
+    expect(referencesStdlib("$fig.prop(n)")).toBe(false);
+    expect(referencesStdlib("_fig.serialize(id)")).toBe(false);
+  });
+
+  test("does NOT match raw figma.* code", () => {
+    expect(referencesStdlib(FIGMA_ONLY_SCRIPT)).toBe(false);
+    expect(referencesStdlib('await figma.getNodeByIdAsync("1:2");')).toBe(false);
+    // figma. shares the fig prefix but is not a stdlib reference
+    expect(referencesStdlib("figma.currentPage.selection")).toBe(false);
+  });
+});
+
+describe("conditional stdlib inclusion", () => {
+  test("read mode + fig.* reference → stdlib IS prepended", async () => {
+    const script = await assembleRunScript(READ_ONLY_SCRIPT, "read");
+    expect(hasStdlibBundle(script)).toBe(true);
+    expect(script.length).toBeGreaterThan(30000);
+  }, 30000);
+
+  test("read mode + figma.*-only code → stdlib is NOT prepended", async () => {
+    const script = await assembleRunScript(FIGMA_ONLY_SCRIPT, "read");
+    expect(hasStdlibBundle(script)).toBe(false);
+    // user code + wrapper only — the whole assembled script stays tiny
+    expect(script.length).toBeLessThan(FIGMA_ONLY_SCRIPT.length + 500);
+    expect(script).toContain(FIGMA_ONLY_SCRIPT);
+    expect(script).toContain("const __result = await __userScript();");
+  }, 30000);
+
+  test("a .fig. member read does NOT drag the bundle in", async () => {
+    const script = await assembleRunScript("const c = config.fig.enabled; return c;", "read");
+    expect(hasStdlibBundle(script)).toBe(false);
+  }, 30000);
+
+  test("a myfig. identifier does NOT drag the bundle in", async () => {
+    const script = await assembleRunScript("return myfig.prop(figma.currentPage);", "read");
+    expect(hasStdlibBundle(script)).toBe(false);
+  }, 30000);
+
+  test("mode 'write' includes the stdlib even for figma.*-only code (fig.check postlude)", async () => {
+    const script = await assembleRunScript("const r = figma.createFrame(); return { nodeIds: [r.id] };", "write");
+    expect(hasStdlibBundle(script)).toBe(true);
+    expect(script).toContain("__warnings = await globalThis.fig.check(__result.nodeIds);");
+  }, 30000);
+
+  test("stdlib: false forces omission — even when the code references fig.", async () => {
+    const script = await assembleRunScript(READ_ONLY_SCRIPT, "read", false);
+    expect(hasStdlibBundle(script)).toBe(false);
+    expect(script).toContain(READ_ONLY_SCRIPT);
+  }, 30000);
+
+  test("stdlib: false forces omission in write mode, and the check postlude self-guards", async () => {
+    const script = await assembleRunScript(
+      "const r = figma.createFrame(); return { nodeIds: [r.id] };",
+      "write",
+      false,
+    );
+    expect(script).not.toContain("globalThis.fig.prop");
+    // the postlude is still emitted, but skips itself when fig is absent
+    expect(script).toContain("if (globalThis.fig && __result");
+    expect(script).toContain("return JSON.stringify(__out);");
+    expect(script.length).toBeLessThan(1000);
+  }, 30000);
+
+  test("stdlib: true (the default) still means 'when needed', not 'always'", async () => {
+    const script = await assembleRunScript(FIGMA_ONLY_SCRIPT, "read", true);
+    expect(hasStdlibBundle(script)).toBe(false);
+  }, 30000);
+
+  test("budget: dropping the bundle returns ~30K of the 49,000-char budget", async () => {
+    const BUDGET = 49000;
+    const withStdlib = await assembleRunScript(
+      FIGMA_ONLY_SCRIPT.replace("figma.currentPage", "fig.prop(figma, 'currentPage')"),
+      "read",
+    );
+    const without = await assembleRunScript(FIGMA_ONLY_SCRIPT, "read");
+    const bundleCost = await getDomainBundle("stdlib");
+
+    expect(bundleCost.length).toBeGreaterThan(25000);
+    expect(withStdlib.length - without.length).toBeGreaterThan(25000);
+    // headroom for user code: ~18.6K with the bundle vs ~48.6K without
+    expect(BUDGET - withStdlib.length).toBeLessThan(20000);
+    expect(BUDGET - without.length).toBeGreaterThan(48000);
   }, 30000);
 });
 

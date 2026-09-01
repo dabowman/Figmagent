@@ -70,6 +70,7 @@ const { values: args } = parseArgs({
 		"no-thinking": { type: "boolean", default: false },
 		raw: { type: "boolean", default: false },
 		force: { type: "boolean", default: false },
+		"all-projects": { type: "boolean", default: false },
 	},
 	strict: true,
 });
@@ -166,6 +167,109 @@ async function discoverSessions(): Promise<SessionInfo[]> {
 			firstUserMessage: firstUserMsg,
 			hasSubAgents,
 		});
+	}
+
+	sessions.sort((a, b) => b.modified.getTime() - a.modified.getTime());
+	return sessions;
+}
+
+// Discover Figmagent sessions across ALL Claude Code project directories.
+// A Figmagent session run in any repo lands in
+// ~/.claude/projects/<encoded-cwd>/<id>.jsonl. The nightly auto-improve
+// pipeline uses this to analyze sessions regardless of which repo they ran in.
+// Only transcripts containing at least one Figmagent tool call are returned.
+async function discoverFigmaSessionsAllProjects(): Promise<SessionInfo[]> {
+	const home = process.env.HOME || "~";
+	const projectsRoot = join(home, ".claude/projects");
+	let projectDirs: string[];
+	try {
+		const entries = await readdir(projectsRoot, { withFileTypes: true });
+		projectDirs = entries
+			.filter((e) => e.isDirectory())
+			.map((e) => join(projectsRoot, e.name));
+	} catch {
+		return [];
+	}
+
+	const sessions: SessionInfo[] = [];
+	for (const dir of projectDirs) {
+		let dirEntries: string[];
+		try {
+			dirEntries = await readdir(dir);
+		} catch {
+			continue;
+		}
+		const jsonlFiles = dirEntries.filter((e) => e.endsWith(".jsonl"));
+		for (const file of jsonlFiles) {
+			const filePath = join(dir, file);
+			let raw: string;
+			let fileStat: Awaited<ReturnType<typeof stat>>;
+			try {
+				// A single mid-write / rotated / permission-restricted transcript
+				// must not abort the whole nightly --all-projects walk.
+				raw = await readFile(filePath, "utf-8");
+				fileStat = await stat(filePath);
+			} catch {
+				continue;
+			}
+			// Cheap reject: skip files that never mention Figmagent at all.
+			// (The full name also appears in system-reminder tool listings, so a
+			// raw match is necessary but not sufficient — we confirm a real call
+			// below.)
+			if (!raw.includes("mcp__Figmagent__")) continue;
+
+			const id = file.replace(".jsonl", "");
+			const lines = raw.split("\n").filter(Boolean);
+
+			let firstUserMsg = "";
+			let msgCount = 0;
+			let hasFigmaCall = false;
+			for (const line of lines) {
+				try {
+					const d = JSON.parse(line);
+					if (d.type === "user" || d.type === "assistant") msgCount++;
+					if (!hasFigmaCall && d.type === "assistant") {
+						const content = d.message?.content || [];
+						for (const block of content) {
+							if (
+								block.type === "tool_use" &&
+								typeof block.name === "string" &&
+								block.name.includes("Figmagent")
+							) {
+								hasFigmaCall = true;
+								break;
+							}
+						}
+					}
+					if (d.type === "user" && !firstUserMsg) {
+						const content = d.message?.content || [];
+						for (const block of content) {
+							if (
+								block.type === "text" &&
+								!block.text?.startsWith("<")
+							) {
+								firstUserMsg = block.text.slice(0, 120);
+								break;
+							}
+						}
+					}
+				} catch {}
+			}
+
+			// Accurate accept: the transcript must contain a real Figmagent
+			// tool call, matching how refresh-manifest classifies figma sessions.
+			if (!hasFigmaCall) continue;
+
+			sessions.push({
+				id,
+				file: filePath,
+				modified: fileStat.mtime,
+				size: fileStat.size,
+				messageCount: msgCount,
+				firstUserMessage: firstUserMsg,
+				hasSubAgents: dirEntries.includes(id),
+			});
+		}
 	}
 
 	sessions.sort((a, b) => b.modified.getTime() - a.modified.getTime());
@@ -476,7 +580,7 @@ async function main() {
 	// --file mode: extract a single external JSONL file directly
 	if (args.file) {
 		const filePath = resolve(args.file);
-		const fileStat = await stat(filePath);
+		await stat(filePath); // fail fast with a clear error if the path doesn't exist
 		const sessionId = basename(filePath, ".jsonl");
 		const parentDir = dirname(filePath);
 
@@ -505,7 +609,9 @@ async function main() {
 		return;
 	}
 
-	const sessions = await discoverSessions();
+	const sessions = args["all-projects"]
+		? await discoverFigmaSessionsAllProjects()
+		: await discoverSessions();
 
 	// List mode
 	if (args.list) {
@@ -571,6 +677,7 @@ async function main() {
 			s.id,
 			options,
 			includeAgents,
+			dirname(s.file),
 		);
 		await writeFile(outFile, JSON.stringify(session, null, 2));
 		const toolCount = session.metadata.toolCallCount;
