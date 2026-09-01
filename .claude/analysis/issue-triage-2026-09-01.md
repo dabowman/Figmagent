@@ -10,9 +10,11 @@ Anchors (`file:line`) are verified-present unless marked otherwise.
 > [#147](https://github.com/dabowman/Figmagent/pull/147) (BUG-022) ·
 > [#148](https://github.com/dabowman/Figmagent/pull/148) (BUG-032) ·
 > [#149](https://github.com/dabowman/Figmagent/pull/149) (BUG-018) ·
-> [#150](https://github.com/dabowman/Figmagent/pull/150) (INFRA-005).
-> Each carries tests that were confirmed to fail without the fix. Steps 1, 2 and part of 4 in
-> **Suggested dispatch order** are done; #149 and #147 still want live-Figma verification before merge.
+> [#150](https://github.com/dabowman/Figmagent/pull/150) (INFRA-005) ·
+> [#151](https://github.com/dabowman/Figmagent/pull/151) (TOOL-025 + TOOL-027 + TOOL-035, Tier 2).
+> Each carries tests that were confirmed to fail without the fix. Steps 1, 2 and 3 in
+> **Suggested dispatch order** are done; #147, #149 and #151 still want live-Figma verification
+> before merge. Remaining: step 4 (#126, #124, #125, #106, #112 + #134) and step 5 (#98 + #116).
 
 ---
 
@@ -75,8 +77,11 @@ I checked all 15 requested fields against `tools/apply.ts`:
 - **Absent (14):** `letterSpacing`, `textCase`, `minWidth`, `maxWidth`, `minHeight`, `maxHeight`,
   `lineHeight`, `textDecoration`, `visible`, `layoutPositioning`, `strokeTopWeight`,
   `strokeBottomWeight`, `strokeLeftWeight`, `strokeRightWeight`
-- **Already landed (1):** `clipsContent` (`apply.ts:84`, setter `apply.js:554`) — so **TOOL-027 is
-  half-done**; only `layoutPositioning` remains. Worth noting on #117.
+- **Already landed (1):** `clipsContent` (`apply.ts:84`, setter `apply.js:554`) — so **TOOL-027 was
+  half-done**; only `layoutPositioning` remained. Noted on #117.
+
+All 14 shipped in [#151](https://github.com/dabowman/Figmagent/pull/151), each with a pre-check that
+warns rather than no-opping silently.
 
 Caveat worth stating in the PR: several of these names (`minWidth`, `maxWidth`, `lineHeight`,
 `letterSpacing`) already exist in `variableFieldEnum` (`apply.ts:32-45`) as *bindable* fields. Adding
