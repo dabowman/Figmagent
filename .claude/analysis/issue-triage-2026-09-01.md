@@ -5,6 +5,15 @@ Date: 2026-09-01 · Scope: all 56 open issues on `dabowman/Figmagent` · Tracker
 Every recommendation below was checked against the code at `e0ab8ad`, not just read off the issue.
 Anchors (`file:line`) are verified-present unless marked otherwise.
 
+> **Status — first batch dispatched.** Five draft PRs opened, all CI-green, all based on `main`:
+> [#146](https://github.com/dabowman/Figmagent/pull/146) (BUG-027) ·
+> [#147](https://github.com/dabowman/Figmagent/pull/147) (BUG-022) ·
+> [#148](https://github.com/dabowman/Figmagent/pull/148) (BUG-032) ·
+> [#149](https://github.com/dabowman/Figmagent/pull/149) (BUG-018) ·
+> [#150](https://github.com/dabowman/Figmagent/pull/150) (INFRA-005).
+> Each carries tests that were confirmed to fail without the fix. Steps 1, 2 and part of 4 in
+> **Suggested dispatch order** are done; #149 and #147 still want live-Figma verification before merge.
+
 ---
 
 ## Headline: the nightly dispatcher currently has zero eligible candidates
