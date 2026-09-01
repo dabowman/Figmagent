@@ -194,11 +194,34 @@ export async function bindVariableToNode(node, field, variableId) {
   return null;
 }
 
-async function applyTextStyle(node, styleId, styleCache) {
+// BUG-032 — the style pre-load swallowed its exception, so every downstream
+// miss reported "not found or not cached" no matter what actually went wrong.
+// The usual trigger is an unloadable font (loadFontAsync throws for a family the
+// remote VM does not have), and the style exists perfectly well. Stating a cause
+// you did not measure is the same failure as stating no fix at all: the agent
+// acts on the text, and here it went looking for a missing style that was there.
+function failStyleLookup(kind, styleId, styleErrors) {
+  const reason = styleErrors && styleErrors[styleId];
+  if (reason) {
+    fail(
+      kind + " style " + styleId + " could not be loaded: " + reason,
+      "this is a load failure, not a missing style. If the reason names a font, the font is " +
+        "unavailable in this VM — set the node to an available font, apply the style, then re-bind " +
+        "the fontFamily variable last; otherwise retry, or re-read the node to confirm the style id",
+    );
+  }
+  fail(
+    kind + " style not found: " + styleId,
+    "verify the id with get_design_system (or read the node's defs.styles) — a style id from a " +
+      "different file will not resolve in this one",
+  );
+}
+
+async function applyTextStyle(node, styleId, styleCache, styleErrors) {
   if (node.type !== "TEXT") throw new Error("Not a TEXT node: " + node.id + " (type: " + node.type + ")");
 
   const style = styleCache[styleId];
-  if (!style) throw new Error("Text style not found or not cached: " + styleId);
+  if (!style) failStyleLookup("Text", styleId, styleErrors);
 
   // Load the node's current fonts before restyling
   if (node.fontName !== figma.mixed) {
@@ -220,11 +243,11 @@ async function applyTextStyle(node, styleId, styleCache) {
   await node.setTextStyleIdAsync(styleId);
 }
 
-async function applyEffectStyle(node, styleId, styleCache) {
+async function applyEffectStyle(node, styleId, styleCache, styleErrors) {
   if (!("effects" in node)) throw new Error("Node does not support effects: " + node.id + " (type: " + node.type + ")");
 
   const style = styleCache[styleId];
-  if (!style) throw new Error("Effect style not found or not cached: " + styleId);
+  if (!style) failStyleLookup("Effect", styleId, styleErrors);
 
   await node.setEffectStyleIdAsync(styleId);
 }
@@ -393,7 +416,7 @@ async function applyComponentProperties(node, componentProperties) {
   }
 }
 
-async function processNode(op, styleCache, ctx) {
+async function processNode(op, styleCache, ctx, styleErrors) {
   const warnings = [];
   let node = await figma.getNodeByIdAsync(op.nodeId);
   if (!node) {
@@ -751,12 +774,12 @@ async function processNode(op, styleCache, ctx) {
 
   // Phase 4: Text style (loads fonts, must happen after other props)
   if (op.textStyleId) {
-    await applyTextStyle(node, op.textStyleId, styleCache);
+    await applyTextStyle(node, op.textStyleId, styleCache, styleErrors);
   }
 
   // Phase 5: Effect style (drop shadows, inner shadows, blurs)
   if (op.effectStyleId) {
-    await applyEffectStyle(node, op.effectStyleId, styleCache);
+    await applyEffectStyle(node, op.effectStyleId, styleCache, styleErrors);
   }
 
   // Phase 6: Delete — always runs LAST so any other ops on this node complete first
@@ -854,6 +877,7 @@ export async function apply(params) {
     if (allOps[i].effectStyleId) uniqueStyleIds[allOps[i].effectStyleId] = true;
   }
   const styleCache = {};
+  const styleErrors = {};
   const styleKeys = Object.keys(uniqueStyleIds);
   for (let i = 0; i < styleKeys.length; i++) {
     try {
@@ -864,8 +888,9 @@ export async function apply(params) {
       } else if (style && style.type === "EFFECT") {
         styleCache[styleKeys[i]] = style;
       }
-    } catch (_e) {
-      // Style load failure will be caught per-node later
+    } catch (e) {
+      // Keep the reason — it is the only place the true cause exists (BUG-032).
+      styleErrors[styleKeys[i]] = e && e.message ? e.message : String(e);
     }
   }
 
@@ -892,7 +917,7 @@ export async function apply(params) {
     const chunk = allOps.slice(start, end);
 
     const chunkPromises = chunk.map((op) =>
-      processNode(op, styleCache, ctx).catch((e) => {
+      processNode(op, styleCache, ctx, styleErrors).catch((e) => {
         // Per-op error entry — one bad op never aborts the batch.
         let message = e.message || String(e);
         // Mixed-value failures (figma.mixed symbols) get a stated fix.
