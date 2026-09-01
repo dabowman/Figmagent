@@ -158,7 +158,24 @@ export async function create(params) {
           );
         component = compNode;
       } else if (spec.componentKey) {
-        component = await figma.importComponentByKeyAsync(spec.componentKey);
+        // BUG-025 — every other branch here states a fix; this one threw Figma's raw
+        // text ("Cannot find component with key ..."), which leaves an agent with no
+        // next move. The usual cause is a COMPONENT_SET key: set members are not
+        // always importable by their own key, so naming that possibility is the
+        // difference between a dead end and one more call.
+        try {
+          component = await figma.importComponentByKeyAsync(spec.componentKey);
+        } catch (importErr) {
+          fail(
+            'Component with key "' +
+              spec.componentKey +
+              '" could not be imported: ' +
+              (importErr && importErr.message ? importErr.message : String(importErr)),
+            "verify the key with search_library_components, and confirm the library is enabled for this file. " +
+              "If this is one variant of a COMPONENT_SET, import the set and instantiate the variant instead — " +
+              "set members are not always independently importable by key",
+          );
+        }
       } else {
         fail(
           "INSTANCE type requires componentId or componentKey",
