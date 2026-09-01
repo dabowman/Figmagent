@@ -16,6 +16,7 @@
 
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { hasEffectiveFigmaCall } from "./session-classify.ts";
 
 const SESSIONS_DIR = ".claude/sessions-json";
 const ANALYSIS_DIR = ".claude/analysis";
@@ -83,6 +84,7 @@ for (const f of files) {
 	const path = join(SESSIONS_DIR, f);
 	let data: {
 		sessionId?: string;
+		messages?: unknown;
 		metadata?: {
 			cwd?: string;
 			uniqueTools?: string[];
@@ -124,10 +126,15 @@ for (const f of files) {
 		sourceModified,
 	};
 
+	// A Figmagent tool name in `uniqueTools` is necessary but not sufficient — the
+	// call has to have succeeded and done something (INFRA-005). When the messages
+	// are unavailable, fall back to the old presence test.
+	const ranFigmagent = figmaTools.length > 0 && (hasEffectiveFigmaCall(data.messages) ?? true);
+
 	if (tc === 0) {
 		entry.sessionType = "empty";
 		entry.skip = true;
-	} else if (figmaTools.length > 0) {
+	} else if (ranFigmagent) {
 		entry.sessionType = "figma";
 		entry.sourceSignature = sourceSignature;
 		if (existing.analysis) {
