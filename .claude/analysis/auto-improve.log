@@ -859,3 +859,54 @@ Figma sessions: 57, needs analysis: 0
 [2026-09-01 03:00:28] Stage B — analyze sessions (cap 25)
 [2026-09-01 03:00:29]   sessions needing analysis: 0
 [2026-09-01 03:00:30] committing analysis artifacts to main (local, no push)
+[2026-09-01 03:00:30] Stage C — sync improvement tracker → GitHub issues
+tracker→issues: 102 unique entries · 0 create, 0 close, 0 reopen, 0 drift, 102 in-sync/skip
+[2026-09-01 03:00:33] Stage D — dispatch draft fix PRs
+Run complete — no PRs opened this pass. Every plan-backed tracker entry is either already dispatched or gated out.
+
+**Results per candidate:**
+
+- **TOOL-006** (P1, type-coercion, plan `2026-06-22-TOOL-006.md`) — **skipped: already in flight.** `preflight` exited 4; branch `auto-fix/TOOL-006` exists on origin and draft PR [#108](https://github.com/dabowman/Figmagent/pull/108) ("fix(TOOL-006): coerce string numeric params to numbers") is open awaiting human review.
+- **TOOL-021** (P1, plan `2026-08-27-TOOL-021.md`) — **skipped: `missing-batch-tool` pattern**, needs human design via `/add-mcp-tool`. Issue #98 already carries the explanatory skip comment from 2026-08-27 stating no further automated attempts will be made, so I did not post a duplicate.
+- **BUG-021** (plan exists, status `identified`, category type-coercion) — **skipped: P2**, below the P0/P1 gate.
+- **TOOL-022** (plan exists, status `planned`, category type-coercion) — **skipped: P2**, below the P0/P1 gate.
+
+No other tracker entry has a plan file at `.claude/plans/*<ID>*.md`, which is the binding constraint — the remaining ID-named plans in that directory are only these four.
+
+State is clean: I created no worktrees and opened no branches or PRs. The only open auto-fix PR (#108) is correctly in draft. The `agent-*` worktrees listed under `.claude/worktrees/` predate this pipeline (June 17) and belong to unrelated agent tooling, so I left them alone.
+
+One drift worth flagging for the analyzer side: TOOL-006's tracker status is still `identified` even though its draft PR has been open since a prior run — if that status never advances, this stage will keep re-evaluating and re-skipping it every night.
+SessionEnd hook [/Users/davidbowman/Github/archivist/.venv/bin/python3.14 -m archivist.cli capture] failed: Hook cancelled
+[2026-09-01 03:02:15] run complete
+
+========================= auto-improve 2026-09-01 16:35:10 =========================
+[2026-09-01 16:35:10] Stage A — extract Figmagent sessions across all repos
+  a2201e93-585a-4c71-b050-8f09dfa87973 → 217 messages, 100 tool calls
+  8ecb5292-12a8-4c69-848d-7aec4a9db1fd → 144 messages, 67 tool calls
+  0f978732-bb80-4197-b164-528e108d7396 → 475 messages, 233 tool calls
+
+3 extracted, 33 up-to-date. Output: /Users/davidbowman/Github/cursor-talk-to-figma-mcp/.claude/sessions-json
+Figma sessions: 58, needs analysis: 1
+  8ecb5292-12a8-4c69-848d-7aec4a9db1fd    67 calls  10 figma  (new)
+[2026-09-01 16:35:13] Stage B — analyze sessions (cap 25)
+[2026-09-01 16:35:13]   sessions needing analysis: 1
+Session 53 analyzed: `.claude/analysis/figma-mcp-session53-analysis.md`, tracker + manifest updated.
+
+**Session**: 67 calls / 18 min, external `~/Github/storybook`, remote transport, first analysed session on that project. Task: mirror a Storybook `Accordion` into the "Archer" Figma file as an 8-variant COMPONENT_SET + 12 type styles.
+
+**~39% waste — highest since session 6.** Not agent error; three defects account for 24 of 26 wasted calls.
+
+**Two new issues:**
+
+- **[BUG-032] P1** — `edit({textStyleId})` failed 4/4 with `Text style not found or not cached` on an ID `get_design_system` returned 9 seconds earlier. Root cause pinned: `apply.js:856-869` wraps `loadFontAsync(style.fontName)` in a bare `catch (_e)`, so an unloadable font kills the cache insert, and `:200-201` then reports a **resolved** style as missing. Agent spent 4 calls permuting the ID format, then defected to `run_script`.
+- **[BUG-033] P1** — the remote VM has **zero** copies of the file's own font (`PP Neue Montreal`; 1,938 other fonts present). Breaks text writes, `fontFamily` binds, and `setTextStyleIdAsync` — five failure sites, two of them shipping as `is_error: false`. Verified workaround captured: write with an available font, bind `fontFamily` last.
+
+**Biggest single finding — BUG-016 (15th recurrence) got its first in-VM measurement.** A diagnostic script called `exportAsync({format:'PNG'})` on the node whose `screenshot` had just failed four times citing the "~4MB return cap": **20,113 bytes**. The render succeeds; the loss is downstream at `remote/client.ts:110-114`. That retires every remaining size/complexity/scale hypothesis. Batch `Exported 0 node(s): none` with no fix text confirmed from a 3rd and 4th input path — the same node IDs exported cleanly one-at-a-time seconds later.
+
+**BUG-014 (8th)** got a same-session control: `read()` reported 1 page, `run_script` enumerated ~40, same file, 3 minutes apart.
+
+**Behavioural fix holds a 7th session / 4th project** — 0 official-MCP calls under a 46.7% screenshot failure rate, in a project with no Figmagent history.
+
+No fix plans generated — neither new issue matches the Phase 6 allowlist (both are error-handling/message fixes), though BUG-032's fix is three lines and named exactly in the tracker.
+[2026-09-01 16:41:28]   sessions needing analysis: 0
+[2026-09-01 16:41:28] committing analysis artifacts to main (local, no push)
