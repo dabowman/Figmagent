@@ -25,6 +25,7 @@
 import { readdir, readFile, mkdir, writeFile, stat } from "node:fs/promises";
 import { join, basename, dirname, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { isFigmagentTool } from "./session-classify.ts";
 
 // Auto-detect the session directory based on CWD
 function getSessionDir(): string {
@@ -234,7 +235,7 @@ async function discoverFigmaSessionsAllProjects(): Promise<SessionInfo[]> {
 							if (
 								block.type === "tool_use" &&
 								typeof block.name === "string" &&
-								block.name.includes("Figmagent")
+								isFigmagentTool(block.name)
 							) {
 								hasFigmaCall = true;
 								break;
@@ -256,8 +257,13 @@ async function discoverFigmaSessionsAllProjects(): Promise<SessionInfo[]> {
 				} catch {}
 			}
 
-			// Accurate accept: the transcript must contain a real Figmagent
-			// tool call, matching how refresh-manifest classifies figma sessions.
+			// Accurate accept: the transcript must contain a real Figmagent tool
+			// call, not just the name in a system-reminder listing. This is a
+			// looser bar than refresh-manifest's — it extracts on name presence,
+			// while the manifest additionally requires a call that succeeded and
+			// did something (INFRA-005). Deliberate: extraction is cheap and
+			// keeping the JSON on disk lets the manifest re-decide without a
+			// re-walk, so classification stays in one place.
 			if (!hasFigmaCall) continue;
 
 			sessions.push({
