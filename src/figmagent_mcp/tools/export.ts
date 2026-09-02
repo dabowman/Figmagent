@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { server } from "../instance.js";
 import { sendCommandToFigma } from "../connection.js";
-import { normalizeNodeId } from "../utils.js";
+import { nodeIdParam } from "../utils.js";
 
 type SingleExport = { imageData: string; mimeType: string };
 type BatchExport = {
@@ -123,9 +123,9 @@ server.tool(
     'and fail with `isError` at every raster scale. When that happens the verified fallback is `format: "SVG"` ' +
     "(vector output is far smaller than a raster render of a whole board); exporting a smaller child node also works.",
   {
-    nodeId: z.string().transform(normalizeNodeId).optional().describe("The ID of a single node to export"),
+    nodeId: nodeIdParam().optional().describe("The ID of a single node to export"),
     nodeIds: z
-      .array(z.string().transform(normalizeNodeId))
+      .array(nodeIdParam())
       .max(20)
       .optional()
       .describe("Array of node IDs to export in one batch (max 20). Returns images keyed by nodeId."),

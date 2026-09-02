@@ -4,14 +4,14 @@ import { sendCommandToFigma } from "../connection.js";
 import { joinChannel, discoverChannels } from "../connection.js";
 import { getTransport } from "../transport.js";
 import { setFileKey } from "../remote/filecontext.js";
-import { normalizeNodeId } from "../utils.js";
+import { nodeIdParam } from "../utils.js";
 
 // Get Reactions Tool
 server.tool(
   "get_reactions",
   "Get Figma Prototyping Reactions from multiple nodes. CRITICAL: The output MUST be processed using the 'reaction_to_connector_strategy' prompt IMMEDIATELY to generate parameters for connector lines via the 'create_connections' tool.",
   {
-    nodeIds: z.array(z.string().transform(normalizeNodeId)).min(1).describe("Array of node IDs to get reactions from"),
+    nodeIds: z.array(nodeIdParam()).min(1).describe("Array of node IDs to get reactions from"),
   },
   async ({ nodeIds }: any) => {
     try {
@@ -50,7 +50,7 @@ server.tool(
   "set_default_connector",
   "Set a copied connector node as the default connector",
   {
-    connectorId: z.string().optional().describe("The ID of the connector node to set as default"),
+    connectorId: nodeIdParam().optional().describe("The ID of the connector node to set as default"),
   },
   async ({ connectorId }: any) => {
     try {
@@ -87,8 +87,8 @@ server.tool(
     connections: z
       .array(
         z.object({
-          startNodeId: z.string().describe("ID of the starting node"),
-          endNodeId: z.string().describe("ID of the ending node"),
+          startNodeId: nodeIdParam().describe("ID of the starting node"),
+          endNodeId: nodeIdParam().describe("ID of the ending node"),
           text: z.string().optional().describe("Optional text to display on the connector"),
         }),
       )
@@ -212,7 +212,7 @@ server.tool(
   "set_focus",
   "Set focus on a specific node in Figma by selecting it and scrolling viewport to it",
   {
-    nodeId: z.string().transform(normalizeNodeId).describe("The ID of the node to focus on"),
+    nodeId: nodeIdParam().describe("The ID of the node to focus on"),
   },
   async ({ nodeId }: any) => {
     try {
@@ -236,7 +236,7 @@ server.tool(
   "set_selections",
   "Set selection to multiple nodes in Figma and scroll viewport to show them",
   {
-    nodeIds: z.array(z.string().transform(normalizeNodeId)).min(1).describe("Array of node IDs to select"),
+    nodeIds: z.array(nodeIdParam()).min(1).describe("Array of node IDs to select"),
   },
   async ({ nodeIds }: any) => {
     try {

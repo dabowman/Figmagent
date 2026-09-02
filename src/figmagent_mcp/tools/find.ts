@@ -2,7 +2,7 @@ import { z } from "zod";
 import { server } from "../instance.js";
 import { sendCommandToFigma } from "../connection.js";
 import { serializeYaml } from "../yaml.js";
-import { guardOutput, extractYamlMeta, paginateGroups, DEFAULT_MAX_OUTPUT_CHARS, normalizeNodeId } from "../utils.js";
+import { guardOutput, extractYamlMeta, paginateGroups, DEFAULT_MAX_OUTPUT_CHARS, nodeIdParam } from "../utils.js";
 
 server.tool(
   "grep",
@@ -27,12 +27,10 @@ Use \`grep\` to locate nodes, then \`read\` for details on specific matches.
 
 Large text extractions (e.g. enumerating every TEXT node in a multi-slide deck) can exceed the output budget. When that happens the result is split into budget-sized pages of whole groups — the \`meta.pagination\` block reports \`page\`, \`pageCount\`, and how to fetch the next page. Pass \`page: 2\`, \`page: 3\`, … to walk through all matches without manual chunking; the grouping (by nearest ancestor) is preserved across pages.`,
   {
-    scope: z
-      .string()
-      .transform(normalizeNodeId)
+    scope: nodeIdParam()
       .optional()
       .describe('Node ID to search within, or "DOCUMENT" to search all pages (default: current page)'),
-    componentId: z.array(z.string()).optional().describe("Find instances of these component or component_set IDs"),
+    componentId: z.array(nodeIdParam()).optional().describe("Find instances of these component or component_set IDs"),
     variableId: z
       .array(z.string())
       .optional()

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { server } from "../instance.js";
 import { sendCommandToFigma } from "../connection.js";
-import { formatWarningsBlock, colorSchema, numericParam, normalizeNodeId } from "../utils.js";
+import { formatWarningsBlock, colorSchema, numericParam, nodeIdParam } from "../utils.js";
 
 // Text-only spec properties — rejected at schema level when the spec's type
 // is known to be non-TEXT (boundary validation, Phase 4.3).
@@ -77,7 +77,7 @@ export const nodeSpecSchema: z.ZodType<any> = z.lazy(() =>
           'SVG string for SVG type. Figma parses it into vector nodes. Example: \'<svg width="24" height="24" viewBox="0 0 24 24"><path d="M12 2L2 22h20L12 2z"/></svg>\'',
         ),
       // Instance-specific (type: INSTANCE)
-      componentId: z.string().optional().describe("Node ID of a local COMPONENT to instantiate (for INSTANCE type)"),
+      componentId: nodeIdParam().optional().describe("Node ID of a local COMPONENT to instantiate (for INSTANCE type)"),
       componentKey: z
         .string()
         .optional()
@@ -163,10 +163,8 @@ FILL sizing is applied in a second pass after children exist, so it works correc
 Use parentId to append the created node(s) inside an existing frame.
 Colors use RGBA 0-1 range (e.g. { r: 0.2, g: 0.4, b: 1.0 }), not 0-255.`,
   {
-    parentId: z.string().transform(normalizeNodeId).optional().describe("Parent node ID to append the created node(s) or clone to"),
-    fromNodeId: z
-      .string()
-      .transform(normalizeNodeId)
+    parentId: nodeIdParam().optional().describe("Parent node ID to append the created node(s) or clone to"),
+    fromNodeId: nodeIdParam()
       .optional()
       .describe(
         "Clone this existing node instead of creating from a spec. Combine with parentId to clone into a different parent (the reparent recipe). Mutually exclusive with 'nodes'.",
