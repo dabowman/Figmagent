@@ -34,6 +34,12 @@
  * that appears ONLY under Resolved (no active occurrence) is resolved. A Status
  * of verified / resolved / implemented counts as resolved.
  *
+ * Sections: only a heading starting with "Resolved" is the Resolved section;
+ * every other heading is treated as active so its Status IS read (entries used
+ * to be appended after "## Metrics Over Time", where `implemented` never closed
+ * an issue). Entries outside the two known headings are still reconciled, but
+ * they are reported — misplacement is an authoring slip that stays visible.
+ *
  * Idempotent: safe to run nightly. Keys on stable issue numbers / ID prefixes,
  * so it never creates duplicates.
  *
@@ -80,7 +86,7 @@ interface TrackerIssue {
   category: string;
   body: string;
   issueRef?: number; // structured **Issue** field, else header /issues/N
-  activeStatus?: string; // Status from an Active-section occurrence (authoritative)
+  activeStatus?: string; // Status from a non-Resolved occurrence (authoritative)
   inResolved: boolean; // appeared under "## Resolved Issues"
   resolved: boolean; // derived after parsing
   resolvedReason: string; // for the close comment (never contradicts status)
@@ -100,7 +106,11 @@ const byId = new Map<string, TrackerIssue>();
 const collisions = new Set<string>();
 const normTitle = (s: string): string => s.toLowerCase().replace(/[`*_]/g, "").replace(/\s+/g, " ").trim();
 
-let section: "active" | "resolved" | "other" = "other";
+let section: "active" | "resolved" = "active";
+// The literal heading an entry sits under, so a `### [ID]` written outside the
+// two known sections is reported instead of silently absorbed.
+let heading = "";
+const misplaced = new Map<string, string>(); // id → heading it was found under
 let curId = "";
 let curTitleLine = "";
 let curStatus = "";
@@ -109,8 +119,11 @@ let curCategory = "";
 let curIssue: number | undefined;
 let bodyLines: string[] = [];
 
+const KNOWN_SECTIONS = new Set(["active issues", "resolved issues"]);
+
 const commit = (): void => {
   if (!curId) return;
+  if (!KNOWN_SECTIONS.has(heading)) misplaced.set(curId, heading || "(before the first heading)");
   const body = bodyLines.join("\n").trim();
   const cleanTitle = curTitleLine.replace(/\s*—\s*\[(?:#|PR\b).*$/u, "").trim();
   const ref = curIssue ?? headerIssueRef(curTitleLine);
@@ -125,7 +138,7 @@ const commit = (): void => {
       category: curCategory,
       body,
       issueRef: ref,
-      activeStatus: section === "active" ? curStatus : undefined,
+      activeStatus: section === "active" && curStatus ? curStatus : undefined,
       inResolved: section === "resolved",
       resolved: false,
       resolvedReason: "",
@@ -156,8 +169,12 @@ for (const line of lines) {
     commit();
     curId = "";
     bodyLines = [];
-    const t = (h2[1] ?? "").toLowerCase();
-    section = t.includes("resolved") ? "resolved" : t.includes("active") ? "active" : "other";
+    heading = (h2[1] ?? "").toLowerCase().trim();
+    // Anything that is not the Resolved section is authoritative for Status.
+    // Entries used to be appended after "## Metrics Over Time", where their
+    // Status was never read — so `implemented` never closed an issue.
+    // Anchored: "## Unresolved Issues" must not read as the Resolved section.
+    section = heading.startsWith("resolved") ? "resolved" : "active";
     continue;
   }
   const h3 = line.match(/^### \[([A-Z]+-\d+)\]\s+(.+)/);
@@ -186,6 +203,19 @@ for (const line of lines) {
   }
 }
 commit();
+
+// Entries outside "## Active Issues" / "## Resolved Issues" are still synced
+// (their Status is read), but the placement is an authoring slip: it hid 44
+// entries' Status for months. Warn, don't fail — the sync itself is correct.
+if (misplaced.size > 0) {
+  const rows = [...misplaced.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([id, h]) => `      ${id} — under "## ${h}"`);
+  console.error(
+    `⚠️  ${misplaced.size} tracker entr${misplaced.size === 1 ? "y is" : "ies are"} outside ` +
+      `"## Active Issues" / "## Resolved Issues". Move them to the end of Active Issues:\n${rows.join("\n")}`,
+  );
+}
 
 if (collisions.size > 0) {
   console.error(
