@@ -40,8 +40,14 @@ the session's own log rather than the canvas). The mere presence of a Figmagent 
 enough — a session whose only call threw never exercised the tools, and analyzing it seeds the tracker
 with findings drawn from a session that never touched a canvas ([INFRA-005]).
 
-Sessions extracted before messages were stored are undecidable by that test and fall back to the old
-name-presence rule, so an old real session is never demoted to `dev` and dropped from the queue.
+Sub-agent transcripts (`--include-agents`, stored under `subAgents`) count for that test too, so a
+session that delegated its canvas work to Builder/Styler agents is not demoted because the parent's
+own few calls failed.
+
+Sessions whose extracted JSON carries no usable message content (extracted before messages were
+stored, or a `--raw` dump) are undecidable by that test and fall back to the old name-presence rule,
+so an old real session is never demoted to `dev` and dropped from the queue. `--compact` is *not*
+undecidable — it shortens tool-result text but keeps every block and its `is_error` flag.
 
 ### Picking the session to analyze
 

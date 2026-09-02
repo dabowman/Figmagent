@@ -25,19 +25,27 @@ interface ContentBlock {
 interface ExtractedMessage {
 	content?: ContentBlock[] | string;
 }
+interface ExtractedSessionShape {
+	messages?: unknown;
+	subAgents?: unknown;
+}
 
-const isFigmagentTool = (name: string): boolean => name.includes("Figmagent");
+/** Shared with refresh-manifest.ts / extract-sessions.ts — one definition of "a Figmagent tool". */
+export const isFigmagentTool = (name: string): boolean => name.includes("Figmagent");
 
 const isMetadataOnly = (name: string): boolean =>
 	METADATA_ONLY_COMMANDS.some((cmd) => name.endsWith(`__${cmd}`) || name === cmd);
 
 /**
- * Does this session contain a Figmagent call that actually did something?
+ * Does this message list contain a Figmagent call that actually did something?
  *
- * Returns undefined when the extracted JSON carries no usable message array —
- * sessions extracted before messages were stored, or a --compact run. The caller
- * falls back to the old name-presence test there rather than silently demoting a
- * real session to "dev", which would drop it out of the analysis queue for good.
+ * Returns undefined when the list carries no usable content blocks — an extracted
+ * JSON written before messages were stored, or a `--raw` dump (whose entries are
+ * unparsed JSONL records, not `{content: [...]}` messages). `--compact` is NOT
+ * one of these: it only shortens tool-result *text* and keeps every block plus
+ * `is_error`, so the nightly pipeline's `--compact` extraction is fully decidable.
+ * On undefined the caller falls back to the old name-presence test rather than
+ * silently demoting a real session to "dev" and dropping it from the queue.
  */
 export function hasEffectiveFigmaCall(messages: unknown): boolean | undefined {
 	if (!Array.isArray(messages)) return undefined;
@@ -67,4 +75,39 @@ export function hasEffectiveFigmaCall(messages: unknown): boolean | undefined {
 		return true;
 	}
 	return false;
+}
+
+/**
+ * Session-level verdict: the parent transcript OR any sub-agent transcript.
+ *
+ * `extract-sessions.ts --include-agents` (what the nightly pipeline runs) stores
+ * Builder/Styler/Discovery transcripts under `subAgents`, and CLAUDE.md points
+ * large Figma tasks at exactly that architecture — the parent may delegate every
+ * canvas write. Judging the parent alone would demote such a session to "dev"
+ * (and drop hundreds of real Figmagent calls from the queue) whenever the
+ * parent's own handful of calls happened to error.
+ *
+ * Any decidable `true` wins; otherwise a decidable `false` wins; otherwise
+ * undefined, so the caller still falls back to the name-presence test.
+ */
+export function sessionHasEffectiveFigmaCall(
+	data: ExtractedSessionShape | null | undefined,
+): boolean | undefined {
+	let sawDecidable = false;
+	const consider = (messages: unknown): boolean => {
+		const verdict = hasEffectiveFigmaCall(messages);
+		if (verdict !== undefined) sawDecidable = true;
+		return verdict === true;
+	};
+
+	if (consider(data?.messages)) return true;
+
+	const subAgents = data?.subAgents;
+	if (subAgents && typeof subAgents === "object") {
+		for (const agent of Object.values(subAgents as Record<string, ExtractedSessionShape>)) {
+			if (consider(agent?.messages)) return true;
+		}
+	}
+
+	return sawDecidable ? false : undefined;
 }

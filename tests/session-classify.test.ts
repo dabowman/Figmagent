@@ -5,7 +5,7 @@
 // with findings from a session that never touched a canvas.
 
 import { describe, expect, test } from "bun:test";
-import { hasEffectiveFigmaCall } from "../scripts/session-classify.ts";
+import { hasEffectiveFigmaCall, sessionHasEffectiveFigmaCall } from "../scripts/session-classify.ts";
 
 const FIGMA_TOOL = "mcp__Figmagent__read";
 
@@ -88,5 +88,46 @@ describe("hasEffectiveFigmaCall: undecidable input defers to the caller", () => 
   test("malformed blocks do not throw", () => {
     const messages = [msg(null, undefined, { type: "tool_use" }, { type: "text", text: "hi" })];
     expect(() => hasEffectiveFigmaCall(messages)).not.toThrow();
+  });
+});
+
+describe("sessionHasEffectiveFigmaCall: sub-agent transcripts count", () => {
+  // `extract-sessions --include-agents` (what the nightly pipeline runs) puts
+  // Builder/Styler transcripts under `subAgents`. CLAUDE.md points large Figma
+  // tasks at exactly that architecture, so judging the parent alone would demote
+  // a session that delegated every canvas write.
+  const parentFailed = [msg(call("p1", FIGMA_TOOL)), msg(errored("p1"))];
+  const agentWorked = [msg(call("a1", FIGMA_TOOL)), msg(ok("a1"))];
+
+  test("a sub-agent's successful call rescues a parent whose own calls all errored", () => {
+    const data = { messages: parentFailed, subAgents: { "agent-1": { messages: agentWorked } } };
+    expect(sessionHasEffectiveFigmaCall(data)).toBe(true);
+  });
+
+  test("all-errored parent and all-errored sub-agents is still a negative", () => {
+    const data = { messages: parentFailed, subAgents: { "agent-1": { messages: parentFailed } } };
+    expect(sessionHasEffectiveFigmaCall(data)).toBe(false);
+  });
+
+  test("a session with no sub-agents matches the parent-only verdict", () => {
+    expect(sessionHasEffectiveFigmaCall({ messages: agentWorked })).toBe(true);
+    expect(sessionHasEffectiveFigmaCall({ messages: parentFailed })).toBe(false);
+  });
+
+  test("undecidable stays undecidable so the caller keeps its name-presence fallback", () => {
+    expect(sessionHasEffectiveFigmaCall({})).toBeUndefined();
+    expect(sessionHasEffectiveFigmaCall(undefined)).toBeUndefined();
+    expect(sessionHasEffectiveFigmaCall({ messages: "raw dump", subAgents: null })).toBeUndefined();
+  });
+
+  test("an undecidable parent still takes a decidable sub-agent verdict", () => {
+    const data = { messages: undefined, subAgents: { "agent-1": { messages: agentWorked } } };
+    expect(sessionHasEffectiveFigmaCall(data)).toBe(true);
+  });
+
+  test("malformed subAgents entries do not throw", () => {
+    const data = { messages: parentFailed, subAgents: { a: null, b: 7, c: { messages: 1 } } };
+    expect(() => sessionHasEffectiveFigmaCall(data as never)).not.toThrow();
+    expect(sessionHasEffectiveFigmaCall(data as never)).toBe(false);
   });
 });
