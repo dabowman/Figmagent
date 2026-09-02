@@ -1,6 +1,6 @@
 // Component commands: create, combine, instances, swap, main component, instance overrides
 
-import { fail } from "../helpers.js";
+import { fail, pageOf, importComponentByKeyOrFail } from "../helpers.js";
 
 export async function createComponent(params) {
   const { x = 0, y = 0, width = 100, height = 100, name = "Component", parentId } = params || {};
@@ -114,7 +114,7 @@ export async function createComponentInstance(params) {
         throw new Error("Node is not a COMPONENT: " + componentId + " (type: " + node.type + ")");
       component = node;
     } else {
-      component = await figma.importComponentByKeyAsync(componentKey);
+      component = await importComponentByKeyOrFail(componentKey);
     }
 
     const instance = component.createInstance();
@@ -150,32 +150,35 @@ export async function importLibraryComponent(params) {
 
   if (!componentKey) throw new Error("Missing componentKey parameter");
 
-  let imported;
-  try {
-    imported = await figma.importComponentByKeyAsync(componentKey);
-  } catch (e) {
-    throw new Error(
-      "Failed to import component with key " +
-        componentKey +
-        ": " +
-        (e && e.message ? e.message : String(e)) +
-        ". This may be a component set key — use get_component_variants to find individual variant keys, then import those instead.",
-    );
+  // Resolve the parent up front. A parentNodeId that didn't resolve — or resolved
+  // to a node that can't hold children — used to be swallowed silently: the
+  // instance stayed on whatever `figma.currentPage` happened to be while the
+  // response still reported success. On remote that page is the file's default
+  // page, nowhere near where the caller asked for it. Validating before
+  // `createInstance()` also means a rejection costs nothing and leaves no orphan
+  // instance behind on the plugin transport (which is not atomic).
+  let parent = null;
+  if (parentNodeId) {
+    parent = await figma.getNodeByIdAsync(parentNodeId);
+    if (!parent)
+      fail(
+        "Parent node not found: " + parentNodeId,
+        "verify the ID with read, or omit parentNodeId to place the instance on the current page",
+      );
+    if (!("appendChild" in parent))
+      fail(
+        "Parent node does not accept children: " + parentNodeId + " (type: " + parent.type + ")",
+        "pass a FRAME, GROUP, COMPONENT, SECTION or PAGE id, or omit parentNodeId to place the instance on the current page",
+      );
   }
 
-  if (imported.type !== "COMPONENT") {
-    throw new Error(
-      "Imported node is type " +
-        imported.type +
-        ", not COMPONENT. You likely used a component set key. Use get_component_variants to find individual variant keys, then import a specific variant.",
-    );
-  }
+  const imported = await importComponentByKeyOrFail(componentKey);
 
   const instance = imported.createInstance();
 
   // Load fonts for all TEXT nodes in the imported component before reparenting.
   // Without this, appending to a parentNodeId fails on components containing text.
-  if (parentNodeId) {
+  if (parent) {
     const fontsToLoad = new Set();
     const collectFonts = (node) => {
       if (node.type === "TEXT") {
@@ -214,19 +217,38 @@ export async function importLibraryComponent(params) {
     instance.y = position.y;
   }
 
-  if (parentNodeId) {
-    const parent = await figma.getNodeByIdAsync(parentNodeId);
-    if (parent && "appendChild" in parent) {
-      parent.appendChild(instance);
-    }
+  if (parent) {
+    parent.appendChild(instance);
   }
 
   if (nameOverride) {
     instance.name = nameOverride;
   }
 
-  figma.currentPage.selection = [instance];
-  figma.viewport.scrollAndZoomIntoView([instance]);
+  // BUG-018 — the instance was just appended under `parentNodeId`, which on the
+  // remote `use_figma` VM routinely lives on a page that is NOT `figma.currentPage`:
+  // every remote call starts a fresh VM whose currentPage is the file's default
+  // page, so this is the normal case there, not an edge case. Assigning
+  // `currentPage.selection` across that boundary throws "The selection of a page
+  // can only include nodes in that page" — and because remote scripts are atomic,
+  // that failure rolled back an import that had already succeeded. One session lost
+  // 21/21 components to it; setting the page first was verified to fix it 3/3 with
+  // the component payload held byte-identical.
+  //
+  // So: move to the instance's own page first, and never let selection or viewport
+  // fail the import. Both are advisory — and no-ops in a headless VM with no live
+  // selection (cf. BUG-024) — so they have no business failing real work.
+  try {
+    const page = pageOf(instance);
+    if (page && page !== figma.currentPage) {
+      if (typeof page.loadAsync === "function") await page.loadAsync();
+      await figma.setCurrentPageAsync(page);
+    }
+    figma.currentPage.selection = [instance];
+    figma.viewport.scrollAndZoomIntoView([instance]);
+  } catch (_focusErr) {
+    // Advisory only — the instance is placed; leaving it unselected is not a failure.
+  }
 
   return {
     instanceId: instance.id,

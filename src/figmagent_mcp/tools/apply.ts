@@ -1,17 +1,7 @@
 import { z } from "zod";
 import { server } from "../instance.js";
 import { sendCommandToFigma } from "../connection.js";
-import { formatWarningsBlock } from "../utils.js";
-
-// Color schema shared across fill/stroke/font
-const colorSchema = z
-  .object({
-    r: z.number().min(0).max(1).describe("Red (0-1)"),
-    g: z.number().min(0).max(1).describe("Green (0-1)"),
-    b: z.number().min(0).max(1).describe("Blue (0-1)"),
-    a: z.number().min(0).max(1).optional().describe("Alpha (0-1)"),
-  })
-  .optional();
+import { formatWarningsBlock, colorSchema, numericParam } from "../utils.js";
 
 // Variable binding fields — matches FIELD_MAP in the plugin
 const variableFieldEnum = z.enum([
@@ -53,13 +43,10 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
       nodeId: z.string().describe("ID of the existing node to modify"),
 
       // Structural operations
-      x: z.number().optional().describe("New X position (moves the node; does NOT change parent)"),
-      y: z.number().optional().describe("New Y position (moves the node; does NOT change parent)"),
+      x: numericParam(z.number()).optional().describe("New X position (moves the node; does NOT change parent)"),
+      y: numericParam(z.number()).optional().describe("New Y position (moves the node; does NOT change parent)"),
       name: z.string().optional().describe("Rename the node (e.g. variant names like 'Size=MD, State=Default')"),
-      index: z
-        .number()
-        .int()
-        .min(0)
+      index: numericParam(z.number().int().min(0))
         .optional()
         .describe("Reorder the node to this index within its current parent (0 = bottom-most layer; clamped to range)"),
       characters: z
@@ -78,19 +65,23 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
       // Visual properties (direct values)
       fillColor: colorSchema.describe("Fill color (also sets font color on TEXT nodes)"),
       strokeColor: colorSchema.describe("Stroke color"),
-      strokeWeight: z.number().positive().optional().describe("Stroke weight (sets all four sides)"),
-      strokeTopWeight: z.coerce
-        .number()
-        .min(0)
+      strokeWeight: numericParam(z.number().positive()).optional().describe("Stroke weight (sets all four sides)"),
+      strokeTopWeight: numericParam(z.number().min(0))
         .optional()
         .describe(
           "Top-side stroke weight (frame-like nodes). Use the four per-side fields for partial borders — e.g. a bottom-only card-header rule: { strokeBottomWeight: 1, strokeTopWeight: 0, strokeLeftWeight: 0, strokeRightWeight: 0 }. 0 is allowed (unlike strokeWeight). Applied after strokeWeight, so combining them sets a base then overrides one side.",
         ),
-      strokeBottomWeight: z.coerce.number().min(0).optional().describe("Bottom-side stroke weight (frame-like nodes)."),
-      strokeLeftWeight: z.coerce.number().min(0).optional().describe("Left-side stroke weight (frame-like nodes)."),
-      strokeRightWeight: z.coerce.number().min(0).optional().describe("Right-side stroke weight (frame-like nodes)."),
-      cornerRadius: z.number().min(0).optional().describe("Corner radius"),
-      opacity: z.number().min(0).max(1).optional().describe("Node opacity (0-1)"),
+      strokeBottomWeight: numericParam(z.number().min(0))
+        .optional()
+        .describe("Bottom-side stroke weight (frame-like nodes)."),
+      strokeLeftWeight: numericParam(z.number().min(0))
+        .optional()
+        .describe("Left-side stroke weight (frame-like nodes)."),
+      strokeRightWeight: numericParam(z.number().min(0))
+        .optional()
+        .describe("Right-side stroke weight (frame-like nodes)."),
+      cornerRadius: numericParam(z.number().min(0)).optional().describe("Corner radius"),
+      opacity: numericParam(z.number().min(0).max(1)).optional().describe("Node opacity (0-1)"),
       clipsContent: z
         .boolean()
         .optional()
@@ -101,40 +92,27 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
         .describe(
           "Show or hide the node. Works on instance-override sub-nodes (I<instanceId>;<nodeId>) to hide unused slots without detaching.",
         ),
-      width: z.number().positive().optional().describe("Width (resizes the node)"),
-      height: z.number().positive().optional().describe("Height (resizes the node)"),
-      minWidth: z.coerce
-        .number()
-        .min(0)
-        .nullable()
+      width: numericParam(z.number().positive()).optional().describe("Width (resizes the node)"),
+      height: numericParam(z.number().positive()).optional().describe("Height (resizes the node)"),
+      minWidth: numericParam(z.number().min(0).nullable())
         .optional()
         .describe("Minimum width constraint (auto-layout frames). Pass null to clear it."),
-      maxWidth: z.coerce
-        .number()
-        .min(0)
-        .nullable()
+      maxWidth: numericParam(z.number().min(0).nullable())
         .optional()
         .describe("Maximum width constraint (auto-layout frames). Pass null to clear it."),
-      minHeight: z.coerce
-        .number()
-        .min(0)
-        .nullable()
+      minHeight: numericParam(z.number().min(0).nullable())
         .optional()
         .describe("Minimum height constraint (auto-layout frames). Pass null to clear it."),
-      maxHeight: z.coerce
-        .number()
-        .min(0)
-        .nullable()
+      maxHeight: numericParam(z.number().min(0).nullable())
         .optional()
         .describe("Maximum height constraint (auto-layout frames). Pass null to clear it."),
 
       // Font properties (TEXT nodes only — loads fonts automatically)
       fontFamily: z.string().optional().describe("Font family (e.g. 'Inter', 'Space Grotesk'). TEXT nodes only."),
-      fontWeight: z
-        .number()
+      fontWeight: numericParam(z.number())
         .optional()
         .describe("Font weight (100-900, e.g. 400=Regular, 600=Semi Bold, 700=Bold). TEXT nodes only."),
-      fontSize: z.number().positive().optional().describe("Font size in pixels. TEXT nodes only."),
+      fontSize: numericParam(z.number().positive()).optional().describe("Font size in pixels. TEXT nodes only."),
       fontColor: colorSchema.describe("Font color (convenience alias for fillColor on TEXT nodes)."),
       textAutoResize: z
         .enum(["NONE", "WIDTH_AND_HEIGHT", "HEIGHT", "TRUNCATE"])
@@ -144,9 +122,7 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
         .enum(["DISABLED", "ENDING"])
         .optional()
         .describe("Ellipsis truncation when text overflows. ENDING adds '...' at the end. TEXT nodes only."),
-      maxLines: z
-        .number()
-        .positive()
+      maxLines: numericParam(z.number().positive())
         .optional()
         .describe("Max lines before truncation. Requires textTruncation: ENDING. TEXT nodes only."),
       letterSpacing: z
@@ -178,10 +154,10 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
       // Layout properties
       layoutMode: z.enum(["NONE", "HORIZONTAL", "VERTICAL"]).optional().describe("Auto-layout direction"),
       layoutWrap: z.enum(["NO_WRAP", "WRAP"]).optional().describe("Whether auto-layout wraps children"),
-      paddingTop: z.number().optional(),
-      paddingRight: z.number().optional(),
-      paddingBottom: z.number().optional(),
-      paddingLeft: z.number().optional(),
+      paddingTop: numericParam(z.number()).optional(),
+      paddingRight: numericParam(z.number()).optional(),
+      paddingBottom: numericParam(z.number()).optional(),
+      paddingLeft: numericParam(z.number()).optional(),
       primaryAxisAlignItems: z.enum(["MIN", "MAX", "CENTER", "SPACE_BETWEEN"]).optional(),
       counterAxisAlignItems: z.enum(["MIN", "MAX", "CENTER", "BASELINE"]).optional(),
       layoutPositioning: z
@@ -192,8 +168,10 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
         ),
       layoutSizingHorizontal: z.enum(["FIXED", "HUG", "FILL"]).optional(),
       layoutSizingVertical: z.enum(["FIXED", "HUG", "FILL"]).optional(),
-      itemSpacing: z.number().optional().describe("Spacing between children"),
-      counterAxisSpacing: z.number().optional().describe("Spacing between wrapped rows/columns (requires WRAP)"),
+      itemSpacing: numericParam(z.number()).optional().describe("Spacing between children"),
+      counterAxisSpacing: numericParam(z.number())
+        .optional()
+        .describe("Spacing between wrapped rows/columns (requires WRAP)"),
 
       // Design token variable bindings
       variables: z
@@ -227,7 +205,9 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
       textStyleId: z
         .string()
         .optional()
-        .describe("Text style ID to apply (from get_design_system). Loads fonts automatically."),
+        .describe(
+          "Text style ID to apply (from get_design_system) — copy it verbatim; a short def id ('s1') or a bare style key without the 'S:' prefix is rejected. Loads fonts automatically, and on the remote transport a style whose own font is absent from the headless VM fails naming that font: apply a style whose font is available, or skip textStyleId and set fontFamily/fontWeight/fontSize directly. Same for a node already on an absent family — only an edit carrying fontFamily can move it onto an available one (fontSize or fontWeight alone cannot).",
+        ),
       effectStyleId: z
         .string()
         .optional()

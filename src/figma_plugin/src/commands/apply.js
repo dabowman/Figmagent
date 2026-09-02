@@ -3,7 +3,7 @@
 // variable bindings, text styles, effect styles, and deletion in a single call.
 // Accepts a flat list or nested tree of node references.
 
-import { toNumber, sendProgressUpdate, findNodeByIdInTree, prop, fail } from "../helpers.js";
+import { toNumber, sendProgressUpdate, findNodeByIdInTree, hasAutoLayout, prop, fail } from "../helpers.js";
 import { setCharacters } from "../setcharacters.js";
 import { FIELD_MAP } from "./styles.js";
 import { runPostWriteAssertions } from "../assertions.js";
@@ -44,10 +44,7 @@ function isInsideInstance(node) {
 }
 
 function parentHasAutoLayout(node) {
-  const parent = prop(node, "parent");
-  if (!parent) return false;
-  const layoutMode = prop(parent, "layoutMode");
-  return !!layoutMode && layoutMode !== "NONE";
+  return hasAutoLayout(prop(node, "parent"));
 }
 
 // Flatten a potentially nested node list into a flat array of operations
@@ -194,22 +191,90 @@ export async function bindVariableToNode(node, field, variableId) {
   return null;
 }
 
-// Load every font a TEXT node currently uses, so its text properties can be
-// mutated. Handles the mixed-font case by loading each range's font.
-async function loadNodeFonts(node) {
-  if (node.fontName !== figma.mixed) {
-    await figma.loadFontAsync(node.fontName);
-  } else {
-    const len = node.characters.length;
-    const fontsToLoad = {};
-    for (let i = 0; i < len; i++) {
-      const f = node.getRangeFontName(i, i + 1);
-      const key = f.family + ":" + f.style;
-      if (!fontsToLoad[key]) fontsToLoad[key] = f;
+// BUG-032 — the style pre-load swallowed its exception, so every downstream
+// miss reported "not found or not cached" no matter what actually went wrong.
+// The usual trigger is an unloadable font (loadFontAsync throws for a family the
+// remote VM does not have), and the style exists perfectly well. Stating a cause
+// you did not measure is the same failure as stating no fix at all: the agent
+// acts on the text, and here it went looking for a missing style that was there.
+//
+// The recorded reason carries WHICH await threw, because the two have opposite
+// remedies: `getStyleByIdAsync` rejecting means the id itself is bad (a short
+// def id, a bare style key, an id from another file) and no font advice applies,
+// while a `loadFontAsync` rejection means the style's OWN font is absent from
+// this VM — changing the node's font cannot make that load succeed, so the
+// remedy has to avoid textStyleId rather than re-enter it.
+function failStyleLookup(kind, styleId, styleErrors) {
+  const err = styleErrors ? styleErrors[styleId] : undefined;
+  if (err && err.kind === "font") {
+    fail(
+      kind + " style " + styleId + " resolved, but its own font (" + err.font + ") could not be loaded: " + err.reason,
+      "the style's font is unavailable in this VM, so re-sending this style through edit fails identically — " +
+        "apply a text style whose font is available, or skip textStyleId and set the type directly with edit " +
+        "(fontFamily naming an available family, plus fontWeight/fontSize), then re-bind the fontFamily variable last",
+    );
+  }
+  if (err) {
+    fail(
+      kind + " style id " + styleId + " was rejected: " + err.reason,
+      "the id itself did not resolve — copy it verbatim from get_design_system (or the node's defs.styles); " +
+        'a short def id like "s1", a bare style key without the "S:" prefix, or an id from another file will not resolve',
+    );
+  }
+  fail(
+    kind + " style not found: " + styleId,
+    "verify the id with get_design_system (or read the node's defs.styles) — a style id from a " +
+      "different file will not resolve in this one",
+  );
+}
+
+// Every font the node currently uses — one entry, or one per distinct range
+// font when the node is figma.mixed.
+function currentFontsOf(node) {
+  if (node.fontName !== figma.mixed) return [node.fontName];
+  const seen = {};
+  const fonts = [];
+  const len = node.characters.length;
+  for (let i = 0; i < len; i++) {
+    const f = node.getRangeFontName(i, i + 1);
+    const key = f.family + ":" + f.style;
+    if (!seen[key]) {
+      seen[key] = true;
+      fonts.push(f);
     }
-    const fontEntries = Object.keys(fontsToLoad);
-    for (let j = 0; j < fontEntries.length; j++) {
-      await figma.loadFontAsync(fontsToLoad[fontEntries[j]]);
+  }
+  return fonts;
+}
+
+// Load the font(s) the node already uses, which Figma requires before it will
+// allow text property mutations.
+//
+// A family absent from this VM — the normal case for custom typefaces on the
+// remote transport (BUG-033) — makes loadFontAsync throw, and Figma's own text
+// ("call loadFontAsync first") is unactionable when the font simply does not
+// exist here. Two situations, two outcomes:
+//
+//   canSwap — the caller supplies a replacement FAMILY, which is exactly the
+//     swap this calls for. Skip the unloadable font and let the caller assign a
+//     loadable one over it; setCharacters() recovers the same way, and the
+//     post-write font_fallback assertion still reports it if the replacement
+//     does not take.
+//   otherwise — nothing to recover with, so state the swap remedy rather than
+//     re-throwing Figma's fix-less text.
+async function loadCurrentFonts(node, canSwap) {
+  const fonts = currentFontsOf(node);
+  for (let i = 0; i < fonts.length; i++) {
+    try {
+      await figma.loadFontAsync(fonts[i]);
+    } catch (e) {
+      if (canSwap) continue;
+      const reason = e && e.message ? e.message : String(e);
+      fail(
+        "Cannot load the current font of " + node.id + " (" + fonts[i].family + " " + fonts[i].style + "): " + reason,
+        "this VM does not have that font, and this op carries no replacement to swap in — send fontFamily (plus " +
+          "fontWeight if the weight matters) in an edit to move the node onto an available font first, then " +
+          "re-apply this op, then re-bind the fontFamily variable last",
+      );
     }
   }
 }
@@ -233,23 +298,35 @@ function toLineHeight(value) {
   return { value: toNumber(value, 0), unit: "PIXELS" };
 }
 
-async function applyTextStyle(node, styleId, styleCache) {
-  if (node.type !== "TEXT") throw new Error("Not a TEXT node: " + node.id + " (type: " + node.type + ")");
+async function applyTextStyle(node, styleId, styleCache, styleErrors) {
+  if (node.type !== "TEXT") {
+    fail(
+      "Not a TEXT node: " + node.id + " (type: " + node.type + ")",
+      "textStyleId only applies to TEXT nodes — read the node to find its TEXT child and target that, or drop textStyleId from this op",
+    );
+  }
 
   const style = styleCache[styleId];
-  if (!style) throw new Error("Text style not found or not cached: " + styleId);
+  if (!style) failStyleLookup("Text", styleId, styleErrors);
 
-  // Load the node's current fonts before restyling
-  await loadNodeFonts(node);
+  // Load the node's current fonts before restyling. This op carries no
+  // replacement font of its own — the style supplies one, but only after the
+  // mutation Figma is gating — so an unloadable current font has to be reported.
+  await loadCurrentFonts(node, false);
 
   await node.setTextStyleIdAsync(styleId);
 }
 
-async function applyEffectStyle(node, styleId, styleCache) {
-  if (!("effects" in node)) throw new Error("Node does not support effects: " + node.id + " (type: " + node.type + ")");
+async function applyEffectStyle(node, styleId, styleCache, styleErrors) {
+  if (!("effects" in node)) {
+    fail(
+      "Node does not support effects: " + node.id + " (type: " + node.type + ")",
+      "effectStyleId needs a node with an effects property (FRAME, COMPONENT, INSTANCE, shape or TEXT) — target that node instead",
+    );
+  }
 
   const style = styleCache[styleId];
-  if (!style) throw new Error("Effect style not found or not cached: " + styleId);
+  if (!style) failStyleLookup("Effect", styleId, styleErrors);
 
   await node.setEffectStyleIdAsync(styleId);
 }
@@ -418,7 +495,7 @@ async function applyComponentProperties(node, componentProperties) {
   }
 }
 
-async function processNode(op, styleCache, ctx) {
+async function processNode(op, styleCache, ctx, styleErrors) {
   const warnings = [];
   let node = await figma.getNodeByIdAsync(op.nodeId);
   if (!node) {
@@ -653,8 +730,14 @@ async function processNode(op, styleCache, ctx) {
 
   // Phase 2.5: Font properties (TEXT nodes only — load current font first, then apply new one)
   if (node.type === "TEXT" && (op.fontFamily || op.fontWeight || op.fontSize)) {
-    // Load current font to allow property mutations
-    await loadNodeFonts(node);
+    // Load current font to allow property mutations. An op that supplies a
+    // replacement FAMILY is a font swap, so an unloadable current font must not
+    // block it — that is the very move the style/font error messages prescribe,
+    // and it has to work through `edit` or the advice is circular. Only the
+    // family qualifies: a fontWeight- or fontSize-only op stays on the absent
+    // family, so it has no escape and would otherwise report a silent no-op —
+    // those keep failing, now with the remedy stated.
+    await loadCurrentFonts(node, Boolean(op.fontFamily));
 
     const weightMap = {
       100: "Thin",
@@ -700,7 +783,10 @@ async function processNode(op, styleCache, ctx) {
       op.textCase !== undefined ||
       op.textDecoration !== undefined)
   ) {
-    await loadNodeFonts(node);
+    // canSwap = false: this op carries no replacement family, so an unloadable
+    // current font has to be reported with the swap remedy (BUG-032) rather
+    // than skipped — skipping would let the assignment below silently no-op.
+    await loadCurrentFonts(node, false);
     if (op.letterSpacing !== undefined) node.letterSpacing = toLetterSpacing(op.letterSpacing);
     if (op.lineHeight !== undefined) node.lineHeight = toLineHeight(op.lineHeight);
     if (op.textCase !== undefined) node.textCase = op.textCase;
@@ -867,12 +953,12 @@ async function processNode(op, styleCache, ctx) {
 
   // Phase 4: Text style (loads fonts, must happen after other props)
   if (op.textStyleId) {
-    await applyTextStyle(node, op.textStyleId, styleCache);
+    await applyTextStyle(node, op.textStyleId, styleCache, styleErrors);
   }
 
   // Phase 5: Effect style (drop shadows, inner shadows, blurs)
   if (op.effectStyleId) {
-    await applyEffectStyle(node, op.effectStyleId, styleCache);
+    await applyEffectStyle(node, op.effectStyleId, styleCache, styleErrors);
   }
 
   // Phase 6: Delete — always runs LAST so any other ops on this node complete first
@@ -970,18 +1056,35 @@ export async function apply(params) {
     if (allOps[i].effectStyleId) uniqueStyleIds[allOps[i].effectStyleId] = true;
   }
   const styleCache = {};
+  // Why a style id never reached the cache. Keep the reason AND which await
+  // produced it — it is the only place the true cause exists (BUG-032), and a
+  // rejected id and an absent font need opposite remedies.
+  const styleErrors = {};
   const styleKeys = Object.keys(uniqueStyleIds);
   for (let i = 0; i < styleKeys.length; i++) {
+    let style;
     try {
-      const style = await figma.getStyleByIdAsync(styleKeys[i]);
-      if (style && style.type === "TEXT") {
-        if (style.fontName) await figma.loadFontAsync(style.fontName);
-        styleCache[styleKeys[i]] = style;
-      } else if (style && style.type === "EFFECT") {
-        styleCache[styleKeys[i]] = style;
+      style = await figma.getStyleByIdAsync(styleKeys[i]);
+    } catch (e) {
+      styleErrors[styleKeys[i]] = { kind: "lookup", reason: e && e.message ? e.message : String(e) };
+      continue;
+    }
+    if (style && style.type === "TEXT") {
+      if (style.fontName) {
+        try {
+          await figma.loadFontAsync(style.fontName);
+        } catch (e) {
+          styleErrors[styleKeys[i]] = {
+            kind: "font",
+            reason: e && e.message ? e.message : String(e),
+            font: style.fontName.family + " " + style.fontName.style,
+          };
+          continue;
+        }
       }
-    } catch (_e) {
-      // Style load failure will be caught per-node later
+      styleCache[styleKeys[i]] = style;
+    } else if (style && style.type === "EFFECT") {
+      styleCache[styleKeys[i]] = style;
     }
   }
 
@@ -1008,7 +1111,7 @@ export async function apply(params) {
     const chunk = allOps.slice(start, end);
 
     const chunkPromises = chunk.map((op) =>
-      processNode(op, styleCache, ctx).catch((e) => {
+      processNode(op, styleCache, ctx, styleErrors).catch((e) => {
         // Per-op error entry — one bad op never aborts the batch.
         let message = e.message || String(e);
         // Mixed-value failures (figma.mixed symbols) get a stated fix.
