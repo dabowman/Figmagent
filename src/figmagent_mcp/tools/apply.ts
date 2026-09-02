@@ -142,7 +142,9 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
       textStyleId: z
         .string()
         .optional()
-        .describe("Text style ID to apply (from get_design_system). Loads fonts automatically."),
+        .describe(
+          "Text style ID to apply (from get_design_system) — copy it verbatim; a short def id ('s1') or a bare style key without the 'S:' prefix is rejected. Loads fonts automatically, and on the remote transport a style whose own font is absent from the headless VM fails naming that font: apply a style whose font is available, or skip textStyleId and set fontFamily/fontWeight/fontSize directly. Same for a node already on an absent family — only an edit carrying fontFamily can move it onto an available one (fontSize or fontWeight alone cannot).",
+        ),
       effectStyleId: z
         .string()
         .optional()
