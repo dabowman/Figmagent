@@ -1,7 +1,7 @@
 {
   "name": "figmagent",
   "description": "Figmagent - AI Agent to Figma MCP",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "type": "module",
   "scripts": {
     "socket": "bun run src/socket.ts",
