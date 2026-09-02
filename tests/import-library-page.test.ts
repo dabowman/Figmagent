@@ -161,7 +161,7 @@ describe("[BUG-018] importing into a parent on another page", () => {
     expect(scrolled).toBe(true);
   });
 
-  test("a failing selection never fails the import", async () => {
+  test("a failing page switch never fails the import", async () => {
     const target = makeFrame("137:14", pageB);
     // Headless VMs can refuse the page switch outright; the import must survive.
     (globalThis as any).figma.setCurrentPageAsync = async () => {
@@ -174,9 +174,50 @@ describe("[BUG-018] importing into a parent on another page", () => {
     expect(target.children[0].id).toBe("i1");
   });
 
+  test("a failing selection never fails the import", async () => {
+    const target = makeFrame("137:14", pageB);
+    // The page switch succeeds but the selection setter still refuses — the
+    // guarantee is about the import, not about the selection landing.
+    Object.defineProperty(pageB, "selection", {
+      get() {
+        return [];
+      },
+      set() {
+        throw new Error("in set_selection: The selection of a page can only include nodes in that page");
+      },
+      configurable: true,
+    });
+
+    const res = await importLibraryComponent({ componentKey: KEY, parentNodeId: target.id });
+
+    expect(res.instanceId).toBe("i1");
+    expect(target.children[0].id).toBe("i1");
+  });
+
   test("import with no parentNodeId is unaffected", async () => {
     const res = await importLibraryComponent({ componentKey: KEY });
     expect(res.instanceId).toBe("i1");
     expect(pageA.selection.map((n: any) => n.id)).toEqual(["i1"]);
+  });
+});
+
+describe("importLibraryComponent parent validation", () => {
+  test("an unresolvable parentNodeId fails with a stated fix, not a silent misplacement", async () => {
+    await expect(importLibraryComponent({ componentKey: KEY, parentNodeId: "999:999" })).rejects.toThrow(
+      /Parent node not found: 999:999\. Fix: /,
+    );
+    // Nothing may be left behind on the current page.
+    expect(pageA.children).toHaveLength(0);
+  });
+
+  test("a parent that cannot hold children fails with a stated fix", async () => {
+    const leaf: any = { id: "7:7", type: "ELLIPSE", name: "Dot", parent: null };
+    pageA.appendChild(leaf);
+    nodesById[leaf.id] = leaf;
+
+    await expect(importLibraryComponent({ componentKey: KEY, parentNodeId: leaf.id })).rejects.toThrow(
+      /Parent node does not accept children: 7:7 \(type: ELLIPSE\)\. Fix: /,
+    );
+    expect(pageA.children.map((n: any) => n.id)).toEqual(["7:7"]);
   });
 });

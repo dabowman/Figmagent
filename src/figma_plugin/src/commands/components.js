@@ -1,14 +1,6 @@
 // Component commands: create, combine, instances, swap, main component, instance overrides
 
-import { fail, prop } from "../helpers.js";
-
-// Walk up to the PAGE a node lives on. Returns null for a node that is not yet
-// in the document tree.
-function pageOf(node) {
-  let cur = node;
-  while (cur && cur.type !== "PAGE") cur = prop(cur, "parent");
-  return cur && cur.type === "PAGE" ? cur : null;
-}
+import { fail, pageOf } from "../helpers.js";
 
 export async function createComponent(params) {
   const { x = 0, y = 0, width = 100, height = 100, name = "Component", parentId } = params || {};
@@ -158,6 +150,28 @@ export async function importLibraryComponent(params) {
 
   if (!componentKey) throw new Error("Missing componentKey parameter");
 
+  // Resolve the parent up front. A parentNodeId that didn't resolve — or resolved
+  // to a node that can't hold children — used to be swallowed silently: the
+  // instance stayed on whatever `figma.currentPage` happened to be while the
+  // response still reported success. On remote that page is the file's default
+  // page, nowhere near where the caller asked for it. Validating before
+  // `createInstance()` also means a rejection costs nothing and leaves no orphan
+  // instance behind on the plugin transport (which is not atomic).
+  let parent = null;
+  if (parentNodeId) {
+    parent = await figma.getNodeByIdAsync(parentNodeId);
+    if (!parent)
+      fail(
+        "Parent node not found: " + parentNodeId,
+        "verify the ID with read, or omit parentNodeId to place the instance on the current page",
+      );
+    if (!("appendChild" in parent))
+      fail(
+        "Parent node does not accept children: " + parentNodeId + " (type: " + parent.type + ")",
+        "pass a FRAME, GROUP, COMPONENT, SECTION or PAGE id, or omit parentNodeId to place the instance on the current page",
+      );
+  }
+
   let imported;
   try {
     imported = await figma.importComponentByKeyAsync(componentKey);
@@ -183,7 +197,7 @@ export async function importLibraryComponent(params) {
 
   // Load fonts for all TEXT nodes in the imported component before reparenting.
   // Without this, appending to a parentNodeId fails on components containing text.
-  if (parentNodeId) {
+  if (parent) {
     const fontsToLoad = new Set();
     const collectFonts = (node) => {
       if (node.type === "TEXT") {
@@ -222,11 +236,8 @@ export async function importLibraryComponent(params) {
     instance.y = position.y;
   }
 
-  if (parentNodeId) {
-    const parent = await figma.getNodeByIdAsync(parentNodeId);
-    if (parent && "appendChild" in parent) {
-      parent.appendChild(instance);
-    }
+  if (parent) {
+    parent.appendChild(instance);
   }
 
   if (nameOverride) {
