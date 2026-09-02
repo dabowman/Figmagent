@@ -567,7 +567,7 @@ async function coerceComponentPropertyValue(key, propType, rawValue, defDefs) {
     if (typeof rawValue !== "boolean") {
       return {
         error: "BOOLEAN property '" + key + "' expects true/false, got " + typeof rawValue,
-        fix: "pass a boolean — e.g. { \"" + baseComponentPropertyName(key) + "\": false }",
+        fix: 'pass a boolean — e.g. { "' + baseComponentPropertyName(key) + '": false }',
       };
     }
     return { value: rawValue };
@@ -600,7 +600,14 @@ async function coerceComponentPropertyValue(key, propType, rawValue, defDefs) {
     }
     if (target.type !== "COMPONENT" && target.type !== "COMPONENT_SET") {
       return {
-        error: "INSTANCE_SWAP property '" + key + "' references " + rawValue + " (type: " + target.type + "), not a component",
+        error:
+          "INSTANCE_SWAP property '" +
+          key +
+          "' references " +
+          rawValue +
+          " (type: " +
+          target.type +
+          "), not a component",
         fix: "pass the node id of a COMPONENT or COMPONENT_SET",
       };
     }
@@ -647,7 +654,7 @@ async function applyComponentProperties(node, componentProperties) {
   if (userKeys.length === 0) {
     fail(
       "componentProperties is empty on instance " + node.id,
-      "pass at least one property — read the instance to list its keys, then set { \"<key>\": <value> }",
+      'pass at least one property — read the instance to list its keys, then set { "<key>": <value> }',
     );
   }
   // VARIANT options (and INSTANCE_SWAP preferred values) live on the MAIN

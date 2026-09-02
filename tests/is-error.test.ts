@@ -17,11 +17,17 @@ describe("looksLikeError (#60)", () => {
   });
 
   test("flags validation rejections", () => {
-    expect(looksLikeError({ content: [{ type: "text", text: "Error: provide componentSetNodeId or componentSetNodeIds." }] })).toBe(true);
+    expect(
+      looksLikeError({
+        content: [{ type: "text", text: "Error: provide componentSetNodeId or componentSetNodeIds." }],
+      }),
+    ).toBe(true);
   });
 
   test("flags timeout messages from both transports", () => {
-    expect(looksLikeError({ content: [{ type: "text", text: 'Write operation "set_text_content" timed out after 30s' }] })).toBe(true);
+    expect(
+      looksLikeError({ content: [{ type: "text", text: 'Write operation "set_text_content" timed out after 30s' }] }),
+    ).toBe(true);
     expect(looksLikeError({ content: [{ type: "text", text: "Request to Figma timed out" }] })).toBe(true);
   });
 
@@ -32,7 +38,9 @@ describe("looksLikeError (#60)", () => {
   });
 
   test("flags connection-loss text", () => {
-    expect(looksLikeError({ content: [{ type: "text", text: "Not connected to Figma. Attempting to connect..." }] })).toBe(true);
+    expect(
+      looksLikeError({ content: [{ type: "text", text: "Not connected to Figma. Attempting to connect..." }] }),
+    ).toBe(true);
     expect(looksLikeError({ content: [{ type: "text", text: "Connection closed" }] })).toBe(true);
   });
 

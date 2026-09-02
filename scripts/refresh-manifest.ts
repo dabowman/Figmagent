@@ -24,16 +24,16 @@ const MANIFEST = join(ANALYSIS_DIR, "sessions.json");
 const countOnly = process.argv.includes("--count");
 
 interface Entry {
-	sessionType?: "figma" | "dev" | "empty";
-	skip?: boolean;
-	toolCalls: number;
-	figmaToolCalls: number;
-	durationMinutes: number;
-	sourceModified: number;
-	sourceSignature?: string; // "${toolCalls}:${figmaToolCalls}" — content fingerprint
-	analysis?: string;
-	analyzedAt?: number;
-	analyzedSignature?: string; // the sourceSignature the recorded analysis covered
+  sessionType?: "figma" | "dev" | "empty";
+  skip?: boolean;
+  toolCalls: number;
+  figmaToolCalls: number;
+  durationMinutes: number;
+  sourceModified: number;
+  sourceSignature?: string; // "${toolCalls}:${figmaToolCalls}" — content fingerprint
+  analysis?: string;
+  analyzedAt?: number;
+  analyzedSignature?: string; // the sourceSignature the recorded analysis covered
 }
 
 // seconds-since-epoch with 2 decimal places, matching the prior Python script
@@ -45,33 +45,28 @@ const HOME = process.env.HOME || "~";
 // recorded cwd + id (~/.claude/projects/<encoded-cwd>/<id>.jsonl). Returns
 // undefined if it's been rotated away. Preferred over the extracted JSON's
 // mtime, which bumps on every re-extraction even when content is unchanged.
-async function originalTranscriptMtime(
-	cwd: string | undefined,
-	sid: string,
-): Promise<number | undefined> {
-	if (!cwd) return undefined;
-	const encoded = cwd.replace(/\//g, "-");
-	try {
-		return mtimeSeconds(
-			(await stat(join(HOME, ".claude/projects", encoded, `${sid}.jsonl`))).mtimeMs,
-		);
-	} catch {
-		return undefined;
-	}
+async function originalTranscriptMtime(cwd: string | undefined, sid: string): Promise<number | undefined> {
+  if (!cwd) return undefined;
+  const encoded = cwd.replace(/\//g, "-");
+  try {
+    return mtimeSeconds((await stat(join(HOME, ".claude/projects", encoded, `${sid}.jsonl`))).mtimeMs);
+  } catch {
+    return undefined;
+  }
 }
 
 let manifest: { sessions: Record<string, Entry> };
 try {
-	manifest = JSON.parse(await readFile(MANIFEST, "utf-8"));
+  manifest = JSON.parse(await readFile(MANIFEST, "utf-8"));
 } catch {
-	manifest = { sessions: {} };
+  manifest = { sessions: {} };
 }
 
 let files: string[] = [];
 try {
-	files = (await readdir(SESSIONS_DIR)).filter((f) => f.endsWith(".json")).sort();
+  files = (await readdir(SESSIONS_DIR)).filter((f) => f.endsWith(".json")).sort();
 } catch {
-	// sessions-json not created yet — nothing to scan
+  // sessions-json not created yet — nothing to scan
 }
 
 // Track session IDs still present on disk so stale manifest keys (their extracted
@@ -81,136 +76,131 @@ try {
 const seen = new Set<string>();
 
 for (const f of files) {
-	const path = join(SESSIONS_DIR, f);
-	let data: {
-		sessionId?: string;
-		messages?: unknown;
-		subAgents?: unknown;
-		metadata?: {
-			cwd?: string;
-			uniqueTools?: string[];
-			toolCallCount?: number;
-			duration?: { minutes?: number };
-		};
-	};
-	let jsonMtime: number;
-	try {
-		data = JSON.parse(await readFile(path, "utf-8"));
-		// stat inside the try: a TOCTOU removal between readdir and here must
-		// not throw an unhandled rejection that aborts the whole refresh.
-		jsonMtime = mtimeSeconds((await stat(path)).mtimeMs);
-	} catch {
-		continue;
-	}
-	const sid = data.sessionId;
-	if (!sid) continue;
-	seen.add(sid);
+  const path = join(SESSIONS_DIR, f);
+  let data: {
+    sessionId?: string;
+    messages?: unknown;
+    subAgents?: unknown;
+    metadata?: {
+      cwd?: string;
+      uniqueTools?: string[];
+      toolCallCount?: number;
+      duration?: { minutes?: number };
+    };
+  };
+  let jsonMtime: number;
+  try {
+    data = JSON.parse(await readFile(path, "utf-8"));
+    // stat inside the try: a TOCTOU removal between readdir and here must
+    // not throw an unhandled rejection that aborts the whole refresh.
+    jsonMtime = mtimeSeconds((await stat(path)).mtimeMs);
+  } catch {
+    continue;
+  }
+  const sid = data.sessionId;
+  if (!sid) continue;
+  seen.add(sid);
 
-	const m = data.metadata || {};
-	const tools = m.uniqueTools || [];
-	const figmaTools = tools.filter(isFigmagentTool);
-	const tc = m.toolCallCount || 0;
-	// Content fingerprint — re-analysis is keyed on THIS, not mtime. Even the
-	// original transcript's mtime drifts when a session is touched without
-	// changing analyzable content, producing false "updated" flags (observed:
-	// a transcript 13 min newer than its analysis with identical 12 calls).
-	const sourceSignature = `${tc}:${figmaTools.length}`;
-	// mtime is still recorded (display / ordering / resync hint) but no longer
-	// the freshness key.
-	const sourceModified = (await originalTranscriptMtime(m.cwd, sid)) ?? jsonMtime;
+  const m = data.metadata || {};
+  const tools = m.uniqueTools || [];
+  const figmaTools = tools.filter(isFigmagentTool);
+  const tc = m.toolCallCount || 0;
+  // Content fingerprint — re-analysis is keyed on THIS, not mtime. Even the
+  // original transcript's mtime drifts when a session is touched without
+  // changing analyzable content, producing false "updated" flags (observed:
+  // a transcript 13 min newer than its analysis with identical 12 calls).
+  const sourceSignature = `${tc}:${figmaTools.length}`;
+  // mtime is still recorded (display / ordering / resync hint) but no longer
+  // the freshness key.
+  const sourceModified = (await originalTranscriptMtime(m.cwd, sid)) ?? jsonMtime;
 
-	const existing = manifest.sessions[sid] || ({} as Entry);
-	const entry: Entry = {
-		toolCalls: tc,
-		figmaToolCalls: figmaTools.length,
-		durationMinutes: Math.round(m.duration?.minutes ?? 0),
-		sourceModified,
-	};
+  const existing = manifest.sessions[sid] || ({} as Entry);
+  const entry: Entry = {
+    toolCalls: tc,
+    figmaToolCalls: figmaTools.length,
+    durationMinutes: Math.round(m.duration?.minutes ?? 0),
+    sourceModified,
+  };
 
-	// A Figmagent tool name in `uniqueTools` is necessary but not sufficient — the
-	// call has to have succeeded and done something (INFRA-005). Sub-agent
-	// transcripts count too (`--include-agents`), so a session that delegated its
-	// canvas work is not demoted on the parent's own failed calls. When the
-	// messages are unavailable, fall back to the old presence test.
-	const ranFigmagent = figmaTools.length > 0 && (sessionHasEffectiveFigmaCall(data) ?? true);
+  // A Figmagent tool name in `uniqueTools` is necessary but not sufficient — the
+  // call has to have succeeded and done something (INFRA-005). Sub-agent
+  // transcripts count too (`--include-agents`), so a session that delegated its
+  // canvas work is not demoted on the parent's own failed calls. When the
+  // messages are unavailable, fall back to the old presence test.
+  const ranFigmagent = figmaTools.length > 0 && (sessionHasEffectiveFigmaCall(data) ?? true);
 
-	if (tc === 0) {
-		entry.sessionType = "empty";
-		entry.skip = true;
-	} else if (ranFigmagent) {
-		entry.sessionType = "figma";
-		entry.sourceSignature = sourceSignature;
-		if (existing.analysis) {
-			entry.analysis = existing.analysis;
-			try {
-				const af = join(ANALYSIS_DIR, existing.analysis);
-				entry.analyzedAt = mtimeSeconds((await stat(af)).mtimeMs);
-			} catch {
-				// analysis file deleted — leave analyzedSignature unset so the
-				// needs-filter re-flags it.
-			}
-			if (entry.analyzedAt !== undefined) {
-				// Maintain analyzedSignature here (refresh-owned, no skill help):
-				//  • migrate — a pre-signature analysis is assumed to cover current
-				//    content (this is what stops the historical mtime false positives);
-				//  • resync — the analysis file is at/after the source mtime, so it
-				//    reflects current content;
-				//  • else keep the prior signature, so a genuine content change
-				//    (a different signature) is still detected.
-				entry.analyzedSignature =
-					existing.analyzedSignature === undefined ||
-					entry.analyzedAt >= sourceModified
-						? sourceSignature
-						: existing.analyzedSignature;
-			}
-		}
-	} else {
-		entry.sessionType = "dev";
-		entry.skip = true;
-		// Carry any recorded analysis mapping through the demotion. The manifest is
-		// rewritten in full every run, so dropping it here is permanent: a session
-		// that ever classifies back as "figma" (the undecidable fallback, a
-		// re-extraction, a rule change) would be re-analyzed from scratch — exactly
-		// the wasted passes INFRA-005 removes — and its analysis doc left orphaned.
-		// The needs-analysis filter only looks at figma entries, so this is inert
-		// while the session stays dev. (SKILL.md promises the mapping is preserved.)
-		if (existing.analysis) {
-			entry.analysis = existing.analysis;
-			if (existing.analyzedAt !== undefined) entry.analyzedAt = existing.analyzedAt;
-			if (existing.analyzedSignature !== undefined) {
-				entry.analyzedSignature = existing.analyzedSignature;
-			}
-		}
-	}
+  if (tc === 0) {
+    entry.sessionType = "empty";
+    entry.skip = true;
+  } else if (ranFigmagent) {
+    entry.sessionType = "figma";
+    entry.sourceSignature = sourceSignature;
+    if (existing.analysis) {
+      entry.analysis = existing.analysis;
+      try {
+        const af = join(ANALYSIS_DIR, existing.analysis);
+        entry.analyzedAt = mtimeSeconds((await stat(af)).mtimeMs);
+      } catch {
+        // analysis file deleted — leave analyzedSignature unset so the
+        // needs-filter re-flags it.
+      }
+      if (entry.analyzedAt !== undefined) {
+        // Maintain analyzedSignature here (refresh-owned, no skill help):
+        //  • migrate — a pre-signature analysis is assumed to cover current
+        //    content (this is what stops the historical mtime false positives);
+        //  • resync — the analysis file is at/after the source mtime, so it
+        //    reflects current content;
+        //  • else keep the prior signature, so a genuine content change
+        //    (a different signature) is still detected.
+        entry.analyzedSignature =
+          existing.analyzedSignature === undefined || entry.analyzedAt >= sourceModified
+            ? sourceSignature
+            : existing.analyzedSignature;
+      }
+    }
+  } else {
+    entry.sessionType = "dev";
+    entry.skip = true;
+    // Carry any recorded analysis mapping through the demotion. The manifest is
+    // rewritten in full every run, so dropping it here is permanent: a session
+    // that ever classifies back as "figma" (the undecidable fallback, a
+    // re-extraction, a rule change) would be re-analyzed from scratch — exactly
+    // the wasted passes INFRA-005 removes — and its analysis doc left orphaned.
+    // The needs-analysis filter only looks at figma entries, so this is inert
+    // while the session stays dev. (SKILL.md promises the mapping is preserved.)
+    if (existing.analysis) {
+      entry.analysis = existing.analysis;
+      if (existing.analyzedAt !== undefined) entry.analyzedAt = existing.analyzedAt;
+      if (existing.analyzedSignature !== undefined) {
+        entry.analyzedSignature = existing.analyzedSignature;
+      }
+    }
+  }
 
-	manifest.sessions[sid] = entry;
+  manifest.sessions[sid] = entry;
 }
 
 // Prune manifest entries whose extracted session JSON is no longer on disk, so a
 // removed session can't keep the needs-analysis count above zero indefinitely.
 for (const sid of Object.keys(manifest.sessions)) {
-	if (!seen.has(sid)) delete manifest.sessions[sid];
+  if (!seen.has(sid)) delete manifest.sessions[sid];
 }
 
 await writeFile(MANIFEST, JSON.stringify(manifest, null, 2));
 
-const figma = Object.entries(manifest.sessions).filter(
-	([, v]) => v.sessionType === "figma",
-);
+const figma = Object.entries(manifest.sessions).filter(([, v]) => v.sessionType === "figma");
 const needs = figma
-	.filter(([, v]) => !v.analysis || v.analyzedSignature !== v.sourceSignature)
-	.sort((a, b) => a[1].sourceModified - b[1].sourceModified);
+  .filter(([, v]) => !v.analysis || v.analyzedSignature !== v.sourceSignature)
+  .sort((a, b) => a[1].sourceModified - b[1].sourceModified);
 
 if (countOnly) {
-	console.log(needs.length);
+  console.log(needs.length);
 } else {
-	console.log(`Figma sessions: ${figma.length}, needs analysis: ${needs.length}`);
-	for (const [sid, v] of needs) {
-		const status = v.analysis ? "updated" : "new";
-		console.log(
-			`  ${sid}  ${String(v.toolCalls).padStart(4)} calls  ${String(
-				v.figmaToolCalls,
-			).padStart(2)} figma  (${status})`,
-		);
-	}
+  console.log(`Figma sessions: ${figma.length}, needs analysis: ${needs.length}`);
+  for (const [sid, v] of needs) {
+    const status = v.analysis ? "updated" : "new";
+    console.log(
+      `  ${sid}  ${String(v.toolCalls).padStart(4)} calls  ${String(v.figmaToolCalls).padStart(2)} figma  (${status})`,
+    );
+  }
 }

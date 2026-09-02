@@ -105,9 +105,7 @@ describe("getLibraryVariables — drill into a collection", () => {
     await expect(getLibraryVariables({ collectionKey: "nope" })).rejects.toThrow(/Fix:/);
     // Regression guard: the fix must point at the Plugin-API enumerator
     // (get_enabled_library_variables), not the REST tool get_library_variables.
-    await expect(getLibraryVariables({ collectionKey: "nope" })).rejects.toThrow(
-      /get_enabled_library_variables/,
-    );
+    await expect(getLibraryVariables({ collectionKey: "nope" })).rejects.toThrow(/get_enabled_library_variables/);
   });
 });
 
