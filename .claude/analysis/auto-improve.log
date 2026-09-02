@@ -1190,3 +1190,70 @@ Also new: [TOOL-051] (`grep` has no absence criterion — 4 scripts asking "what
 Corroborations recorded on [BUG-037] (3-for-3 with the park, clean failure without it), [BUG-033] (6th, new call site `loadFontOrFail`), [TOOL-029] (28/28 `stdlib: false`), [TOOL-031], and the [BUG-014] onboarding half (5th occurrence — at this point the proposed docs line should just ship).
 [2026-09-02 05:04:30]   sessions needing analysis: 0
 [2026-09-02 05:04:30] committing analysis artifacts to main (local, no push)
+[2026-09-02 05:04:31] Stage C — sync improvement tracker → GitHub issues
+tracker→issues: 140 unique entries · 37 create, 0 close, 0 reopen, 12 drift, 78 in-sync, 13 resolved-unfiled
+DRIFT   #90 [TOOL-006] closed but tracker active (use --reopen)
+DRIFT   #98 [TOOL-021] closed but tracker active (use --reopen)
+DRIFT   #106 [TOOL-022] closed but tracker active (use --reopen)
+DRIFT   #111 [TOOL-025] closed but tracker active (use --reopen)
+DRIFT   #112 [BUG-021] closed but tracker active (use --reopen)
+DRIFT   #115 [BUG-022] closed but tracker active (use --reopen)
+DRIFT   #117 [TOOL-027] closed but tracker active (use --reopen)
+DRIFT   #119 [INFRA-005] closed but tracker active (use --reopen)
+DRIFT   #128 [BUG-027] closed but tracker active (use --reopen)
+DRIFT   #134 [BUG-030] closed but tracker active (use --reopen)
+DRIFT   #139 [TOOL-035] closed but tracker active (use --reopen)
+DRIFT   #144 [BUG-032] closed but tracker active (use --reopen)
+CREATE  [TOOL-037] (P1) `edit` cannot bind `fontWeight`, and the rejection message states a false reason
+CREATE  [BUG-034] (P1) A `fontWeight` binding made from the remote VM is inert — bound but unresolved, and reported as success
+CREATE  [BUG-035] (P2) The weight → face table is Inter-spelled, duplicated in three places, and misses silently
+CREATE  [AGENT-032] (P1) Put text on text styles, not per-node font properties — styles self-heal, nodes do not
+CREATE  [BUG-036] (P2) `combine_as_variants` has no page co-location pre-check — Figma's raw error escapes with no stated fix
+CREATE  [BUG-037] (P1) `edit`'s unloadable-font remedy tells the agent to abandon `textStyleId` — the style-face swap keeps it, and works
+CREATE  [TOOL-038] (P1) No first-class variable-mode override — checking a design in its second mode costs 6 calls
+CREATE  [TOOL-039] (P2) `edit` can apply an `effectStyleId` but cannot set `effects` — a variable-bound shadow needs `run_script`
+CREATE  [AGENT-033] (P1) A raw `clone()` in `run_script` parents to `figma.currentPage`, not to the source's parent
+CREATE  [BUG-038] (P1) An `opacity` variable binding resolves at 1/100 scale — the node renders invisible and nothing warns
+CREATE  [BUG-039] (P2) `setProperties` failures state a fix for the wrong problem when the real cause is an unavailable font
+CREATE  [TOOL-040] (P1) `fig.createNode` returns the create *response*, not the node — `.id` is undefined, and `fig.check` is skipped in silence
+CREATE  [TOOL-041] (P2) `edit` cannot set `strokeAlign` or a node/component `description`
+CREATE  [TOOL-042] (P2) Annotations can be written but never deleted — clearing one needs `run_script`
+CREATE  [TOOL-043] (P2) `lint` discards its whole issues array on a 5% budget overrun instead of trimming it
+CREATE  [BUG-040] (P1) A TEXT node on an unavailable font measures at width 0, and [BUG-009]'s documented repair does not work
+CREATE  [TOOL-044] (P2) `fig.prop` throws a raw `TypeError: invalid 'in' operand` on a null node, naming neither the node nor a fix
+CREATE  [AGENT-034] (P2) Close out a build against a re-run of `lint`, not against the first run's summary buckets
+CREATE  [BUG-041] (P1) `fig.loadFont` reports success for a font it never loaded
+CREATE  [BUG-042] (P2) `lint` counts an invisible paint as an unbound fill
+CREATE  [BUG-043] (P1) A variable-bound paint keeps its literal colour, and the remote VM renders the literal — `edit` seeds black
+CREATE  [TOOL-045] (P1) No way to ask what fonts the remote VM can actually render
+CREATE  [AGENT-035] (P2) `grep({variableId: [...]})` already does the cross-page token scan agents hand-roll in `run_script`
+CREATE  [BUG-044] (P1) Assigning `style.fontName` silently discards the style's `fontWeight` variable binding — the recommended font swap corrupts every consumer
+CREATE  [TOOL-046] (P2) `write`/`edit` cannot set an IMAGE paint — every image-bearing component ships as a placeholder disc
+CREATE  [TOOL-047] (P2) `combine_as_variants` cannot name the set it creates, and reports nothing about what its auto-layout did to the variants
+CREATE  [BUG-045] (P1) `get_reactions` silently drops every `CHANGE_TO` reaction — an interactive component always reads as "no interactions"
+CREATE  [TOOL-048] (P1) No tool authors prototype reactions — interactive components are `run_script`-only
+CREATE  [BUG-046] (P2) `get_reactions` appends an unconditional "You MUST … required next step" — false on an empty result, and false for the read case
+CREATE  [BUG-047] (P1) Concurrent remote sessions share `figma.currentPage` — a parentless `write` lands on another session's page
+CREATE  [TOOL-049] (P2) `lint` counts COMPONENT_SET wrapper chrome as unbound-token issues — 67% of findings were unactionable
+CREATE  [TOOL-050] (P1) `create_styles` implements the variable-bound text-style recipe correctly — and its description sends agents to `run_script` instead
+CREATE  [TOOL-051] (P1) `grep` can find nodes that *use* a style or variable, but not nodes that lack one
+CREATE  [AGENT-036] (P1) Tool schemas are selected once for the first phase and never re-searched when the task crosses domains
+CREATE  [TOOL-052] (P2) `update_variables` has no bulk property-only form — a 596-variable scope change is 48KB as a first-class call, 2.5KB as a script
+CREATE  [TOOL-053] (P2) `get_design_system` has no collections-only mode — agents reinvent an empty-regex probe
+CREATE  [TOOL-054] (P2) No document-scope override audit — `get_instance_overrides` reads one instance, for copying
+[2026-09-02 05:05:52] Stage D — dispatch draft fix PRs
+Stage D complete — **no PRs opened this run.** Nothing met the dispatch bar.
+
+**Candidate sweep** (`.claude/analysis/improvement-tracker.md`, 2060 lines): exactly one entry satisfies constraints 1–4 (`Auto-fixable: yes` + P0/P1 + status `identified`/`planned` + plan file present).
+
+- **TOOL-006** (Type coercion for tool parameters, P1, plan `.claude/plans/2026-06-22-TOOL-006.md`) — **skipped: preflight exit 3, no open GitHub issue.** Issue #90 was closed 2026-09-02T00:06Z, and the fix is already shipped: `numericParam()` is defined at `src/figmagent_mcp/utils.ts:26` and applied 30× in `tools/apply.ts`, 15× in `tools/create.ts`. The tracker status (`identified`) is stale, not the code.
+
+Non-candidates, for the record:
+- **BUG-021**, **TOOL-022** — P2, below the P0/P1 bar (both also appear already implemented; `utils.ts:29` carries the BUG-021 array-coercion sibling, and TOOL-022 shipped via merged PR #153).
+- **TOOL-021** — no `Auto-fixable` field, and its plan is `missing-batch-tool`, which this stage never auto-dispatches. Issue #98 is closed and CLAUDE.md documents `search_library_components` as accepting `queries: [...]`, so it's shipped; I left no comment on a closed, already-resolved issue.
+
+No worktree was created and no branch was pushed, so there is nothing to clean up. The pre-existing `.claude/worktrees/agent-*` worktrees and the stale local `auto-fix/TOOL-006` branch are from other tooling/earlier runs and were left untouched.
+
+One thing worth a human's attention: all four planned entries are marked `identified`/`planned` in the tracker while their fixes are merged and their issues closed. Stage C reports this as `DRIFT` rather than correcting it, so the tracker will keep presenting shipped work as open until someone updates the statuses.
+SessionEnd hook [/Users/davidbowman/Github/archivist/.venv/bin/python3.14 -m archivist.cli capture] failed: Hook cancelled
+[2026-09-02 05:07:56] run complete
