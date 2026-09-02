@@ -724,8 +724,8 @@ Sessions analyzed: 53 (session 42 covers an 11-session placeholder cohort)
 - **Description**: A library variable imported via `import_library_variable` but not bound in the same operation is **garbage-collected by Figma** before a later bind references it. Session 35: a nearest-token snapping pass failed for `gap/md`=12 and `radius/lg`=8 with "Variable not found" because those tokens were imported in an earlier exact-match pass but never bound (the exact-match pass found no node needing them), so Figma GC'd them. The partial-fail `edit` (call 130) returned 13/24 nodes edited with a clear "Variable not found … pass the full VariableID" fix; agent re-imported and retried successfully.
 - **Proposed fix**: Agent-behavior + tool — import and bind variables in the same operation; or have `edit`/`run_script` re-import a referenced library variable on-the-fly if it's missing. At minimum document the GC behavior in the design-tokens workflow note.
 
-### [BUG-018] import_library_component fails on remote transport (set_selection page-mismatch)
-- **Status**: root-caused — exact fix verified in-session (3/3 A/B pairs), not yet implemented
+### [BUG-018] import_library_component fails on remote transport (set_selection page-mismatch) — [#101](https://github.com/dabowman/Figmagent/issues/101)
+- **Status**: implemented — `importLibraryComponent` resolves the instance's page via the shared `pageOf` helper in `helpers.js`, switches to it, and treats selection/viewport as advisory so neither can fail a completed import. It also now rejects an unresolvable `parentNodeId` instead of silently leaving the instance on the current page. Covered by `tests/import-library-page.test.ts`. The same page boundary in `set_focus`/`set_selections` is split out to its own branch (`fix/connections-page-boundary`), not shipped here.
 - **Priority**: P0
 - **Category**: plugin-bug
 - **First seen**: Benchmark run 2026-06-19 (head-to-head vs official Figma MCP, remote transport)
@@ -996,8 +996,8 @@ Sessions analyzed: 53 (session 42 covers an 11-session placeholder cohort)
 - **Proposed fix**: (a) add an optional `variantProperties` filter object (and/or exact `variantName`) to `get_component_variants`, returning only matching keys; (b) return `componentPropertyDefinitions` — including nested instance property keys — for a published component/set key, without requiring instantiation. Both are extensions to `tools/libraries.ts` against APIs the plugin already calls. Sibling to [TOOL-013] (batch `get_component_variants`) and [TOOL-021].
 - **Note**: missing-tool capability gap — not in the Phase 6 auto-fix allowlist; no auto-plan generated. Related: [AGENT-025] (this is one of its two named causes), [TOOL-021].
 
-### [BUG-024] `set_focus`/`set_selections` report success with `undefined` name and id on remote
-- **Status**: identified
+### [BUG-024] `set_focus`/`set_selections` report success with `undefined` name and id on remote — [#124](https://github.com/dabowman/Figmagent/issues/124)
+- **Status**: implemented — `tools/scan.ts` now formats both results through exported builders (`buildFocusResult` / `buildSelectionsResult`). A result carrying the remote short-circuit's `note` surfaces it plus a shared `NO_OP_FIX` remedy instead of the absent name/id, so neither the `"undefined"` string nor the `.map()` `TypeError` is reachable. A result carrying neither a note nor node details is flagged `isError: true` rather than rendered (the malformed-envelope case, same shape as [BUG-027]). `buildSelectionsResult` also surfaces the plugin's `notFoundIds`, which the old formatter dropped — a partial selection no longer reads as a complete one. Covered by `tests/no-op-verdicts.test.ts`.
 - **Priority**: P1
 - **Category**: plugin-bug
 - **First seen**: Session 45 (2026-08-19, external vip-workflows, remote transport)
@@ -1010,8 +1010,8 @@ Sessions analyzed: 53 (session 42 covers an 11-session placeholder cohort)
 - **Recurred (3rd)**: Session 52 (2026-08-27, external site-foundry, remote). `set_focus({nodeId:"149:323"})` (#179) returned `Focused on node "undefined" (ID: undefined)`. Cost was one call this time — the agent did not build on the false success — but the entry is now three sessions old against a **one-line** fix (`tools/scan.ts:144-152`: return `typedResult.note` when present). Cheapest open item in the tracker; ship it with the [BUG-018] page-context change, which touches the same remote no-op surface.
 
 
-### [BUG-025] `write`'s `componentKey` path throws Figma's raw error with no stated fix
-- **Status**: identified
+### [BUG-025] `write`'s `componentKey` path throws Figma's raw error with no stated fix — [#125](https://github.com/dabowman/Figmagent/issues/125)
+- **Status**: implemented — the bare `figma.importComponentByKeyAsync` call is gone; all three call sites (`create.js`'s INSTANCE branch, `createComponentInstance`, `importLibraryComponent`) route through `importComponentByKeyOrFail` in `helpers.js`, which turns both failure shapes — a thrown import and an import that resolves to a non-COMPONENT — into `fail(message, fix)`. The remedy is the one the tools support: a COMPONENT_SET key is **not** importable (nothing here calls `importComponentSetByKeyAsync`), so it names `get_component_variants` / `search_library_components` and a variant's own key. Covered by `tests/no-op-verdicts.test.ts`.
 - **Priority**: P2
 - **Category**: plugin-bug
 - **First seen**: Session 45 (2026-08-19, external vip-workflows, remote transport)
@@ -1022,8 +1022,8 @@ Sessions analyzed: 53 (session 42 covers an 11-session placeholder cohort)
 - **Agent recovery**: clean — one retry (#103) with the Tab instance dropped, 37 nodes created. The `(atomic: no changes were applied; safe to retry)` note worked as designed and saved a cleanup pass.
 - **Note**: error-message fix — not in the Phase 6 auto-fix allowlist; no auto-plan generated. Related: [BUG-008].
 
-### [BUG-026] `run_script` mode-mismatch rejection is reported as `is_error: false`
-- **Status**: identified
+### [BUG-026] `run_script` mode-mismatch rejection is reported as `is_error: false` — [#126](https://github.com/dabowman/Figmagent/issues/126)
+- **Status**: implemented — the rejection moved into an exported `buildModeMismatchResult()` carrying `isError: true`, and the handler's catch-all was flagged too. The requested audit of the other tool files found one more instance of the same shape in the same handler — the plugin-transport refusal (`PLUGIN_TRANSPORT_REFUSAL`), whose prose also misses every `ERROR_TEXT_PREFIX` sentinel — now flagged as well; no other unflagged refusal remains in `tools/*.ts`. Covered by `tests/no-op-verdicts.test.ts`, which also asserts the rejection text is NOT caught by `looksLikeError`, so the explicit flag stays load-bearing.
 - **Priority**: P2
 - **Category**: plugin-bug
 - **First seen**: Session 45 (2026-08-19, external vip-workflows, remote transport)

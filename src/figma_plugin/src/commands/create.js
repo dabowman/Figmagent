@@ -1,6 +1,14 @@
 // Create command: builds one or more nodes from a recursive spec
 
-import { toNumber, sendProgressUpdate, fail, prop, FONT_WEIGHT_STYLES } from "../helpers.js";
+import {
+  toNumber,
+  sendProgressUpdate,
+  fail,
+  hasAutoLayout,
+  prop,
+  FONT_WEIGHT_STYLES,
+  importComponentByKeyOrFail,
+} from "../helpers.js";
 import { runPostWriteAssertions } from "../assertions.js";
 import { miniLint } from "./lint.js";
 
@@ -158,7 +166,12 @@ export async function create(params) {
           );
         component = compNode;
       } else if (spec.componentKey) {
-        component = await figma.importComponentByKeyAsync(spec.componentKey);
+        // BUG-025 — every other branch here states a fix; this one threw Figma's raw
+        // text ("Cannot find component with key ..."), which leaves an agent with no
+        // next move. The shared helper states the remedy the tools actually support
+        // (a variant's own key, never the set's) and guards the non-COMPONENT import
+        // so createInstance() below can never throw a bare TypeError.
+        component = await importComponentByKeyOrFail(spec.componentKey);
       } else {
         fail(
           "INSTANCE type requires componentId or componentKey",
@@ -242,6 +255,14 @@ export async function create(params) {
         }
       }
     }
+
+    // BUG-022 — `parentNode` is only set for CHILD specs; the root of a
+    // write({parentId}) tree is built with buildNode(tree, null) and appended via
+    // the parentId branch above, so `parentNode` stays null even though the node
+    // now has a real parent. Every parent-dependent decision below must read the
+    // parent the node actually ended up under, or FILL sizing is silently dropped
+    // on exactly the nodes that asked for it.
+    const effectiveParentIsAutoLayout = hasAutoLayout(parentNode || prop(node, "parent"));
 
     // Record post-write validation context for this node
     assertCtx.nodeIds.push(node.id);
@@ -348,11 +369,13 @@ export async function create(params) {
       // Default TEXT in an auto-layout parent to FILL + HEIGHT (matches Figma UI).
       // Only when the parent has active auto-layout and the spec sets neither
       // layoutSizingHorizontal nor textAutoResize — explicit specs are respected.
-      const parentIsAutoLayout =
-        parentNode && "layoutMode" in parentNode && parentNode.layoutMode !== "NONE";
       let effectiveLayoutSizingHorizontal = spec.layoutSizingHorizontal;
       let effectiveTextAutoResize = spec.textAutoResize;
-      if (parentIsAutoLayout && effectiveLayoutSizingHorizontal === undefined && effectiveTextAutoResize === undefined) {
+      if (
+        effectiveParentIsAutoLayout &&
+        effectiveLayoutSizingHorizontal === undefined &&
+        effectiveTextAutoResize === undefined
+      ) {
         effectiveLayoutSizingHorizontal = "FILL";
         effectiveTextAutoResize = "HEIGHT";
       }
@@ -383,11 +406,20 @@ export async function create(params) {
       }
     }
 
-    if (parentNode && "layoutMode" in parentNode && parentNode.layoutMode !== "NONE" && nodeType !== "TEXT") {
+    // Same guard as the two-pass block above: a rejected FILL is reported by the
+    // post-write fill_not_applied assertion, never by aborting a write whose
+    // nodes are already on the canvas (and on remote, rolling the whole tree back).
+    if (effectiveParentIsAutoLayout && nodeType !== "TEXT") {
       if (spec.layoutSizingHorizontal === "FILL") {
-        node.layoutSizingHorizontal = "FILL";
+        try {
+          node.layoutSizingHorizontal = "FILL";
+        } catch (_szErr) {}
       }
-      if (spec.layoutSizingVertical === "FILL") node.layoutSizingVertical = "FILL";
+      if (spec.layoutSizingVertical === "FILL") {
+        try {
+          node.layoutSizingVertical = "FILL";
+        } catch (_szErr) {}
+      }
     }
 
     const result = { id: node.id, name: node.name, type: node.type };

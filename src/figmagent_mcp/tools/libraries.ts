@@ -272,7 +272,7 @@ server.tool(
       .string()
       .optional()
       .describe(
-        "Optional. Node ID of the parent frame to insert the instance into. If omitted, the instance is added to the current page root.",
+        "Optional. Node ID of the parent frame to insert the instance into. If omitted, the instance is added to the current page root. Errors if the ID does not resolve or names a node that cannot hold children — it is never silently ignored.",
       ),
     position: z
       .object({
@@ -322,7 +322,12 @@ server.tool(
       .array(
         z.object({
           componentKey: z.string().describe("The published key of an individual component (not a component set)."),
-          parentNodeId: z.string().optional().describe("Node ID of the parent frame to insert the instance into."),
+          parentNodeId: z
+            .string()
+            .optional()
+            .describe(
+              "Node ID of the parent frame to insert the instance into. Errors if it does not resolve or cannot hold children.",
+            ),
           position: z
             .object({
               x: z.number(),

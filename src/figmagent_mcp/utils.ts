@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 // Custom logging functions that write to stderr instead of stdout to avoid being captured
 export const logger = {
   info: (message: string) => process.stderr.write(`[INFO] ${message}\n`),
@@ -6,6 +8,33 @@ export const logger = {
   error: (message: string) => process.stderr.write(`[ERROR] ${message}\n`),
   log: (message: string) => process.stderr.write(`[LOG] ${message}\n`),
 };
+
+// ─── Shared tool parameter schemas ──────────────────────────────────────────
+
+/**
+ * Numeric tool parameter that also accepts a numeric string — agents routinely
+ * quote numbers (`"4"` for a radius, `"0.85"` for a color channel), and a plain
+ * `z.number()` rejects them, cancelling the whole parallel batch ([TOOL-006]).
+ *
+ * Deliberately NOT `z.coerce.number()`: that runs `Number(value)` on everything,
+ * so `null`, `""`, `false` and `[]` all become 0 and are silently applied — an
+ * `opacity: null` would turn the node invisible instead of erroring, and a color
+ * missing a required channel would report "Expected number, received nan"
+ * instead of "Required". Only non-empty strings are converted here; every other
+ * wrong type stays the hard error it was before.
+ */
+export const numericParam = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((value) => (typeof value === "string" && value.trim() !== "" ? Number(value) : value), schema);
+
+/** RGBA color parameter (0-1 channels) shared by the `write` and `edit` tools. */
+export const colorSchema = z
+  .object({
+    r: numericParam(z.number().min(0).max(1)).describe("Red (0-1)"),
+    g: numericParam(z.number().min(0).max(1)).describe("Green (0-1)"),
+    b: numericParam(z.number().min(0).max(1)).describe("Blue (0-1)"),
+    a: numericParam(z.number().min(0).max(1)).optional().describe("Alpha (0-1)"),
+  })
+  .optional();
 
 // ─── Post-Write Warnings (Phase 4.1) ────────────────────────────────────────
 
