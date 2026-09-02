@@ -724,8 +724,8 @@ Sessions analyzed: 53 (session 42 covers an 11-session placeholder cohort)
 - **Description**: A library variable imported via `import_library_variable` but not bound in the same operation is **garbage-collected by Figma** before a later bind references it. Session 35: a nearest-token snapping pass failed for `gap/md`=12 and `radius/lg`=8 with "Variable not found" because those tokens were imported in an earlier exact-match pass but never bound (the exact-match pass found no node needing them), so Figma GC'd them. The partial-fail `edit` (call 130) returned 13/24 nodes edited with a clear "Variable not found … pass the full VariableID" fix; agent re-imported and retried successfully.
 - **Proposed fix**: Agent-behavior + tool — import and bind variables in the same operation; or have `edit`/`run_script` re-import a referenced library variable on-the-fly if it's missing. At minimum document the GC behavior in the design-tokens workflow note.
 
-### [BUG-018] import_library_component fails on remote transport (set_selection page-mismatch)
-- **Status**: root-caused — exact fix verified in-session (3/3 A/B pairs), not yet implemented
+### [BUG-018] import_library_component fails on remote transport (set_selection page-mismatch) — [#101](https://github.com/dabowman/Figmagent/issues/101)
+- **Status**: implemented — `importLibraryComponent` resolves the instance's page via the shared `pageOf` helper in `helpers.js`, switches to it, and treats selection/viewport as advisory so neither can fail a completed import. It also now rejects an unresolvable `parentNodeId` instead of silently leaving the instance on the current page. Covered by `tests/import-library-page.test.ts`. The same page boundary in `set_focus`/`set_selections` is split out to its own branch (`fix/connections-page-boundary`), not shipped here.
 - **Priority**: P0
 - **Category**: plugin-bug
 - **First seen**: Benchmark run 2026-06-19 (head-to-head vs official Figma MCP, remote transport)

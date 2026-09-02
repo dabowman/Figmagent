@@ -50,6 +50,27 @@ export function prop(node, name) {
   return name in node ? node[name] : undefined;
 }
 
+// Does this node have active auto-layout? The single predicate behind every
+// "is the sizing context there?" decision — layoutSizing* only takes effect on
+// a direct child of a frame for which this is true. Node-type safe: PAGE,
+// GROUP and SECTION parents have no layoutMode at all, and reading it directly
+// would throw in the remote VM.
+export function hasAutoLayout(node) {
+  if (!node) return false;
+  const layoutMode = prop(node, "layoutMode");
+  return !!layoutMode && layoutMode !== "NONE";
+}
+
+// Walk up to the PAGE a node lives on. Returns null for a node that is not yet
+// in the document tree. Lives here rather than in components.js because it is
+// generic: any command that touches page-scoped state (selection, currentPage)
+// for a node it did not resolve from the page itself needs the same walk.
+export function pageOf(node) {
+  var cur = node;
+  while (cur && cur.type !== "PAGE") cur = prop(cur, "parent");
+  return cur || null;
+}
+
 // Error helper: every user-facing error states its fix.
 // Rule (CLAUDE.md Agent Notes): no user-facing error without a stated fix.
 export function fail(message, fix) {

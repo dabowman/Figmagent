@@ -21,6 +21,13 @@ function makeBaseNode(type: string) {
     height: 0,
     fills: [],
     children: [],
+    // Figma reports FIXED on a freshly created node, never undefined. The mock
+    // has to as well: checkSizingRequested skips its fill_not_applied check when
+    // the node reports undefined, so a node without these would make every
+    // "no warning was emitted" assertion vacuously true (makeText overrides both
+    // with its own accessors, so TEXT sizing behavior is unaffected).
+    layoutSizingHorizontal: "FIXED",
+    layoutSizingVertical: "FIXED",
     resize(w: number, h: number) {
       this.width = w;
       this.height = h;
@@ -89,7 +96,17 @@ function installFigmaMock() {
   idCounter = 1;
   for (const k of Object.keys(nodesById)) delete nodesById[k];
   (globalThis as any).figma = {
-    currentPage: { id: "0:0", type: "PAGE", children: [], appendChild() {} },
+    // A real PAGE parents what it appends and has no layoutMode — both matter
+    // now that create.js resolves the effective parent from the node itself.
+    currentPage: {
+      id: "0:0",
+      type: "PAGE",
+      children: [] as any[],
+      appendChild(child: any) {
+        child.parent = this;
+        this.children.push(child);
+      },
+    },
     mixed: Symbol("mixed"),
     createFrame: () => makeFrame(),
     createText: () => makeText(),
@@ -265,5 +282,128 @@ describe("create: INSTANCE override paths for TEXT children (#43)", () => {
     nodesById["comp2"] = { id: "comp2", type: "COMPONENT", createInstance: () => instance };
     const res = await create({ tree: { type: "INSTANCE", componentId: "comp2" } });
     expect(res.tree.textOverrides).toBeUndefined();
+  });
+});
+
+// BUG-022 — the root of a write({parentId}) tree is built with
+// buildNode(tree, null) and appended via the parentId branch, so the old
+// `parentNode &&` guards saw no parent and silently skipped both the FILL pass
+// and the TEXT auto-layout default. Children were unaffected (they get
+// parentNode), which is why this only ever bit the node the caller named.
+describe("create: parentId root gets parent-dependent sizing (BUG-022)", () => {
+  test("root FRAME with layoutSizingHorizontal FILL applies under an auto-layout parentId", async () => {
+    const parent = makeFrame();
+    parent.layoutMode = "VERTICAL";
+
+    const res = await create({
+      parentId: parent.id,
+      tree: { type: "FRAME", layoutSizingHorizontal: "FILL" },
+    });
+
+    const root = nodesById[res.tree.id];
+    expect(root.parent.id).toBe(parent.id);
+    expect(root.layoutSizingHorizontal).toBe("FILL");
+    // The other half of the bug: the FILL that never applied also produced a
+    // fill_not_applied warning naming the wrong fix ("give the parent
+    // auto-layout" — it already had it). Applying the FILL retires the warning.
+    expect(res.warnings).toBeUndefined();
+  });
+
+  test("root FRAME with layoutSizingVertical FILL applies under an auto-layout parentId", async () => {
+    const parent = makeFrame();
+    parent.layoutMode = "HORIZONTAL";
+
+    const res = await create({
+      parentId: parent.id,
+      tree: { type: "FRAME", layoutSizingVertical: "FILL" },
+    });
+
+    expect(nodesById[res.tree.id].layoutSizingVertical).toBe("FILL");
+    expect(res.warnings).toBeUndefined();
+  });
+
+  test("root TEXT under an auto-layout parentId still gets the FILL + HEIGHT default", async () => {
+    const parent = makeFrame();
+    parent.layoutMode = "VERTICAL";
+
+    const res = await create({
+      parentId: parent.id,
+      tree: { type: "TEXT", text: "Hello" },
+    });
+
+    const text = nodesById[res.tree.id];
+    expect(text.layoutSizingHorizontal).toBe("FILL");
+    expect(text.textAutoResize).toBe("HEIGHT");
+  });
+
+  test("a non-auto-layout parentId does not force FILL, and still warns", async () => {
+    const parent = makeFrame(); // layoutMode stays NONE
+
+    const res = await create({
+      parentId: parent.id,
+      tree: { type: "FRAME", layoutSizingHorizontal: "FILL" },
+    });
+
+    expect(nodesById[res.tree.id].layoutSizingHorizontal).toBe("FIXED");
+    // The true-positive counterpart of the bug: here the parent really does
+    // lack auto-layout, so fill_not_applied is correct and must survive.
+    const warnings = res.warnings || [];
+    expect(warnings.map((w: any) => w.check)).toContain("fill_not_applied");
+  });
+
+  test("a top-level write (no parentId) is unaffected — PAGE is not an auto-layout parent", async () => {
+    const res = await create({
+      tree: { type: "FRAME", layoutSizingHorizontal: "FILL" },
+    });
+
+    // The node is now parented to the PAGE, so the effective-parent lookup
+    // resolves to something real; PAGE has no layoutMode, so nothing is forced.
+    const root = nodesById[res.tree.id];
+    expect(root.parent.type).toBe("PAGE");
+    expect(root.layoutSizingHorizontal).toBe("FIXED");
+  });
+
+  test("a top-level TEXT (no parentId) does not get the auto-layout FILL + HEIGHT default", async () => {
+    const res = await create({
+      tree: { type: "TEXT", text: "Hello" },
+    });
+
+    const text = nodesById[res.tree.id];
+    expect(text.parent.type).toBe("PAGE");
+    expect(text.layoutSizingHorizontal).toBeUndefined();
+    expect(text.textAutoResize).toBe("WIDTH_AND_HEIGHT");
+  });
+
+  // The fix routes the parentId root through the post-append FILL pass for the
+  // first time. Figma can reject a FILL assignment even under an auto-layout
+  // parent, and the nodes are already on the canvas by this point — so a
+  // rejection has to degrade to the fill_not_applied warning, never abort the
+  // write (on remote, an abort rolls the whole tree back).
+  test("a FILL Figma rejects is reported as a warning, not thrown", async () => {
+    const parent = makeFrame();
+    parent.layoutMode = "VERTICAL";
+
+    (globalThis as any).figma.createFrame = () => {
+      const f = makeFrame();
+      Object.defineProperty(f, "layoutSizingHorizontal", {
+        get() {
+          return "FIXED";
+        },
+        set() {
+          throw new Error("Cannot set layoutSizingHorizontal on this node");
+        },
+        configurable: true,
+      });
+      return f;
+    };
+
+    const res = await create({
+      parentId: parent.id,
+      tree: { type: "FRAME", layoutSizingHorizontal: "FILL" },
+    });
+
+    expect(res.success).toBe(true);
+    const warnings = res.warnings || [];
+    expect(warnings.map((w: any) => w.check)).toContain("fill_not_applied");
   });
 });
