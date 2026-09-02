@@ -50,6 +50,16 @@ export function prop(node, name) {
   return name in node ? node[name] : undefined;
 }
 
+// Walk up to the PAGE a node lives on. Returns null for a node that is not yet
+// in the document tree. Shared by every command that has to touch page-scoped
+// state (selection, currentPage) for a node it did not resolve from the page
+// itself — see connections.js (focus/select).
+export function pageOf(node) {
+  var cur = node;
+  while (cur && cur.type !== "PAGE") cur = prop(cur, "parent");
+  return cur || null;
+}
+
 // Error helper: every user-facing error states its fix.
 // Rule (CLAUDE.md Agent Notes): no user-facing error without a stated fix.
 export function fail(message, fix) {

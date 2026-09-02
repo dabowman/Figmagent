@@ -135,19 +135,19 @@ server.tool(
 // Set Focus Tool
 server.tool(
   "set_focus",
-  "Set focus on a specific node in Figma by selecting it and scrolling viewport to it",
+  "Set focus on a specific node in Figma by selecting it and scrolling viewport to it. If the node lives on another page, Figma switches to that page first (a selection is per-page). Passing a PAGE id switches to that page. No-op on the remote transport (headless — no viewport or live selection); use read/grep there instead.",
   {
     nodeId: z.string().describe("The ID of the node to focus on"),
   },
   async ({ nodeId }: any) => {
     try {
       const result = await sendCommandToFigma("set_focus", { nodeId });
-      const typedResult = result as { name: string; id: string };
+      const typedResult = result as { name: string; id: string; message?: string };
       return {
         content: [
           {
             type: "text",
-            text: `Focused on node "${typedResult.name}" (ID: ${typedResult.id})`,
+            text: typedResult.message || `Focused on node "${typedResult.name}" (ID: ${typedResult.id})`,
           },
         ],
       };
@@ -167,7 +167,7 @@ server.tool(
 // Set Selections Tool
 server.tool(
   "set_selections",
-  "Set selection to multiple nodes in Figma and scroll viewport to show them",
+  "Set selection to multiple nodes in Figma and scroll viewport to show them. A Figma selection is per-page: all nodeIds must live on the same page (Figma switches to it if needed), and a cross-page list is rejected — call once per page. No-op on the remote transport (headless — no viewport or live selection); use read/grep there instead.",
   {
     nodeIds: z.array(z.string()).min(1).describe("Array of node IDs to select"),
   },

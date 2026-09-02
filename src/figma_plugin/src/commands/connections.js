@@ -1,6 +1,26 @@
 // Connection commands: setDefaultConnector, createConnections, setFocus, setSelections
 
-import { sendProgressUpdate, generateCommandId } from "../helpers.js";
+import { sendProgressUpdate, generateCommandId, pageOf, fail } from "../helpers.js";
+
+// Switch `figma.currentPage` to the page a node lives on. Same page boundary that
+// broke import_library_component (BUG-018): `figma.currentPage.selection = [node]`
+// throws "The selection of a page can only include nodes in that page" whenever
+// the node is on another page, which is the norm as soon as a file has more than
+// one page. Selection *is* the point of these two commands, so unlike the import
+// path a failure here is reported rather than swallowed.
+async function moveToPageOf(node, nodeId) {
+  const page = pageOf(node);
+  if (!page)
+    fail(
+      "Node " + nodeId + " is not on any page",
+      "the node was removed or is detached from the document — re-resolve it with grep or read",
+    );
+  if (page !== figma.currentPage) {
+    if (typeof page.loadAsync === "function") await page.loadAsync();
+    await figma.setCurrentPageAsync(page);
+  }
+  return page;
+}
 
 export async function setDefaultConnector(params) {
   const { connectorId } = params || {};
@@ -357,6 +377,23 @@ export async function setFocus(params) {
     throw new Error(`Node with ID ${params.nodeId} not found`);
   }
 
+  // Focusing a PAGE means switching to it — a PAGE can never be an entry in its
+  // own selection, so don't try.
+  if (node.type === "PAGE") {
+    if (node !== figma.currentPage) {
+      if (typeof node.loadAsync === "function") await node.loadAsync();
+      await figma.setCurrentPageAsync(node);
+    }
+    return {
+      success: true,
+      name: node.name,
+      id: node.id,
+      message: `Switched to page "${node.name}"`,
+    };
+  }
+
+  await moveToPageOf(node, params.nodeId);
+
   figma.currentPage.selection = [node];
   figma.viewport.scrollAndZoomIntoView([node]);
 
@@ -392,6 +429,22 @@ export async function setSelections(params) {
   if (nodes.length === 0) {
     throw new Error(`No valid nodes found for the provided IDs: ${params.nodeIds.join(", ")}`);
   }
+
+  // A Figma selection is per-page, so a cross-page nodeIds list can never be
+  // satisfied. Say so with a fix instead of letting Figma's raw
+  // "selection of a page can only include nodes in that page" surface.
+  const pages = [];
+  for (const node of nodes) {
+    const page = pageOf(node);
+    if (page && pages.indexOf(page) === -1) pages.push(page);
+  }
+  if (pages.length > 1) {
+    fail(
+      "Nodes span " + pages.length + " pages (" + pages.map((p) => p.name).join(", ") + ")",
+      "a Figma selection is per-page — call set_selections once per page, passing only the node IDs from that page",
+    );
+  }
+  await moveToPageOf(nodes[0], nodes[0].id);
 
   figma.currentPage.selection = nodes;
   figma.viewport.scrollAndZoomIntoView(nodes);
