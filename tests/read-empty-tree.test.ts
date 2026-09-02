@@ -116,6 +116,41 @@ describe("buildReadResult: partial reads keep the nodes that arrived", () => {
     expect(result.content[0].text).toContain("43:22");
   });
 
+  test("a legitimately EMPTY FRAME reads as a success, all the way through", () => {
+    // The false positive that would matter most: an empty frame carries a
+    // rootId but no children and nodeCount 0 — byte-for-byte the shape the
+    // guard rejects, minus the rootId. It must render as an ordinary read,
+    // unflagged, with its own meta, and never reach the error path.
+    const emptyFrame = {
+      rootId: "1:1",
+      rootName: "Empty Frame",
+      rootType: "FRAME",
+      nodeCount: 0,
+      rawTree: [{ id: "1:1", name: "Empty Frame", type: "FRAME", children: [] }],
+    };
+    const result = buildReadResult(["1:1"], [emptyFrame], params);
+    expect(result.isError).toBeUndefined();
+    expect(looksLikeError(result)).toBe(false);
+    expect(result.content).toHaveLength(1);
+    expect(result.content[0].text).not.toContain("Error reading nodes");
+    // The BUG-027 fingerprint was a meta block with nodeId/name/type all
+    // undefined. An empty frame has all three, and honestly reports 0 nodes.
+    expect(result.content[0].text).toContain('nodeId: "1:1"');
+    expect(result.content[0].text).toContain("name: Empty Frame");
+    expect(result.content[0].text).toContain("type: FRAME");
+    expect(result.content[0].text).toContain("nodeCount: 0");
+    expect(result.content[0].text).not.toContain("nodeId: undefined");
+  });
+
+  test("an empty frame alongside a real failure is kept, not swept into the error", () => {
+    const emptyFrame = { rootId: "1:1", rootName: "Empty Frame", rootType: "FRAME", nodeCount: 0, rawTree: [] };
+    const result = buildReadResult(["1:1", "43:22"], [emptyFrame, {}], params);
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0].text).toContain("1:1");
+    expect(result.content[1].text).toContain("43:22");
+    expect(result.content[1].text).not.toContain("1:1");
+  });
+
   test("all nodes failed → flagged error, nothing rendered", () => {
     const result = buildReadResult(["1:1", "2:2"], ["<truncated response>", {}], params);
     expect(result.isError).toBe(true);
