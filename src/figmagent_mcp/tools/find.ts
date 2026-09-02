@@ -2,7 +2,87 @@ import { z } from "zod";
 import { server } from "../instance.js";
 import { sendCommandToFigma } from "../connection.js";
 import { serializeYaml } from "../yaml.js";
-import { guardOutput, extractYamlMeta, paginateGroups, DEFAULT_MAX_OUTPUT_CHARS } from "../utils.js";
+import {
+  guardOutput,
+  extractYamlMeta,
+  paginateGroups,
+  DEFAULT_MAX_OUTPUT_CHARS,
+  stringListParam,
+  idListParam,
+} from "../utils.js";
+
+// BUG-021 — the four array criteria were bare z.array(z.string()), so a single
+// value passed as a bare string ("COMPONENT") — the natural shape, and the shape
+// every scalar param in this tool takes — came back as a raw MCP -32602 Zod dump
+// with no stated fix. `stringListParam` (utils.ts) accepts the scalar and
+// comma-separated forms; `idListParam` is the same minus the comma splitting,
+// for styleId — Figma style ids contain commas ("S:abc123," / "S:abc123,4:5"),
+// so splitting one would corrupt it into a criterion that never matches.
+// Array-valued sibling of TOOL-006 / BUG-005, which covered scalar numerics.
+
+// The handler cannot see keys the SDK stripped (server.tool builds z.object(shape),
+// which drops unknown properties before the callback runs), so this names the three
+// invented parameters a real session reached for rather than the ones actually sent.
+export const NO_CRITERION_ERROR =
+  "Error: no search criterion recognized. Valid criteria: componentId, variableId, styleId, " +
+  "text, name, type, annotation, hasAnnotation. Fix: if you passed something else, it was " +
+  "silently dropped — `pattern`, `searchIn` and `nodeTypes` are not parameters of this tool; " +
+  "use `name` or `text` for regex matching and `type` for node types.";
+
+// Hoisted out of the server.tool(...) call so a test can prove the coercion
+// helpers are actually attached to the four criteria. Asserting on the helpers
+// alone passes even when nothing uses them, which is the regression that
+// reintroduces BUG-021.
+export const grepInputShape = {
+  scope: z
+    .string()
+    .optional()
+    .describe('Node ID to search within, or "DOCUMENT" to search all pages (default: current page)'),
+  componentId: stringListParam()
+    .optional()
+    .describe(
+      "Find instances of these component or component_set IDs. Accepts one ID as a bare string, an array, or a comma-separated string.",
+    ),
+  variableId: stringListParam()
+    .optional()
+    .describe(
+      "Find nodes with direct variable bindings to these variable IDs. Accepts one ID as a bare string, an array, or a comma-separated string.",
+    ),
+  styleId: idListParam()
+    .optional()
+    .describe(
+      "Find nodes using these style IDs (fill, stroke, text, effect, or grid styles). Accepts one ID as a bare string, or an array — style IDs contain commas ('S:abc123,'), so a comma-separated string is NOT split; pass several as an array.",
+    ),
+  text: z.string().optional().describe("Find TEXT nodes whose content matches this regex pattern"),
+  name: z.string().optional().describe("Find nodes whose name matches this regex pattern"),
+  type: stringListParam()
+    .optional()
+    .describe(
+      "Find nodes of these types (e.g. FRAME, TEXT, INSTANCE, COMPONENT, COMPONENT_SET). Accepts one type as a bare string, an array, or a comma-separated string.",
+    ),
+  annotation: z.string().optional().describe("Find nodes whose annotation label matches this regex pattern"),
+  hasAnnotation: z.boolean().optional().describe("Find all nodes that have any annotation (set to true)"),
+  excludeDefinitions: z
+    .boolean()
+    .optional()
+    .default(true)
+    .describe("When searching by componentId, skip matches inside those component definitions (default: true)"),
+  maxResults: z.coerce.number().optional().default(200).describe("Maximum number of matches to return (default: 200)"),
+  maxOutputChars: z.coerce
+    .number()
+    .int()
+    .min(1000)
+    .optional()
+    .describe("Max response size in characters. Default: 30000. Raise when you need full unfiltered data."),
+  page: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe(
+      "1-based page to return when matches exceed the output budget. Results are split into pages of whole groups; see meta.pagination for pageCount. Default: 1.",
+    ),
+};
 
 server.tool(
   "grep",
@@ -26,53 +106,7 @@ Combine type: ["TEXT"] with a text pattern to enumerate text nodes (replaces the
 Use \`grep\` to locate nodes, then \`read\` for details on specific matches.
 
 Large text extractions (e.g. enumerating every TEXT node in a multi-slide deck) can exceed the output budget. When that happens the result is split into budget-sized pages of whole groups — the \`meta.pagination\` block reports \`page\`, \`pageCount\`, and how to fetch the next page. Pass \`page: 2\`, \`page: 3\`, … to walk through all matches without manual chunking; the grouping (by nearest ancestor) is preserved across pages.`,
-  {
-    scope: z
-      .string()
-      .optional()
-      .describe('Node ID to search within, or "DOCUMENT" to search all pages (default: current page)'),
-    componentId: z.array(z.string()).optional().describe("Find instances of these component or component_set IDs"),
-    variableId: z
-      .array(z.string())
-      .optional()
-      .describe("Find nodes with direct variable bindings to these variable IDs"),
-    styleId: z
-      .array(z.string())
-      .optional()
-      .describe("Find nodes using these style IDs (fill, stroke, text, effect, or grid styles)"),
-    text: z.string().optional().describe("Find TEXT nodes whose content matches this regex pattern"),
-    name: z.string().optional().describe("Find nodes whose name matches this regex pattern"),
-    type: z
-      .array(z.string())
-      .optional()
-      .describe("Find nodes of these types (e.g. FRAME, TEXT, INSTANCE, COMPONENT, COMPONENT_SET)"),
-    annotation: z.string().optional().describe("Find nodes whose annotation label matches this regex pattern"),
-    hasAnnotation: z.boolean().optional().describe("Find all nodes that have any annotation (set to true)"),
-    excludeDefinitions: z
-      .boolean()
-      .optional()
-      .default(true)
-      .describe("When searching by componentId, skip matches inside those component definitions (default: true)"),
-    maxResults: z.coerce
-      .number()
-      .optional()
-      .default(200)
-      .describe("Maximum number of matches to return (default: 200)"),
-    maxOutputChars: z.coerce
-      .number()
-      .int()
-      .min(1000)
-      .optional()
-      .describe("Max response size in characters. Default: 30000. Raise when you need full unfiltered data."),
-    page: z.coerce
-      .number()
-      .int()
-      .min(1)
-      .optional()
-      .describe(
-        "1-based page to return when matches exceed the output budget. Results are split into pages of whole groups; see meta.pagination for pageCount. Default: 1.",
-      ),
-  },
+  grepInputShape,
   async ({
     scope,
     componentId,
@@ -118,7 +152,7 @@ Large text extractions (e.g. enumerating every TEXT node in a multi-slide deck) 
         content: [
           {
             type: "text" as const,
-            text: "Error: at least one search criterion is required (componentId, variableId, styleId, text, name, type, annotation, or hasAnnotation)",
+            text: NO_CRITERION_ERROR,
           },
         ],
       };
