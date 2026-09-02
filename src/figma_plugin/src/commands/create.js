@@ -1,6 +1,14 @@
 // Create command: builds one or more nodes from a recursive spec
 
-import { toNumber, sendProgressUpdate, fail, hasAutoLayout, prop, FONT_WEIGHT_STYLES } from "../helpers.js";
+import {
+  toNumber,
+  sendProgressUpdate,
+  fail,
+  hasAutoLayout,
+  prop,
+  FONT_WEIGHT_STYLES,
+  importComponentByKeyOrFail,
+} from "../helpers.js";
 import { runPostWriteAssertions } from "../assertions.js";
 import { miniLint } from "./lint.js";
 
@@ -160,22 +168,10 @@ export async function create(params) {
       } else if (spec.componentKey) {
         // BUG-025 — every other branch here states a fix; this one threw Figma's raw
         // text ("Cannot find component with key ..."), which leaves an agent with no
-        // next move. The usual cause is a COMPONENT_SET key: set members are not
-        // always importable by their own key, so naming that possibility is the
-        // difference between a dead end and one more call.
-        try {
-          component = await figma.importComponentByKeyAsync(spec.componentKey);
-        } catch (importErr) {
-          fail(
-            'Component with key "' +
-              spec.componentKey +
-              '" could not be imported: ' +
-              (importErr && importErr.message ? importErr.message : String(importErr)),
-            "verify the key with search_library_components, and confirm the library is enabled for this file. " +
-              "If this is one variant of a COMPONENT_SET, import the set and instantiate the variant instead — " +
-              "set members are not always independently importable by key",
-          );
-        }
+        // next move. The shared helper states the remedy the tools actually support
+        // (a variant's own key, never the set's) and guards the non-COMPONENT import
+        // so createInstance() below can never throw a bare TypeError.
+        component = await importComponentByKeyOrFail(spec.componentKey);
       } else {
         fail(
           "INSTANCE type requires componentId or componentKey",

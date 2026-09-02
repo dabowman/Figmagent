@@ -8,10 +8,12 @@
 // [BUG-025] write's componentKey path threw Figma's raw text with no stated fix,
 //           the only branch in that function that did.
 
-import { afterAll, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { create } from "../src/figma_plugin/src/commands/create.js";
 import { looksLikeError } from "../src/figmagent_mcp/instance.js";
-import { buildModeMismatchResult } from "../src/figmagent_mcp/tools/script.js";
+import { buildModeMismatchResult, runScriptHandler } from "../src/figmagent_mcp/tools/script.js";
+import { resetTransportForTests } from "../src/figmagent_mcp/transport.js";
+import { resetFileKeyForTests } from "../src/figmagent_mcp/remote/filecontext.js";
 import { buildFocusResult, buildSelectionsResult } from "../src/figmagent_mcp/tools/scan.js";
 
 // ─── [BUG-026] the flag, and why prose alone was not enough ──────────────────
@@ -50,6 +52,48 @@ describe("[BUG-026] a rejection reads as an error", () => {
   });
 });
 
+// The mode mismatch is not the only verdict run_script gets wrong. The
+// plugin-transport refusal is the other rejection that runs nothing, and its
+// prose misses looksLikeError's sentinels too; the catch-all is the third
+// return in the same handler. All three must carry the flag or none does.
+describe("[BUG-026] run_script's other verdicts", () => {
+  const savedTransport = process.env.FIGMA_TRANSPORT;
+
+  afterEach(() => {
+    if (savedTransport === undefined) delete process.env.FIGMA_TRANSPORT;
+    else process.env.FIGMA_TRANSPORT = savedTransport;
+    resetTransportForTests();
+  });
+
+  test("refusing on the plugin transport is flagged, not reported as script output", async () => {
+    process.env.FIGMA_TRANSPORT = "plugin";
+    resetTransportForTests();
+    const result = await runScriptHandler({ code: "return 1;", mode: "read", description: "noop" });
+    expect(result.isError).toBe(true);
+    expect(looksLikeError(result)).toBe(true);
+    // Prose alone would not have been enough — same reason as the mode mismatch.
+    expect(looksLikeError({ content: result.content })).toBe(false);
+  });
+
+  test("the catch-all is flagged from the flag, not from how the message happens to start", async () => {
+    // `Error running script: …` does match the sentinel today, so the explicit
+    // flag looks redundant — it is not. It is what keeps the verdict correct if
+    // the wording ever changes, and without this assertion the flag can be
+    // dropped in a refactor with every other test still green.
+    process.env.FIGMA_TRANSPORT = "remote";
+    resetTransportForTests();
+    resetFileKeyForTests();
+    delete process.env.FIGMA_FILE_KEY;
+    const result = await runScriptHandler({
+      code: "return 1;",
+      mode: "read",
+      description: "no file selected",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("No Figma file selected");
+  });
+});
+
 // ─── [BUG-025] a stated fix on the componentKey path ─────────────────────────
 
 describe("[BUG-025] importing by componentKey states a fix", () => {
@@ -76,20 +120,42 @@ describe("[BUG-025] importing by componentKey states a fix", () => {
     delete (globalThis as any).figma;
   });
 
+  /** Run create() expecting a throw; returns the message (fails the test if it resolves). */
+  async function messageFrom(spec: Record<string, unknown>): Promise<string> {
+    try {
+      await create({ tree: Object.assign({ type: "INSTANCE" }, spec) });
+    } catch (e: any) {
+      return e.message;
+    }
+    throw new Error("expected create() to reject, but it resolved");
+  }
+
   test("a failed import names the key, the cause, and what to do next", async () => {
     importError = new Error("Cannot find component with key abc123");
 
-    await expect(create({ tree: { type: "INSTANCE", componentKey: "abc123" } })).rejects.toThrow(/Fix:/);
+    const message = await messageFrom({ componentKey: "abc123" });
+    expect(message).toContain("Fix:");
+    expect(message).toContain("abc123");
+    expect(message).toContain("Cannot find component with key");
+    // The COMPONENT_SET case is the usual cause and the one an agent can act on.
+    // The remedy must be the one the tools support: a variant's OWN key. A set
+    // key is not importable and nothing here can import a set.
+    expect(message).toContain("COMPONENT_SET");
+    expect(message).toContain("search_library_components");
+    expect(message).toContain("get_component_variants");
+  });
 
-    try {
-      await create({ tree: { type: "INSTANCE", componentKey: "abc123" } });
-    } catch (e: any) {
-      expect(e.message).toContain("abc123");
-      expect(e.message).toContain("Cannot find component with key");
-      // The COMPONENT_SET case is the usual cause and the one an agent can act on.
-      expect(e.message).toContain("COMPONENT_SET");
-      expect(e.message).toContain("search_library_components");
-    }
+  test("an import that resolves to a COMPONENT_SET fails with a fix, not a bare TypeError", async () => {
+    (globalThis as any).figma.importComponentByKeyAsync = async () => ({
+      type: "COMPONENT_SET",
+      name: "Button",
+      // no createInstance — reaching it would throw "is not a function"
+    });
+
+    const message = await messageFrom({ componentKey: "set-key" });
+    expect(message).toContain("Fix:");
+    expect(message).toContain("COMPONENT_SET");
+    expect(message).not.toContain("is not a function");
   });
 
   test("a successful import is unaffected", async () => {
@@ -141,8 +207,25 @@ describe("[BUG-024] the plugin transport is unchanged", () => {
         { name: "A", id: "1:1" },
         { name: "B", id: "1:2" },
       ],
+      notFoundIds: [],
     };
     expect(buildSelectionsResult(result).content[0].text).toBe('Selected 2 nodes: "A" (1:1), "B" (1:2)');
+  });
+
+  test("ids the plugin could not resolve are named, not silently dropped", () => {
+    // The plugin selects what it found and returns the rest in notFoundIds.
+    // Reporting only the hits turned a partial selection into a clean success.
+    const res = buildSelectionsResult({
+      count: 1,
+      selectedNodes: [{ name: "A", id: "1:1" }],
+      notFoundIds: ["9:9", "9:10"],
+    });
+    expect(res.content[0].text).toContain("2 not found");
+    expect(res.content[0].text).toContain("9:9");
+    expect(res.content[0].text).toContain("9:10");
+    expect(res.content[0].text).toContain("Fix:");
+    // A partial failure is not a whole-call failure (CLAUDE.md).
+    expect(res.isError).toBeUndefined();
   });
 });
 

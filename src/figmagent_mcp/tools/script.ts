@@ -199,7 +199,12 @@ export async function runScriptHandler({
 }) {
   try {
     if (getTransport().name !== "remote") {
+      // Same verdict rule as the mode mismatch below: nothing ran, so this must
+      // not ship as is_error: false. The prose ("run_script requires the remote
+      // transport …") matches none of looksLikeError's start-anchored sentinels,
+      // so the flag has to be explicit.
       return {
+        isError: true,
         content: [{ type: "text" as const, text: PLUGIN_TRANSPORT_REFUSAL }],
       };
     }

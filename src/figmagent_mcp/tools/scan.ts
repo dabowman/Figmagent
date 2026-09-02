@@ -168,6 +168,7 @@ export function buildSelectionsResult(result: unknown) {
     selectedNodes?: Array<{ name: string; id: string }>;
     count?: number;
     note?: string;
+    notFoundIds?: string[];
   };
   if (typed.note) {
     return { content: [{ type: "text" as const, text: `${typed.note} ${NO_OP_FIX}` }] };
@@ -186,9 +187,21 @@ export function buildSelectionsResult(result: unknown) {
     };
   }
   const names = typed.selectedNodes.map((node) => `"${node.name}" (${node.id})`).join(", ");
+  // The plugin selects the ids it found and reports the rest in notFoundIds.
+  // Dropping that list reported a partial selection as a complete one — the same
+  // "the response didn't say what happened" defect this file's other builders fix.
+  // Partial failures stay is_error: false (CLAUDE.md); the text carries the verdict.
+  const missing = Array.isArray(typed.notFoundIds) ? typed.notFoundIds : [];
+  const missingNote = missing.length
+    ? ` — ${missing.length} not found and NOT selected: ${missing.join(", ")}. ` +
+      "Fix: confirm those IDs with read/grep (a node from another file won't resolve here)."
+    : "";
   return {
     content: [
-      { type: "text" as const, text: `Selected ${typed.count ?? typed.selectedNodes.length} nodes: ${names}` },
+      {
+        type: "text" as const,
+        text: `Selected ${typed.count ?? typed.selectedNodes.length} nodes: ${names}${missingNote}`,
+      },
     ],
   };
 }
