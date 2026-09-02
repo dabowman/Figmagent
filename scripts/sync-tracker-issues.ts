@@ -157,7 +157,10 @@ for (const line of lines) {
     curId = "";
     bodyLines = [];
     const t = (h2[1] ?? "").toLowerCase();
-    section = t.includes("resolved") ? "resolved" : t.includes("active") ? "active" : "other";
+    // Anything that is not the Resolved section is authoritative for Status.
+    // Entries used to be appended after "## Metrics Over Time" (section "other"),
+    // where their Status was never read — so `implemented` never closed an issue.
+    section = t.includes("resolved") ? "resolved" : "active";
     continue;
   }
   const h3 = line.match(/^### \[([A-Z]+-\d+)\]\s+(.+)/);

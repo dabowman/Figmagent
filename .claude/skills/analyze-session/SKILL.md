@@ -295,6 +295,7 @@ Use this exact template structure (matching the format of existing session 1 and
 Update `.claude/analysis/improvement-tracker.md`:
 
 1. **Add new issues**: For each efficiency issue or error pattern identified in this analysis that doesn't already exist in the tracker:
+   - **Insert the entry at the END of the `## Active Issues` section — immediately before `## Resolved Issues`.** Never append after `## Metrics Over Time` or `## Issue Categories`.
    - Assign an ID: `[CATEGORY-NNN]` where CATEGORY is TOOL, BUG, AGENT, or INFRA
    - **Auto-increment NNN past the highest existing number in that category across BOTH the Active and Resolved sections.** Grep `^### \[CATEGORY-` for the current max first — reusing a number collides two distinct findings onto one GitHub issue (the sync warns on this, but don't create it).
    - Set status to `identified`
