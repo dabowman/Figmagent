@@ -694,7 +694,9 @@ async function processNode(op, styleCache, ctx, styleErrors) {
   if (!node)
     fail(
       "Node not found: " + op.nodeId,
-      "verify the ID with read or search with grep — it may have been deleted or belong to another page",
+      "URL-form ids (43-14, and instance paths like I43-14;66-19) are normalized to colon form automatically, " +
+        "so the hyphen is not the problem — verify the ID with read or search with grep; it may have been " +
+        "deleted, or belong to a different file than the one selected (confirm with use_file)",
     );
 
   // ── Boundary validation (Phase 4.3): reject-or-warn BEFORE mutating ──────

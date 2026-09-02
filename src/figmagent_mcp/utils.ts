@@ -84,6 +84,53 @@ export const colorSchema = z
   })
   .optional();
 
+/** A node id as a Figma URL writes it — every `:` replaced by a `-`. */
+const URL_FORM_NODE_ID = /^I?\d+-\d+(?:;I?\d+-\d+)*$/;
+
+/**
+ * Figma deep-link URLs encode node IDs with a hyphen (`?node-id=43-14`) while the
+ * Plugin API expects a colon (`43:14`). Agents routinely lift an ID straight out of
+ * a URL the user pasted and get a bare "Node not found" — and `use_file` already
+ * tolerates the full hyphenated URL, so within one session the same ID format is
+ * accepted by one tool and rejected by the next.
+ *
+ * Only the unambiguous URL shape is normalized: a hyphenated pair, optionally
+ * chained into an instance-descendant path (`I43-14;66-19`, which is how a link
+ * to a layer inside an instance arrives). Such a string can never be a valid
+ * Plugin API id — those always use colons — so the swap is lossless. An
+ * already-correct id (`43:14`, `I103:1135;66:19`, the `0:0` document sentinel),
+ * the "DOCUMENT" scope keyword and every other string pass through untouched.
+ */
+export function normalizeNodeId(id: string): string {
+  return URL_FORM_NODE_ID.test(id) ? id.replace(/-/g, ":") : id;
+}
+
+/**
+ * Node-ID tool parameter — a `z.string()` that normalizes the URL form. Every
+ * schema accepting a node ID calls this (or `z.array(nodeIdParam())`) instead of
+ * a bare `z.string()`: hand-applying `.transform()` per call site left fifteen
+ * node-ID params un-normalized on the first pass, including `grep`'s
+ * `componentId`, where an unconverted id matches nothing and returns an empty
+ * result set rather than an error. `tests/node-id-normalization.test.ts` sweeps
+ * the registered tools so a new param cannot quietly miss it again.
+ *
+ * A factory, not a shared constant, for the same reason `numericParam` is one:
+ * `zod-to-json-schema` collapses a schema *instance* reused within one tool into
+ * a `$ref`, and the SDK emits draft-07, where a `$ref` sibling `description` is
+ * ignored — so sharing one instance would silently strip the per-parameter
+ * descriptions the agent reads off the tool schema.
+ */
+export const nodeIdParam = () => z.string().transform(normalizeNodeId);
+
+/**
+ * Node-ID list parameter — `stringListParam`'s scalar/array/comma tolerance
+ * ([BUG-021]) with the URL-form conversion applied to every element, for criteria
+ * like `grep`'s `componentId` that take several node ids. Needed as its own
+ * helper because the two fixes compose in one direction only: the list coercion
+ * has to run first so the transform sees a `string[]`.
+ */
+export const nodeIdListParam = () => stringListParam().transform((ids) => ids.map(normalizeNodeId));
+
 // ─── Post-Write Warnings (Phase 4.1) ────────────────────────────────────────
 
 export interface FigmaWarning {

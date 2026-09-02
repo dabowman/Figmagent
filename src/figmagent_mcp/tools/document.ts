@@ -2,7 +2,7 @@ import { z } from "zod";
 import { server } from "../instance.js";
 import { sendCommandToFigma } from "../connection.js";
 import { serializeYaml } from "../yaml.js";
-import { guardOutput, extractYamlMeta } from "../utils.js";
+import { guardOutput, extractYamlMeta, nodeIdParam } from "../utils.js";
 
 // ─── FSGN helpers ────────────────────────────────────────────────────────────
 
@@ -287,11 +287,10 @@ Workflow: read() (document overview) → read(nodeId, detail="structure", depth=
 Use grep() to locate nodes by criteria before calling read() on them.
 Instances are leaf nodes by default — call read on the instance ID to expand its internals.`,
   {
-    nodeId: z
-      .string()
+    nodeId: nodeIdParam()
       .optional()
       .describe("ID of a single node to read. Omit (and nodeIds) for the document overview."),
-    nodeIds: z.array(z.string()).optional().describe("IDs of multiple nodes to read in parallel"),
+    nodeIds: z.array(nodeIdParam()).optional().describe("IDs of multiple nodes to read in parallel"),
     detail: z
       .enum(["structure", "layout", "full"])
       .optional()

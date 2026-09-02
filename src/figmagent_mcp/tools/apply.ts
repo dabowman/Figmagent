@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { server } from "../instance.js";
 import { sendCommandToFigma } from "../connection.js";
-import { formatWarningsBlock, colorSchema, numericParam } from "../utils.js";
+import { formatWarningsBlock, colorSchema, numericParam, nodeIdParam } from "../utils.js";
 
 // Variable binding fields — matches FIELD_MAP in the plugin
 const variableFieldEnum = z.enum([
@@ -63,7 +63,7 @@ const aliasFor = (key: string): string | undefined =>
 export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
   z
     .object({
-      nodeId: z.string().describe("ID of the existing node to modify"),
+      nodeId: nodeIdParam().describe("ID of the existing node to modify"),
 
       // Structural operations
       x: numericParam(z.number()).optional().describe("New X position (moves the node; does NOT change parent)"),
@@ -208,8 +208,7 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
         ),
 
       // Component operations (INSTANCE nodes only)
-      swapVariantId: z
-        .string()
+      swapVariantId: nodeIdParam()
         .optional()
         .describe(
           "Swap an INSTANCE to a different variant. Value is the COMPONENT node ID to swap to. Instance keeps position and compatible overrides.",

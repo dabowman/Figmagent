@@ -9,6 +9,8 @@ import {
   DEFAULT_MAX_OUTPUT_CHARS,
   stringListParam,
   idListParam,
+  nodeIdParam,
+  nodeIdListParam,
 } from "../utils.js";
 
 // BUG-021 — the four array criteria were bare z.array(z.string()), so a single
@@ -34,11 +36,10 @@ export const NO_CRITERION_ERROR =
 // alone passes even when nothing uses them, which is the regression that
 // reintroduces BUG-021.
 export const grepInputShape = {
-  scope: z
-    .string()
+  scope: nodeIdParam()
     .optional()
     .describe('Node ID to search within, or "DOCUMENT" to search all pages (default: current page)'),
-  componentId: stringListParam()
+  componentId: nodeIdListParam()
     .optional()
     .describe(
       "Find instances of these component or component_set IDs. Accepts one ID as a bare string, an array, or a comma-separated string.",

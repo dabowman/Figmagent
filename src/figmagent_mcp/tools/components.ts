@@ -2,6 +2,7 @@ import { z } from "zod";
 import { server } from "../instance.js";
 import { sendCommandToFigma } from "../connection.js";
 import type { getInstanceOverridesResult, setInstanceOverridesResult } from "../types.js";
+import { nodeIdParam } from "../utils.js";
 
 // Component sets with more than this many variants drop the full variants array
 // (id/name/key per variant). The compact variantIds map is kept up to VARIANT_ID_CAP.
@@ -56,9 +57,7 @@ export function processLocalComponents(
       withMap.variantIdsTruncated = true;
       const reasons: string[] = [];
       if (collisions > 0) {
-        reasons.push(
-          `${collisions} variant(s) share a name with another and collide in the map (last-write-wins)`,
-        );
+        reasons.push(`${collisions} variant(s) share a name with another and collide in the map (last-write-wins)`);
       }
       if (capped) {
         reasons.push(`only the first ${VARIANT_ID_CAP} of ${c.variantCount} variants are mapped`);
@@ -78,7 +77,7 @@ export function processLocalComponents(
 // Get Local Components Tool
 server.tool(
   "get_local_components",
-  "Get local components from the Figma document. Returns COMPONENT_SETs (multi-variant) and standalone COMPONENTs. Use nameFilter to search by component name (case-insensitive). COMPONENT_SET results include variantAxes showing the structure (e.g. Type × Size × State) and a compact variantIds map ({ \"Size=MD, State=Default\": nodeId, ... }) so you can target variant nodes without a follow-up read. The variantIds map carries up to 100 entries; past that (or when variant names collide) it sets variantIdsTruncated — use read(setId) or get_component_variants for the full list. The full variants array (id/name/key per variant) is listed when ≤10; for larger sets it is omitted (variantIds stays present) — use includeVariants to force the full array.",
+  'Get local components from the Figma document. Returns COMPONENT_SETs (multi-variant) and standalone COMPONENTs. Use nameFilter to search by component name (case-insensitive). COMPONENT_SET results include variantAxes showing the structure (e.g. Type × Size × State) and a compact variantIds map ({ "Size=MD, State=Default": nodeId, ... }) so you can target variant nodes without a follow-up read. The variantIds map carries up to 100 entries; past that (or when variant names collide) it sets variantIdsTruncated — use read(setId) or get_component_variants for the full list. The full variants array (id/name/key per variant) is listed when ≤10; for larger sets it is omitted (variantIds stays present) — use includeVariants to force the full array.',
   {
     nameFilter: z
       .string()
@@ -122,8 +121,8 @@ server.tool(
   "combine_as_variants",
   "Combine multiple COMPONENT nodes into a COMPONENT_SET (variant group). Each component's name should follow the variant format (e.g. 'Layout=Table', 'Layout=List'). Figma will parse the names into variant properties. The resulting COMPONENT_SET automatically gets horizontal wrap auto-layout (20px spacing, 40px padding, HUG sizing) so variants don't pile up.",
   {
-    componentIds: z.array(z.string()).min(1).describe("Array of COMPONENT node IDs to combine"),
-    parentId: z.string().optional().describe("Optional parent node ID for the resulting COMPONENT_SET"),
+    componentIds: z.array(nodeIdParam()).min(1).describe("Array of COMPONENT node IDs to combine"),
+    parentId: nodeIdParam().optional().describe("Optional parent node ID for the resulting COMPONENT_SET"),
   },
   async ({ componentIds, parentId }: any) => {
     try {
@@ -177,7 +176,7 @@ Example — bind existing properties to child nodes:
 
 Returns updated componentPropertyDefinitions after all operations.`,
   {
-    nodeId: z.string().describe("The ID of the COMPONENT or COMPONENT_SET node"),
+    nodeId: nodeIdParam().describe("The ID of the COMPONENT or COMPONENT_SET node"),
     operations: z
       .array(
         z.object({
@@ -194,8 +193,7 @@ Returns updated componentPropertyDefinitions after all operations.`,
           // For edit/delete:
           propertyName: z.string().optional().describe("Full property name including #suffix (for edit/delete)"),
           newName: z.string().optional().describe("New name for the property (for edit)"),
-          targetNodeId: z
-            .string()
+          targetNodeId: nodeIdParam()
             .optional()
             .describe(
               "Child node ID to bind this property to (for add/bind). Auto-detects binding field from property type: BOOLEAN→visible, TEXT→characters, INSTANCE_SWAP→mainComponent.",
@@ -247,8 +245,7 @@ server.tool(
   "get_instance_overrides",
   "Get all override properties from a selected component instance. These overrides can be applied to other instances, which will swap them to match the source component.",
   {
-    nodeId: z
-      .string()
+    nodeId: nodeIdParam()
       .optional()
       .describe(
         "Optional ID of the component instance to get overrides from. If not provided, currently selected instance will be used.",
@@ -289,9 +286,9 @@ server.tool(
   "set_instance_overrides",
   "Apply previously copied overrides to selected component instances. Target instances will be swapped to the source component and all copied override properties will be applied.",
   {
-    sourceInstanceId: z.string().describe("ID of the source component instance"),
+    sourceInstanceId: nodeIdParam().describe("ID of the source component instance"),
     targetNodeIds: z
-      .array(z.string())
+      .array(nodeIdParam())
       .min(1)
       .describe("Array of target instance IDs. Currently selected instances will be used."),
   },

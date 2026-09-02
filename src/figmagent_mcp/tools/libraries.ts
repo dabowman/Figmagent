@@ -8,6 +8,7 @@ import {
   getFileVariables,
   type ComponentMetadata,
 } from "../figma_rest_api.js";
+import { nodeIdParam } from "../utils.js";
 
 // --- Helpers ---
 
@@ -321,8 +322,7 @@ server.tool(
       .describe(
         "The published key of an individual component (not a component set). Get variant keys from get_component_variants.",
       ),
-    parentNodeId: z
-      .string()
+    parentNodeId: nodeIdParam()
       .optional()
       .describe(
         "Optional. Node ID of the parent frame to insert the instance into. If omitted, the instance is added to the current page root. Errors if the ID does not resolve or names a node that cannot hold children — it is never silently ignored.",
@@ -375,8 +375,7 @@ server.tool(
       .array(
         z.object({
           componentKey: z.string().describe("The published key of an individual component (not a component set)."),
-          parentNodeId: z
-            .string()
+          parentNodeId: nodeIdParam()
             .optional()
             .describe(
               "Node ID of the parent frame to insert the instance into. Errors if it does not resolve or cannot hold children.",
@@ -456,12 +455,11 @@ server.tool(
       .describe(
         "The Figma file key of the published library (from URL: figma.com/design/<fileKey>/...). This is NOT for local components — use `read(nodeId)` for those.",
       ),
-    componentSetNodeId: z
-      .string()
+    componentSetNodeId: nodeIdParam()
       .optional()
       .describe("The node_id of a single component set. Use this OR componentSetNodeIds."),
     componentSetNodeIds: z
-      .array(z.string())
+      .array(nodeIdParam())
       .optional()
       .describe("Array of component set node_ids for batch lookup. Use this OR componentSetNodeId."),
   },
