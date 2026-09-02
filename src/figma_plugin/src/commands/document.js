@@ -341,10 +341,26 @@ async function buildNodeOutput(n, detail, inclVars, inclStyles, inclComp, collVa
     if (strokes && typeof strokes !== "symbol" && strokes.length > 0) {
       const strokeWeight = prop(n, "strokeWeight");
       const strokeAlign = prop(n, "strokeAlign");
+      // A node with per-side weights (edit's strokeTop/Bottom/Left/RightWeight,
+      // or the Figma UI's individual strokes) reports strokeWeight as
+      // figma.mixed, which the symbol guard drops — so the border would read
+      // back with no weight at all and a partial border be invisible to `read`.
+      // Emit the four sides instead.
+      let sideWeights;
+      if (typeof strokeWeight === "symbol") {
+        const top = prop(n, "strokeTopWeight");
+        const bottom = prop(n, "strokeBottomWeight");
+        const left = prop(n, "strokeLeftWeight");
+        const right = prop(n, "strokeRightWeight");
+        if (top !== undefined || bottom !== undefined || left !== undefined || right !== undefined) {
+          sideWeights = { top: top, bottom: bottom, left: left, right: right };
+        }
+      }
       out.strokes = strokes.map((stroke) => {
         const s = { type: stroke.type };
         if (stroke.color) s.color = rgbaToHex(stroke.color);
         if (strokeWeight && typeof strokeWeight !== "symbol") s.weight = strokeWeight;
+        else if (sideWeights) s.weights = sideWeights;
         if (strokeAlign) s.align = strokeAlign;
         return s;
       });

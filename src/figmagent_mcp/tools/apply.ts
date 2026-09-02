@@ -65,15 +65,47 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
       // Visual properties (direct values)
       fillColor: colorSchema.describe("Fill color (also sets font color on TEXT nodes)"),
       strokeColor: colorSchema.describe("Stroke color"),
-      strokeWeight: numericParam(z.number().positive()).optional().describe("Stroke weight"),
+      strokeWeight: numericParam(z.number().positive()).optional().describe("Stroke weight (sets all four sides)"),
+      strokeTopWeight: numericParam(z.number().min(0))
+        .optional()
+        .describe(
+          "Top-side stroke weight (frame-like nodes). Use the four per-side fields for partial borders — e.g. a bottom-only card-header rule: { strokeBottomWeight: 1, strokeTopWeight: 0, strokeLeftWeight: 0, strokeRightWeight: 0 }. 0 is allowed (unlike strokeWeight). Applied after strokeWeight, so combining them sets a base then overrides one side.",
+        ),
+      strokeBottomWeight: numericParam(z.number().min(0))
+        .optional()
+        .describe("Bottom-side stroke weight (frame-like nodes)."),
+      strokeLeftWeight: numericParam(z.number().min(0))
+        .optional()
+        .describe("Left-side stroke weight (frame-like nodes)."),
+      strokeRightWeight: numericParam(z.number().min(0))
+        .optional()
+        .describe("Right-side stroke weight (frame-like nodes)."),
       cornerRadius: numericParam(z.number().min(0)).optional().describe("Corner radius"),
       opacity: numericParam(z.number().min(0).max(1)).optional().describe("Node opacity (0-1)"),
       clipsContent: z
         .boolean()
         .optional()
         .describe("Clip content (frames only). true = overflow hidden, false = overflow visible."),
+      visible: z
+        .boolean()
+        .optional()
+        .describe(
+          "Show or hide the node. Works on instance-override sub-nodes (I<instanceId>;<nodeId>) to hide unused slots without detaching. Note that a hidden node then disappears from discovery: grep skips invisible subtrees entirely, and read skips them unless you pass filter: { visibleOnly: false } — use that (on the parent) to find it again and set visible: true.",
+        ),
       width: numericParam(z.number().positive()).optional().describe("Width (resizes the node)"),
       height: numericParam(z.number().positive()).optional().describe("Height (resizes the node)"),
+      minWidth: numericParam(z.number().min(0).nullable())
+        .optional()
+        .describe("Minimum width constraint (auto-layout frames). Pass null to clear it."),
+      maxWidth: numericParam(z.number().min(0).nullable())
+        .optional()
+        .describe("Maximum width constraint (auto-layout frames). Pass null to clear it."),
+      minHeight: numericParam(z.number().min(0).nullable())
+        .optional()
+        .describe("Minimum height constraint (auto-layout frames). Pass null to clear it."),
+      maxHeight: numericParam(z.number().min(0).nullable())
+        .optional()
+        .describe("Maximum height constraint (auto-layout frames). Pass null to clear it."),
 
       // Font properties (TEXT nodes only — loads fonts automatically)
       fontFamily: z.string().optional().describe("Font family (e.g. 'Inter', 'Space Grotesk'). TEXT nodes only."),
@@ -93,6 +125,34 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
       maxLines: numericParam(z.number().positive())
         .optional()
         .describe("Max lines before truncation. Requires textTruncation: ENDING. TEXT nodes only."),
+      letterSpacing: z
+        .union([
+          numericParam(z.number()),
+          z.object({ value: numericParam(z.number()), unit: z.enum(["PIXELS", "PERCENT"]) }),
+        ])
+        .optional()
+        .describe(
+          "Letter spacing. A bare number is PIXELS (CSS letter-spacing: 0.4px → 0.4); pass { value, unit: 'PERCENT' } for percentage. TEXT nodes only.",
+        ),
+      lineHeight: z
+        .union([
+          numericParam(z.number().min(0)),
+          z.literal("AUTO"),
+          z.object({ unit: z.literal("AUTO") }),
+          z.object({ value: numericParam(z.number().min(0)), unit: z.enum(["PIXELS", "PERCENT"]) }),
+        ])
+        .optional()
+        .describe(
+          "Line height (never negative). A bare number is PIXELS; 'AUTO' restores automatic; pass { value, unit: 'PERCENT' } for percentage. NOTE: create_styles/update_styles read a bare number under 10 as a unitless multiplier (1.5 = 150%) — here it is always pixels, and a bare number under 10 comes back with a warning naming both readings. TEXT nodes only.",
+        ),
+      textCase: z
+        .enum(["ORIGINAL", "UPPER", "LOWER", "TITLE", "SMALL_CAPS", "SMALL_CAPS_FORCED"])
+        .optional()
+        .describe("Letter casing (CSS text-transform). UPPER = uppercase. TEXT nodes only."),
+      textDecoration: z
+        .enum(["NONE", "UNDERLINE", "STRIKETHROUGH"])
+        .optional()
+        .describe("Text decoration (CSS text-decoration). TEXT nodes only."),
 
       // Layout properties
       layoutMode: z.enum(["NONE", "HORIZONTAL", "VERTICAL"]).optional().describe("Auto-layout direction"),
@@ -103,6 +163,12 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
       paddingLeft: numericParam(z.number()).optional(),
       primaryAxisAlignItems: z.enum(["MIN", "MAX", "CENTER", "SPACE_BETWEEN"]).optional(),
       counterAxisAlignItems: z.enum(["MIN", "MAX", "CENTER", "BASELINE"]).optional(),
+      layoutPositioning: z
+        .enum(["AUTO", "ABSOLUTE"])
+        .optional()
+        .describe(
+          "ABSOLUTE lifts the node out of its parent's auto-layout flow so x/y position it freely — the standard idiom for badges, notification dots, drag handles and overlays. Requires an auto-layout PARENT. Pair with clipsContent: false on the parent for children that straddle its border.",
+        ),
       layoutSizingHorizontal: z.enum(["FIXED", "HUG", "FILL"]).optional(),
       layoutSizingVertical: z.enum(["FIXED", "HUG", "FILL"]).optional(),
       itemSpacing: numericParam(z.number()).optional().describe("Spacing between children"),
@@ -173,7 +239,7 @@ server.tool(
   "edit",
   `Edit one or more existing Figma nodes: visual properties, font properties, text content, layout, position, name, stacking order, design token variables, styles, component operations, and deletion.
 
-Handles fill color, stroke, corner radius, opacity, width, height, x/y position, rename, reorder (index), text content (characters), font family/weight/size/color, layout mode, padding, alignment, sizing, spacing, variable bindings, text style application, variant swapping (swapVariantId), exposed instances (isExposedInstance), component-property values on instances (componentProperties), and deletion (delete: true).
+Handles fill color, stroke (all sides via strokeWeight, or one side each via strokeTop/Bottom/Left/RightWeight), corner radius, opacity, visibility (visible), width, height, min/max width/height, x/y position, rename, reorder (index), text content (characters), font family/weight/size/color, letter spacing, line height, text case, text decoration, layout mode, padding, alignment, sizing, spacing, absolute positioning (layoutPositioning), content clipping (clipsContent), variable bindings, text style application, variant swapping (swapVariantId), exposed instances (isExposedInstance), component-property values on instances (componentProperties), and deletion (delete: true).
 
 For a single node:
   { nodes: [{ nodeId: "123", fillColor: { r: 1, g: 0, b: 0 } }] }
@@ -217,7 +283,7 @@ Expose a nested instance's properties at the parent component level:
 Set component-property values on an instance (toggle a BOOLEAN, pick a VARIANT, swap an INSTANCE_SWAP, set a TEXT property):
   { nodes: [{ nodeId: "instance1", componentProperties: { "Actions?": false, "Size": "Small" } }] }
 
-Execution order per node: component ops (swapVariantId/isExposedInstance/componentProperties) → layout mode → rename/move/reorder → direct values → font properties → characters → variable bindings → text style → effect style → delete last.
+Execution order per node: component ops (swapVariantId/isExposedInstance/componentProperties) → layout mode → rename/move/reorder → direct values (incl. stroke weights, min/max sizing, resize) → font properties → text style properties (letterSpacing/lineHeight/textCase/textDecoration) → layout values (padding/alignment/spacing/sizing/layoutPositioning) → characters → variable bindings → text style → effect style → delete last. layoutPositioning: 'ABSOLUTE' re-applies x/y/width/height after the flip, so send them in the same op.
 Variable bindings override direct values (set both to get a fallback + token).
 x/y move the node but do NOT change its parent. To reparent: write({ fromNodeId, parentId: newParent }) then edit with delete: true on the original.
 Width and height resize the node. Use variables.width/height to bind dimension tokens.
