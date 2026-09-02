@@ -142,8 +142,12 @@ Review before marking ready / merging.
     await $`gh pr create --draft --repo ${REPO} --base main --head ${branch} --title ${`fix(${id}): ${title}`} --body ${prBody}`.text();
   const prUrl = url.trim();
 
-  // Worktree's job is done — the branch lives on origin now.
+  // Worktree's job is done — the branch lives on origin now. Drop the local
+  // branch too: a leftover `auto-fix/<ID>` makes the NEXT `setup` for the same
+  // id die with "a branch named ... already exists" long after the PR merged
+  // and preflight has gone green again (abort already does this).
   await $`git worktree remove --force ${wt}`;
+  await $`git branch -D ${branch}`.nothrow();
 
   await $`gh issue comment ${issue} --repo ${REPO} --body ${`Draft fix PR opened by the auto-improve pipeline: ${prUrl}`}`;
 

@@ -59,8 +59,12 @@ rm ~/Library/LaunchAgents/com.figmagent.auto-improve.plist
   Tracker entries that reference an `/issues/N` URL are reconciled against that exact issue.
 - Stage C **never auto-reopens** a closed issue; tracker-vs-GitHub disagreements are reported as
   `DRIFT` for you to resolve (run `bun run sync-issues --reopen` if you want them reopened).
-- Stage D is gated: draft-only, max 2/run, requires an existing fix plan, runs lint+test+build in an
-  isolated git worktree, and aborts (no PR) on any failure.
+- Stage D is gated: draft-only, max 4/run (at most 2 of them `boundary-guard`/`assertion` plans, and
+  never two whose plans touch the same file), requires an existing fix plan whose `**Pattern**` is on
+  the `analyze-session` Phase 6 allowlist, runs lint+test+build in an isolated git worktree, and
+  aborts (no PR) on any failure. **The cap and the allowlist are prose, not code** — `dispatch-fix.ts`
+  enforces only draft-only / base `main` / worktree cleanup, so the gate is only as good as the
+  model's reading of `.claude/commands/dispatch-fixes.md`.
 
 ## Notes
 

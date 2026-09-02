@@ -300,6 +300,7 @@ Update `.claude/analysis/improvement-tracker.md`:
    - **Auto-increment NNN past the highest existing number in that category across BOTH the Active and Resolved sections.** Grep `^### \[CATEGORY-` for the current max first — reusing a number collides two distinct findings onto one GitHub issue (the sync warns on this, but don't create it).
    - Set status to `identified`
    - Set priority based on estimated call savings: P0 (>50 calls), P1 (10-50 calls), P2 (<10 calls)
+   - When an entry is *not* auto-fixable, name the current allowlist in the reason — never copy an older entry's three-pattern boilerplate; the allowlist is the seven patterns in Phase 6 below.
    - **Always add an explicit `- **Auto-fixable**: yes (<pattern>)` or `- **Auto-fixable**: no (<reason>)` line** — `yes` only when it matches a Phase 6 safe pattern, and name the pattern in the parentheses so Stage D can gate on it mechanically. Stage D (`/dispatch-fixes`) keys on this field — an entry missing it is never auto-fixed.
    - **Every `[ID]` you name in the analysis document must get a tracker entry.** The tracker — not the analysis doc — is what Stage C syncs to GitHub, so an ID that appears only in prose never becomes an issue. `sync-issues` warns on any such orphan (`⚠️ N finding ID(s) appear in analysis docs but have no `### [ID]` entry`); if you cite an ID, either add the entry or use the existing ID it duplicates.
 
@@ -324,7 +325,7 @@ Update `.claude/analysis/improvement-tracker.md`:
 
 ## Phase 6: Generate Fix Plans (if applicable)
 
-For issues with `- **Auto-fixable**: yes` in the tracker, generate implementation plans. Plans go to `.claude/plans/<date>-<issue-id>.md`. **After writing a plan file, set that entry's `Status` to `planned`.** Stage D (`/dispatch-fixes`) gates on the plan file's existence plus a non-resolved status, so a written-but-not-marked plan would never be dispatched — keep these in lockstep.
+For issues with `- **Auto-fixable**: yes (<pattern>)` in the tracker, generate implementation plans. Plans go to `.claude/plans/<date>-<issue-id>.md`. **After writing a plan file, set that entry's `Status` to `planned`.** Stage D (`/dispatch-fixes`) gates on the plan file's existence plus a non-resolved status, so a written-but-not-marked plan would never be dispatched — keep these in lockstep.
 
 ### Safe Fix Patterns (allowlist)
 
@@ -353,27 +354,28 @@ Only generate plans for these well-understood patterns. Each names its dispatch 
 - **Trigger**: The finding is a wrong, missing, or misleading tool description, `fail()` fix string, server-instruction line, or skill/CLAUDE.md paragraph — the code path itself is correct (e.g. a description that omits a field the implementation already accepts, a fix string naming the wrong cause).
 - **Fix**: Edit the text in place. No control-flow change anywhere.
 - **Plan content**: File, the exact current sentence(s), the exact replacement. If the text is in a skill or CLAUDE.md, the section header it lives under.
-- **Gate**: `bun run lint` only. P0–P2.
+- **Gate**: lint + test (+ `build:plugin` when it touched `src/figma_plugin/`) — the suite asserts on descriptions and `fail()` strings. No *named* test required. P0–P2.
 
 #### `lint-scope-filter`
 - **Trigger**: `lint` reports something that cannot be resolved by binding a variable — an invisible paint, a COMPONENT_SET wrapper's own layout, a Figma default the agent did not set.
 - **Fix**: One skip predicate in `src/figma_plugin/src/commands/lint.js` (`checkColorProperty`, `checkScalarProperty`, or the property loop) plus one line in the `lint` tool description saying what is not reported.
 - **Plan content**: The predicate and where it goes; a test in `tests/minilint.test.ts` with a positive control (the same node visible/bound/not-a-set is still reported).
-- **Gate**: the named test passes. P0–P2.
+- **Gate**: lint + test + build; the named test passes. P0–P2 (the predicate is a pure skip, and the positive control pins that nothing else stopped being reported).
 
 #### `boundary-guard`
+- **Tie-break vs `description-only`**: if a `fail()` call already exists and only its *strings* change, it is `description-only`. `boundary-guard` is for **adding** a guard where a raw throw escaped.
 - **Trigger**: A handler or stdlib helper throws a raw `TypeError` / verbatim Figma error with no stated fix on invalid input — a null node, wrong node type, absent field, page mismatch.
 - **Fix**: `fail(message, fix)` at the entry point (`src/figma_plugin/src/helpers.js` `fail`). Valid input takes exactly the same path as before; the guard only replaces the raw throw.
 - **Plan content**: The guard, its position, the exact fix string; a test asserting the message contains `Fix:` and that the valid-input path is unchanged.
-- **Gate**: the named test passes. P0/P1 only.
+- **Gate**: lint + test + build; the named test passes. P0/P1 only.
 
 #### `assertion`
 - **Trigger**: A write reported success but left a state the agent only discovers by re-reading — width 0 on a missing font, a variable bound onto an invisible paint, an opacity resolving at 1/100.
 - **Fix**: A new warning category in `src/figma_plugin/src/assertions.js`, hooked into `checkNodes` or `runPostWriteAssertions`. Advisory only — it never blocks or alters the write.
 - **Plan content**: The check name, the predicate, the message + fix string, the hook point; a test on the pure checker function.
-- **Gate**: the named test passes. P0/P1 only.
+- **Gate**: lint + test + build; the named test passes. P0/P1 only.
 
-**Mixed findings are not auto-fixable.** If the remedy for an entry is partly an allowlisted pattern and partly design work (a new field, a behaviour change), mark it `no (mixed: <what>)` — `dispatch-fix.ts publish` always writes `Closes #N`, so a partial plan would close an issue whose real fix is still open.
+**Mixed findings are not auto-fixable.** If the remedy for an entry is partly an allowlisted pattern and partly design work (a new field, a behaviour change), mark it `no (mixed: <what>)` — `dispatch-fix.ts publish` always writes `Closes #N`, so a partial plan would close an issue whose real fix is still open. If the plan is a genuinely useful *half* of an issue that a person should land, keep the entry `yes (<pattern>)` but add a `**Partial**: yes — <what is not covered>` line to the plan header; `/dispatch-fixes` skips those for the same `Closes #N` reason.
 
 ### Plan Format
 
@@ -395,6 +397,12 @@ Only generate plans for these well-understood patterns. Each names its dispatch 
 - [ ] Run `bun run build:plugin`
 - [ ] Test in a Figma session
 ```
+
+The `**Pattern**` field must **start** with one allowlist token; a trailing qualifier in
+parentheses is fine (`` `type-coercion` (at the Zod boundary)``), a second pattern is not —
+Stage D reads only the first token, so `` `assertion` (plus `description-only`)`` gates as
+`assertion` and its docs half inherits the `assertion` gate. Same rule for the tracker's
+`Auto-fixable: yes (…)`. A plan that genuinely needs two gates is two plans, or `no (mixed: …)`.
 
 **Important**: The skill NEVER applies code changes directly. It only generates plan files and marks issues as `planned` in the tracker. The user reviews and triggers implementation.
 
