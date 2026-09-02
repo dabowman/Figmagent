@@ -17,16 +17,18 @@ not by this prose — that script is the source of truth for *draft-only*, *base
 `AUTO_IMPROVE_REPO`, default `dabowman/Figmagent` — never hardcode it here). Your job
 is the **judgement**: pick the right issue and decide whether the plan applies cleanly.
 
-- **Draft PRs only / max 2 issues per run.** (`dispatch-fix.ts publish` always passes `--draft`.)
+- **Draft PRs only / max 4 issues per run, of which at most 2 may be `boundary-guard` or `assertion` plans.** (`dispatch-fix.ts publish` always passes `--draft`.)
 - Act on an issue only if **all** of these hold:
-  1. The tracker entry has `Auto-fixable: yes`, and
-  2. Priority is **P0 or P1**, and
+  1. The tracker entry has `Auto-fixable: yes (<pattern>)`, and
+  2. Priority is **P0 or P1** — or **P2** when the pattern is `description-only` or `lint-scope-filter`, and
   3. A plan file exists at `.claude/plans/*<ISSUE-ID>*.md`, and
   4. Status is `identified` or `planned` (never implemented/verified/resolved), and
   5. `dispatch-fix.ts preflight` succeeds (an **open** issue exists; no branch/PR in flight).
-- The plan must be a `type-coercion` or `sync-to-async` pattern (small, mechanical).
-  **Skip `missing-batch-tool` / `missing-tool` plans** — new tools need human design
-  via the `/add-mcp-tool` skill; comment on the issue saying so and move on.
+- The plan's `**Pattern**` must be one of `sync-to-async`, `type-coercion`,
+  `description-only`, `lint-scope-filter`, `boundary-guard`, `assertion` (defined in the
+  `analyze-session` skill, Phase 6). **Skip `missing-batch-tool` / `missing-tool` plans** —
+  new tools need human design via the `/add-mcp-tool` skill; comment on the issue saying
+  so and move on. Skip any plan whose pattern line is missing or not on this list.
 - If lint/test/build fail after applying the plan, run `dispatch-fix.ts abort` and open **no** PR.
 
 > **Lockstep with the analyzer.** Constraints 1 and 4 depend on the `analyze-session`
@@ -38,7 +40,8 @@ is the **judgement**: pick the right issue and decide whether the plan applies c
 
 1. **Pick candidates.** Read `.claude/analysis/improvement-tracker.md`. Collect entries
    meeting constraints 1–4 above. For each, `ls .claude/plans/` to confirm a plan file
-   exists. Cap the list at 2 (lowest issue numbers / highest priority first).
+   exists. Cap the list at 4, with at most 2 `boundary-guard`/`assertion` plans (highest
+   priority first, then lowest issue number).
 
 2. **Preflight each candidate** (open issue + nothing in flight):
    ```bash
@@ -60,6 +63,10 @@ is the **judgement**: pick the right issue and decide whether the plan applies c
    - `bun run lint`
    - `bun run test`
    - `bun run build:plugin` (only if plugin source under `src/figma_plugin/` changed)
+   A `description-only` plan needs only `bun run lint`. Every other pattern's plan names
+   a test under `## Verification`; after applying the plan that test must exist in the
+   worktree and pass. **If the plan names no test, abort** — an unverified guard or
+   assertion is not a safe PR.
    If any fail and the fix isn't a trivial, in-scope correction, **abort this issue** and
    continue to the next candidate:
    ```bash

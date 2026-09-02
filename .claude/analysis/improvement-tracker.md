@@ -577,6 +577,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Decision (2026-09-02)**: root cause: `getDocumentInfo` builds `pages` from `figma.currentPage` only. Enumerate `figma.root.children` (id + name for every page, `childCount` for loaded pages). Onboarding half shipped in #194. Recorded on [#64](https://github.com/dabowman/Figmagent/issues/64).
 - **Priority**: P2
 - **Category**: plugin-bug
+- **Auto-fixable**: no (behaviour change: page enumeration in getDocumentInfo)
 - **First seen**: Session 27 (2026-06-16, remote transport)
 - **Sessions affected**: 27, 33, 34, 36, 38, 43, 44, 45, 53, 61
 - **Estimated savings**: ~3 reads per remote multi-page session (session 44: caused wholesale abandonment of `read`)
@@ -642,6 +643,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Decision (2026-09-02)**: auto-degrade in-VM (scale ×0.5 floor 0.5, then JPG) with a `degraded` note, then fail naming the encoded size and 'export child nodes individually'; client.ts throws on JSON.parse failure; the '~4MB cap' text is deleted. Recorded on [#96](https://github.com/dabowman/Figmagent/issues/96).
 - **Priority**: P0
 - **Category**: plugin-bug
+- **Auto-fixable**: no (behaviour change: in-VM degrade + transport throw)
 - **First seen**: Session 34 (2026-06-19, external WordPress-Admin-Environment, remote transport)
 - **Sessions affected**: 34, 38, 39, 41, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 61
 - **Estimated savings**: ~6–62 calls per verification-heavy session (removes the official-MCP screenshot fallback; session 43 measured 17 calls / ~8 min, session 44 measured **62 calls / ~16 min**, session 45 measured 24 calls / ~7 min)
@@ -822,6 +824,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Decision (2026-09-02)**: page CRUD as proposed (`write({type:'PAGE'})`, `edit` rename/delete); creating a page on remote sets it as the working page (BUG-047). No reset-to-baseline helper. Recorded on [#107](https://github.com/dabowman/Figmagent/issues/107).
 - **Priority**: P2
 - **Category**: missing-tool
+- **Auto-fixable**: no (missing-tool: page CRUD)
 - **First seen**: Session 39 (2026-06-22, this repo, benchmark orchestration)
 - **Sessions affected**: 39, 54
 - **Estimated savings**: ~6 `run_script` calls per multi-round harness session; ~1–2 per ordinary multi-artifact build
@@ -1001,6 +1004,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Decision (2026-09-02)**: measurement entry; no new guidance beyond AGENT-036 + INFRA-008. Close after three consecutive custom-font sessions under 20% script share of writes. Recorded on [#122](https://github.com/dabowman/Figmagent/issues/122).
 - **Priority**: P1
 - **Category**: agent-behavior
+- **Auto-fixable**: no (measurement entry)
 - **First seen**: Session 44 (2026-08-14, external vip-workflows, remote transport)
 - **Sessions affected**: 44, 46, 47, 49, 53, 54, 55 (**partial reversal**), 56, 58, 59 (**reversal**), 61 (**reversal, 2nd**), 62 (**RECORD SHARE**)
 - **Estimated savings**: tracking metric — the underlying gaps are costed in their own entries
@@ -1087,6 +1091,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Decision (2026-09-02)**: measurement entry; drivers are AGENT-036 (discovery) and TOOL-052 (payload shape). No further action beyond those. Recorded on [#127](https://github.com/dabowman/Figmagent/issues/127).
 - **Priority**: P2
 - **Category**: agent-behavior
+- **Auto-fixable**: no (measurement entry)
 - **First seen**: Session 45 (2026-08-19, external vip-workflows, remote transport)
 - **Sessions affected**: 45, 53, 55, 57, 59 (**held**), 61 (**held**)
 - **Estimated savings**: ~4 calls per build session, plus the pre-checks a script write forfeits
@@ -1145,6 +1150,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Status**: identified
 - **Priority**: P2
 - **Category**: missing-tool
+- **Auto-fixable**: no (missing-tool: preamble param)
 - **First seen**: Session 47 (2026-08-25, external site-foundry, remote transport)
 - **Sessions affected**: 44 (as the plugin-data workaround), 47, 49
 - **Estimated savings**: ~0 calls, ~5-6K output chars per script-heavy build; removes the workaround that caused [BUG-023]
@@ -1183,6 +1189,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Decision (2026-09-02)**: `variables` map on the write node spec, same field names and FIELD_MAP path as edit; binding wins over a literal and the literal is seeded from the resolved value (BUG-043). Recorded on [#133](https://github.com/dabowman/Figmagent/issues/133).
 - **Priority**: P1
 - **Category**: missing-tool
+- **Auto-fixable**: no (missing-tool: variables on write)
 - **First seen**: Session 48 (2026-08-25, external site-foundry, remote transport)
 - **Sessions affected**: 48, 57, 61
 - **Estimated savings**: ~5-10 calls per token-first build (removes a mandatory second pass over every created node)
@@ -1232,6 +1239,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Decision (2026-09-02)**: return contract, loud when missed: write script without `{ nodeIds }` gets a warning; `assertScope: nodeId` for a subtree; add `height_collapse` and mini-lint over the returned nodes. No page-diff auto-tracking. Recorded on [#137](https://github.com/dabowman/Figmagent/issues/137).
 - **Priority**: P1
 - **Category**: missing-tool
+- **Auto-fixable**: no (mixed: return-contract warning + assertScope param + height_collapse + mini-lint)
 - **First seen**: Session 49 (2026-08-26, external loupe, remote transport) — as a first-class cost; noted in passing since session 40
 - **Sessions affected**: 40, 41, 44, 46, 47, 49, 50, 54, 55, 58, 59, 61
 - **Estimated savings**: ~14 calls per script-built layout session; retires a caveat repeated in five other entries
@@ -1423,6 +1431,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Decision (2026-09-02)**: with pagination (TOOL-043) the summary carries `shown`/`total` over the full scan so a closing triage can name what it did not inspect; library-binding half unchanged. Recorded on [#142](https://github.com/dabowman/Figmagent/issues/142).
 - **Priority**: P1
 - **Category**: missing-tool
+- **Auto-fixable**: no (mixed: summary shape + library bindings)
 - **First seen**: Session 52 (2026-08-27, external site-foundry, remote transport)
 - **Sessions affected**: 48, 52, 56, 61 (the verification half of [TOOL-024]; [AGENT-020] is the agent-behavior ancestor)
 - **Estimated savings**: ~4 calls per library-token session, and one class of false "design is clean" conclusion
@@ -1470,6 +1479,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Decision (2026-09-02)**: auto park-and-restore on remote, always on, node-level by default; response carries `font_parked`; parking failure fails with the true cause. Full contract in #145. Recorded on [#145](https://github.com/dabowman/Figmagent/issues/145).
 - **Priority**: P1
 - **Category**: plugin-bug
+- **Auto-fixable**: no (design work: park-and-restore mode)
 - **First seen**: Session 53 (2026-09-01, external storybook/"Archer", remote transport)
 - **Sessions affected**: 53 (both halves), 54, 55, 56, 57, 58, 59, 60
 - **Estimated savings**: ~7 calls per session; unblocks the entire typography path on remote for custom-font files
@@ -1529,6 +1539,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Decision (2026-09-02)**: the family-toggle re-resolution is the last restore step in park-and-restore; a still-mismatched weight warns `weight_unresolved` naming the plugin transport. Recorded on [#158](https://github.com/dabowman/Figmagent/issues/158).
 - **Priority**: P1
 - **Category**: plugin-bug
+- **Auto-fixable**: no (depends on BUG-033's park-and-restore)
 - **First seen**: Session 53 second half (2026-09-01, external storybook/"Archer", remote transport)
 - **Sessions affected**: 53
 - **Estimated savings**: ~7 calls/session on custom-font files; removes a class of silently-wrong design output
@@ -1546,6 +1557,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Decision (2026-09-02)**: one face table in helpers.js; on a miss enumerate the family's real faces and pick by proximity, else fail with the actual face names. `font_fallback` compares the face, not just the family. Recorded on [#159](https://github.com/dabowman/Figmagent/issues/159).
 - **Priority**: P2
 - **Category**: plugin-bug
+- **Auto-fixable**: no (code consolidation across three files)
 - **First seen**: Session 53 second half (2026-09-01, external storybook/"Archer", remote transport)
 - **Sessions affected**: 17 (as [BUG-007]), 53, 55, 58
 - **Estimated savings**: ~3 calls/session, and one class of silently-wrong font output on both transports
@@ -1573,10 +1585,11 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 
 ### [BUG-036] `combine_as_variants` has no page co-location pre-check — Figma's raw error escapes with no stated fix
 
-- **Status**: identified
+- **Status**: planned
 - **Decision (2026-09-02)**: pre-check every component's page against the parent's; fail naming the component and both pages; with no parentId use the working page (BUG-047). Recorded on [#161](https://github.com/dabowman/Figmagent/issues/161).
 - **Priority**: P2
 - **Category**: plugin-bug
+- **Auto-fixable**: yes (boundary-guard — P2, so not auto-dispatched; plan is for a person)
 - **First seen**: Session 54 (2026-09-01, external storybook/"Archer", remote transport)
 - **Sessions affected**: 54
 - **Estimated savings**: ~2-3 calls per occurrence, and closes a "no stated fix" hole in a function that already states three
@@ -1591,6 +1604,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Decision (2026-09-02)**: `edit({textStyleId})` parks nodes (not the style) and applies internally; the 'skip textStyleId' remedy text is retired once parking lands. See #145. Recorded on [#162](https://github.com/dabowman/Figmagent/issues/162).
 - **Priority**: P1
 - **Category**: plugin-bug
+- **Auto-fixable**: no (covered by BUG-033's park-and-restore)
 - **First seen**: Session 54 (2026-09-01, external storybook/"Archer", remote transport)
 - **Sessions affected**: 54, 55, 57, 59
 - **Estimated savings**: ~4 calls/session on custom-font files, and retires guidance that contradicts [AGENT-032]
@@ -1614,6 +1628,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Decision (2026-09-02)**: both: `edit.variableModes` ({ collection: mode | null }, names or ids) and `screenshot({ variableModes })` as a set-export-clear override in one call. Recorded on [#163](https://github.com/dabowman/Figmagent/issues/163).
 - **Priority**: P1
 - **Category**: missing-tool
+- **Auto-fixable**: no (missing-tool: variableModes on edit/screenshot)
 - **First seen**: Session 54 (2026-09-01, external storybook/"Archer", remote transport)
 - **Sessions affected**: 54
 - **Estimated savings**: ~4 calls per themed-review session; the operation is currently unreachable without `run_script`
@@ -1630,6 +1645,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Decision (2026-09-02)**: `effects` array on edit and the write spec; `variables.effectColor` binds every shadow's colour via setBoundVariableForEffect; effectStyleId unchanged. Recorded on [#164](https://github.com/dabowman/Figmagent/issues/164).
 - **Priority**: P2
 - **Category**: missing-tool
+- **Auto-fixable**: no (missing-tool: effects on edit)
 - **First seen**: Session 54 (2026-09-01, external storybook/"Archer", remote transport)
 - **Sessions affected**: 54, 55, 61
 - **Estimated savings**: ~1-2 calls per component with elevation; removes one more reason to open a script
@@ -1640,10 +1656,11 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Recurred (2nd), and it is now four calls, not one**: Session 55 (2026-09-01, external storybook/"Archer", remote) needed `run_script` for the popup elevation **four separate times** — #46 (add the shadow, colour bound via `setBoundVariableForEffect`), #63 (rewrite it with `showShadowBehindNode` explicit), #68 (clear it to test an export), #73 (restore it). Every one is a one-line `n.effects = [...]` that `edit` cannot express. The diagnostic pair (#68/#73) is what isolated [BUG-016]'s discriminator, so an `effects` field on `edit` would also have made that experiment a two-call check instead of a script round trip.
 ### [AGENT-033] A raw `clone()` in `run_script` parents to `figma.currentPage`, not to the source's parent
 
-- **Status**: identified
+- **Status**: planned
 - **Decision (2026-09-02)**: no `fig.clone` helper; `write({ fromNodeId, parentId })` is the path; once BUG-047 lands a raw clone() parents to the session's own page. Recorded on [#165](https://github.com/dabowman/Figmagent/issues/165).
 - **Priority**: P1
 - **Category**: agent-behavior
+- **Auto-fixable**: yes (description-only)
 - **First seen**: Session 54 (2026-09-01, external storybook/"Archer", remote transport)
 - **Sessions affected**: 54
 - **Estimated savings**: ~3 calls per occurrence, plus a class of silently-misplaced nodes that no assertion catches
@@ -1659,6 +1676,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Decision (2026-09-02)**: prepare_figma_variables scales opacity tokens ×100 when ≤ 1 and lists them; post-bind `opacity_scale` assertion warns when resolved < 0.05 and variable > 0.05; no rewrite at bind time. Recorded on [#166](https://github.com/dabowman/Figmagent/issues/166).
 - **Priority**: P1
 - **Category**: plugin-bug
+- **Auto-fixable**: no (mixed: prepare_figma_variables conversion + assertion + description)
 - **First seen**: Session 55 (2026-09-01, external storybook/"Archer", remote transport)
 - **Sessions affected**: 55, 57, 58, 61
 - **Estimated savings**: ~4 calls per occurrence, and it converts a silent visual defect into a stated warning
@@ -1674,10 +1692,11 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 
 ### [BUG-039] `setProperties` failures state a fix for the wrong problem when the real cause is an unavailable font
 
-- **Status**: identified
+- **Status**: planned
 - **Decision (2026-09-02)**: branch the `setProperties` catch on the unloaded-font shape and route into park-and-restore (the main component's TEXT nodes are what get parked). Recorded on [#167](https://github.com/dabowman/Figmagent/issues/167).
 - **Priority**: P2
 - **Category**: plugin-bug
+- **Auto-fixable**: yes (boundary-guard — P2, so not auto-dispatched; plan is for a person)
 - **First seen**: Session 55 (2026-09-01, external storybook/"Archer", remote transport)
 - **Sessions affected**: 55
 - **Estimated savings**: ~2-3 calls per occurrence on any custom-font file
@@ -1690,10 +1709,11 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 
 ### [TOOL-040] `fig.createNode` returns the create *response*, not the node — `.id` is undefined, and `fig.check` is skipped in silence
 
-- **Status**: identified
+- **Status**: planned
 - **Decision (2026-09-02)**: `fig.createNode` returns the created `tree` object; the write-mode postlude warns on null/undefined ids instead of skipping silently. Ships with TOOL-033. Recorded on [#168](https://github.com/dabowman/Figmagent/issues/168).
 - **Priority**: P1
 - **Category**: missing-tool
+- **Auto-fixable**: yes (boundary-guard)
 - **First seen**: Session 55 (2026-09-01, external storybook/"Archer", remote transport)
 - **Sessions affected**: 55
 - **Estimated savings**: ~3 calls per script-heavy session, plus it restores post-write assertions that are currently skipped without notice
@@ -1720,6 +1740,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Decision (2026-09-02)**: `delete: true` on a set_annotation / set_multiple_annotations entry clears `annotationIndex` or all; `labelMarkdown` becomes optional; neither → fail with the fix. Recorded on [#170](https://github.com/dabowman/Figmagent/issues/170).
 - **Priority**: P2
 - **Category**: missing-tool
+- **Auto-fixable**: no (missing-tool: a new delete verb on the annotation schema)
 - **First seen**: Session 55 (2026-09-01, external storybook/"Archer", remote transport)
 - **Sessions affected**: 55
 - **Estimated savings**: ~1-2 calls per annotation-revision pass
@@ -1733,6 +1754,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Decision (2026-09-02)**: paginate like grep: `page` on lint and get_design_system, whole items per page, `meta.pagination` with page/pageCount/next/total; read unchanged. Recorded on [#171](https://github.com/dabowman/Figmagent/issues/171).
 - **Priority**: P2
 - **Category**: tool-behavior
+- **Auto-fixable**: no (behaviour change: pagination on lint/get_design_system)
 - **First seen**: Session 55 (2026-09-01, external storybook/"Archer", remote transport)
 - **Sessions affected**: 55
 - **Estimated savings**: ~1 call per lint pass, and it stops the agent under-shooting on the retry
@@ -1744,10 +1766,11 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 
 ### [BUG-040] A TEXT node on an unavailable font measures at width 0, and [BUG-009]'s documented repair does not work
 
-- **Status**: identified
+- **Status**: planned
 - **Decision (2026-09-02)**: resize() is part of the restore step; `width_collapse` assertion on missing-font width 0; donors: Inter / Noto Sans New Tai Lue, SF families excluded; CLAUDE.md width-0 paragraph corrected. Recorded on [#172](https://github.com/dabowman/Figmagent/issues/172).
 - **Priority**: P1
 - **Category**: plugin-bug
+- **Auto-fixable**: yes (assertion)
 - **First seen**: Session 56 (2026-09-01, external storybook/"Archer", remote transport)
 - **Sessions affected**: 56, 58, 61 (**remedy verified**)
 - **Estimated savings**: ~19 calls per custom-font session, and it corrects a remedy this tracker is actively prescribing
@@ -1780,6 +1803,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Decision (2026-09-02)**: becomes figma-guidelines skill text (INFRA-008): re-run lint after a fix pass before reporting done; with pagination (TOOL-043) the uninspected-count half is moot. Recorded on [#174](https://github.com/dabowman/Figmagent/issues/174).
 - **Priority**: P2
 - **Category**: agent-behavior
+- **Auto-fixable**: no (covered by INFRA-008's plan)
 - **First seen**: Session 56 (2026-09-01, external storybook/"Archer", remote transport)
 - **Sessions affected**: 56
 - **Estimated savings**: ~1 call, and it stops a class of unmeasured completion claim
@@ -1823,6 +1847,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Decision (2026-09-02)**: always write `resolveForConsumer(node).value` into the paint before `setBoundVariableForPaint` — on empty and existing paints; fall back to current behaviour if resolve throws or is non-COLOR. Recorded on [#177](https://github.com/dabowman/Figmagent/issues/177).
 - **Priority**: P1
 - **Category**: plugin-bug
+- **Auto-fixable**: no (behaviour change in the bind path)
 - **First seen**: Session 58 (2026-09-01, external storybook/"Archer", remote transport)
 - **Sessions affected**: 58
 - **Estimated savings**: ~6 calls per session that binds colour variables on new nodes; converts a silently-wrong render into a correct one
@@ -1841,6 +1866,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Decision (2026-09-02)**: `get_design_system({ includeFonts: true, fontPattern })` → `fonts: { families, missing[] }`; no separate list_fonts tool; parking uses it for donor choice. Recorded on [#178](https://github.com/dabowman/Figmagent/issues/178).
 - **Priority**: P1
 - **Category**: missing-tool
+- **Auto-fixable**: no (missing-tool: new includeFonts section)
 - **First seen**: Session 58 (2026-09-01, external storybook/"Archer", remote transport) — as a first-class cost; the underlying hunt has recurred since session 53
 - **Sessions affected**: 53, 54, 55, 56, 57, 58
 - **Estimated savings**: ~5 calls per custom-font session; gives [BUG-033], [BUG-040] and [BUG-041] a place to point
@@ -1869,6 +1895,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Decision (2026-09-02)**: park-and-restore owns snapshot/restore incl. the double fontName assign; `update_styles` restores a `fontWeight` binding a `fontName` write would drop. See #145. Recorded on [#180](https://github.com/dabowman/Figmagent/issues/180).
 - **Priority**: P1
 - **Category**: plugin-bug
+- **Auto-fixable**: no (covered by BUG-033's park-and-restore)
 - **First seen**: Session 59 (2026-09-01, external storybook/"Archer", remote transport)
 - **Sessions affected**: 59, 61 (**remedy verified**)
 - **Estimated savings**: ~2 calls per style-swap, and it removes a file-wide corruption risk from the workaround this tracker recommends
@@ -1906,6 +1933,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Decision (2026-09-02)**: probe `createImageAsync(url)` on the remote VM first; if it works add `fillImage: { url, scaleMode }` to write/edit, else document the limitation next to fillColor and close. Recorded on [#181](https://github.com/dabowman/Figmagent/issues/181).
 - **Priority**: P2
 - **Category**: missing-tool
+- **Auto-fixable**: no (pending the createImageAsync probe)
 - **First seen**: Session 59 (2026-09-01, external storybook/"Archer", remote transport)
 - **Sessions affected**: 59
 - **Estimated savings**: 0 calls — this is a fidelity gap, not a cost one
@@ -1916,11 +1944,12 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 
 ### [TOOL-047] `combine_as_variants` cannot name the set it creates, and reports nothing about what its auto-layout did to the variants
 
-- **Status**: identified
+- **Status**: planned
 - **Partially shipped**: (a) `combine_as_variants` accepts an optional `name` and sets it on the resulting set. (b) per-child sizing readback / assertions over re-parented children still open.
 - **Decision (2026-09-02)**: (b) after combining, run the existing post-write assertions over the re-parented children and return `warnings:` plus each child's sizing/width/height. (a) `name` shipped in #194. Recorded on [#182](https://github.com/dabowman/Figmagent/issues/182).
 - **Priority**: P2
 - **Category**: missing-tool
+- **Auto-fixable**: yes (assertion — P2, so not auto-dispatched; plan is for a person)
 - **First seen**: Session 59 (2026-09-01, external storybook/"Archer", remote transport)
 - **Sessions affected**: 59
 - **Estimated savings**: ~2-3 calls per component set
@@ -1949,6 +1978,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Decision (2026-09-02)**: `reactions` field on `edit`, compact form expanded in the plugin to Figma's Reaction[] via setReactionsAsync; `[]` clears; `raw` escape for anything the compact form lacks. Recorded on [#184](https://github.com/dabowman/Figmagent/issues/184).
 - **Priority**: P1
 - **Category**: missing-tool
+- **Auto-fixable**: no (missing-tool: reactions on edit)
 - **First seen**: Session 60 (2026-09-02, external storybook/"Archer", remote transport)
 - **Sessions affected**: 60
 - **Estimated savings**: 1 script → 1 batched call per interactive component; removes an entire category of work from the escape hatch
@@ -1977,6 +2007,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Decision (2026-09-02)**: per-session working page: `use_file({ page })` / URL node-id sets it, `set_focus` updates it on remote, every create handler sets it before creating; no working page + no parentId fails with the fix. Serial sessions on one file until this lands. Recorded on [#186](https://github.com/dabowman/Figmagent/issues/186).
 - **Priority**: P1
 - **Category**: plugin-bug
+- **Auto-fixable**: no (design work: per-session working page)
 - **First seen**: Session 61 (2026-09-02, external storybook/"Archer", remote transport)
 - **Sessions affected**: 61
 - **Estimated savings**: ~2 calls per collision, and removes a silent cross-session corruption channel
@@ -2021,6 +2052,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Decision (2026-09-02)**: typed absence criteria on grep: `unstyled: true` (no style of the kind the node type implies) and `unbound: [props]` (present, non-default, no binding — lint's predicates). No general `negate`. Recorded on [#189](https://github.com/dabowman/Figmagent/issues/189).
 - **Priority**: P1
 - **Category**: missing-tool
+- **Auto-fixable**: no (missing-tool: new grep criteria)
 - **First seen**: Session 62 (2026-09-02, external storybook/"Archer", remote transport)
 - **Sessions affected**: 62
 - **Estimated savings**: ~4 calls/session on any token- or style-coverage audit
@@ -2036,6 +2068,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Decision (2026-09-02)**: skill rule (INFRA-008): under deferred schemas, ToolSearch the Figma domain before writing a run_script in it; CLAUDE.md's 'No ToolSearch needed' line scoped to this repo. Recorded on [#190](https://github.com/dabowman/Figmagent/issues/190).
 - **Priority**: P1
 - **Category**: agent-behavior
+- **Auto-fixable**: no (covered by INFRA-008's plan)
 - **First seen**: Session 62 (2026-09-02, external storybook/"Archer", remote transport)
 - **Sessions affected**: 62
 - **Estimated savings**: ~4 calls/session; a distinct and fixable driver of [AGENT-025]
@@ -2051,6 +2084,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Decision (2026-09-02)**: bulk form on update_variables `{ variableIds, scopes?, description?, hiddenFromPublishing? }` through the existing validation; create_variables takes a per-variable collection override. Recorded on [#191](https://github.com/dabowman/Figmagent/issues/191).
 - **Priority**: P2
 - **Category**: missing-tool
+- **Auto-fixable**: no (missing-tool: bulk form on update_variables)
 - **First seen**: Session 62 (2026-09-02, external storybook/"Archer", remote transport)
 - **Sessions affected**: 62
 - **Estimated savings**: ~0 calls — the value is moving the session's single largest mutation back behind scope validation
@@ -2078,6 +2112,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Decision (2026-09-02)**: get_instance_overrides takes `nodeIds` or `scope` plus `fields`, returns per-instance overridden fields with main-component resolution; report only, never offers to clear. Recorded on [#193](https://github.com/dabowman/Figmagent/issues/193).
 - **Priority**: P2
 - **Category**: missing-tool
+- **Auto-fixable**: no (missing-tool: scoped override audit)
 - **First seen**: Session 62 (2026-09-02, external storybook/"Archer", remote transport)
 - **Sessions affected**: 62
 - **Estimated savings**: ~2 calls/session on any file where instances have drifted from their mains
@@ -2087,7 +2122,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Note**: capability addition, not in the Phase 6 auto-fix allowlist — no auto-plan generated. Related: [AGENT-032] (styling mains before instances exist is the way to avoid this entirely), [TOOL-051] (the same "audit what state the document is in" gap).
 
 ### [INFRA-006] Widen the auto-fix allowlist: description/error-text, lint-scope filters, boundary guards, assertion categories — [#195](https://github.com/dabowman/Figmagent/issues/195)
-- **Status**: planned
+- **Status**: implemented — allowlist widened in the `analyze-session` skill (Phase 6: `description-only`, `lint-scope-filter`, `boundary-guard`, `assertion`, each with a dispatch gate), `dispatch-fixes` (P2 allowed for the two low-risk patterns; cap 4/run, ≤2 guards/assertions; a plan naming no test aborts) and CLAUDE.md; seven plans backfilled under `.claude/plans/2026-09-02-*.md`.
 - **Priority**: P1
 - **Category**: infrastructure
 - **First seen**: cohort synthesis of sessions 53–62 (2026-09-02)
@@ -2097,6 +2132,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Status**: planned
 - **Priority**: P1
 - **Category**: infrastructure
+- **Auto-fixable**: no (script change in sync-tracker-issues.ts)
 - **First seen**: cohort synthesis of sessions 53–62 (2026-09-02)
 - **Description**: see the decision recorded on the issue. when a linked GitHub issue is closed but the tracker's active entry still says `identified` / `planned`, `sync-issues` updates the tracker instead of only reporting DRIFT: the Status line becomes `implemented — closed on GitHub <date> (#N)`. DRIFT stays for the opposite direction (tracker resolved, issue still open), which still needs a human. Guard: never reverse-sync an entry whose Status was edited in the same run, and never reopen.
 
@@ -2104,6 +2140,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 - **Status**: planned
 - **Priority**: P1
 - **Category**: infrastructure
+- **Auto-fixable**: yes (description-only)
 - **First seen**: cohort synthesis of sessions 53–62 (2026-09-02)
 - **Description**: see the decision recorded on the issue. the remote-VM gotchas live in the `figma-guidelines` skill (`skills/figma-guidelines/SKILL.md`) — loaded per Figma task in every repo via the plugin, zero cost otherwise. Not the MCP server instructions (token cost on every session) and not tool descriptions alone (point-of-use only).
 
