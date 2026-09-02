@@ -50,10 +50,71 @@ export function prop(node, name) {
   return name in node ? node[name] : undefined;
 }
 
+// Does this node have active auto-layout? The single predicate behind every
+// "is the sizing context there?" decision — layoutSizing* only takes effect on
+// a direct child of a frame for which this is true. Node-type safe: PAGE,
+// GROUP and SECTION parents have no layoutMode at all, and reading it directly
+// would throw in the remote VM.
+export function hasAutoLayout(node) {
+  if (!node) return false;
+  const layoutMode = prop(node, "layoutMode");
+  return !!layoutMode && layoutMode !== "NONE";
+}
+
+// Walk up to the PAGE a node lives on. Returns null for a node that is not yet
+// in the document tree. Lives here rather than in components.js because it is
+// generic: any command that touches page-scoped state (selection, currentPage)
+// for a node it did not resolve from the page itself needs the same walk.
+export function pageOf(node) {
+  var cur = node;
+  while (cur && cur.type !== "PAGE") cur = prop(cur, "parent");
+  return cur || null;
+}
+
 // Error helper: every user-facing error states its fix.
 // Rule (CLAUDE.md Agent Notes): no user-facing error without a stated fix.
 export function fail(message, fix) {
   throw new Error(message + ". Fix: " + fix);
+}
+
+// Import a published component by key — the one place that turns Figma's raw
+// "Cannot find component with key ..." into a stated fix. Shared by create.js
+// (write's INSTANCE branch), create_component_instance and
+// import_library_component so the three never drift into different remedies.
+//
+// The remedy is the one the tools actually support: a COMPONENT_SET key is NOT
+// importable (get_library_components says so verbatim), while each variant's
+// own key IS — get_component_variants / search_library_components return them,
+// and nothing here can import a set (no importComponentSetByKeyAsync anywhere).
+const VARIANT_KEY_FIX =
+  "a COMPONENT_SET key is not importable — call get_component_variants(fileKey, nodeId), or " +
+  "search_library_components for the exact variant name, and pass that variant's own key instead";
+
+export async function importComponentByKeyOrFail(componentKey) {
+  let imported;
+  try {
+    imported = await figma.importComponentByKeyAsync(componentKey);
+  } catch (importErr) {
+    fail(
+      'Component with key "' +
+        componentKey +
+        '" could not be imported: ' +
+        (importErr && importErr.message ? importErr.message : String(importErr)),
+      "verify the key with search_library_components and confirm the library is enabled for this file; " +
+        VARIANT_KEY_FIX,
+    );
+  }
+  if (!imported || imported.type !== "COMPONENT") {
+    fail(
+      'Component with key "' +
+        componentKey +
+        '" imported as ' +
+        (imported ? imported.type : "nothing") +
+        ", not a COMPONENT",
+      VARIANT_KEY_FIX,
+    );
+  }
+  return imported;
 }
 
 // Font weight number → Figma style name. Shared by create.js and the

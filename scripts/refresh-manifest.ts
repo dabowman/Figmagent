@@ -16,6 +16,7 @@
 
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { isFigmagentTool, sessionHasEffectiveFigmaCall } from "./session-classify.ts";
 
 const SESSIONS_DIR = ".claude/sessions-json";
 const ANALYSIS_DIR = ".claude/analysis";
@@ -83,6 +84,8 @@ for (const f of files) {
 	const path = join(SESSIONS_DIR, f);
 	let data: {
 		sessionId?: string;
+		messages?: unknown;
+		subAgents?: unknown;
 		metadata?: {
 			cwd?: string;
 			uniqueTools?: string[];
@@ -105,7 +108,7 @@ for (const f of files) {
 
 	const m = data.metadata || {};
 	const tools = m.uniqueTools || [];
-	const figmaTools = tools.filter((t) => t.includes("Figmagent"));
+	const figmaTools = tools.filter(isFigmagentTool);
 	const tc = m.toolCallCount || 0;
 	// Content fingerprint — re-analysis is keyed on THIS, not mtime. Even the
 	// original transcript's mtime drifts when a session is touched without
@@ -124,10 +127,17 @@ for (const f of files) {
 		sourceModified,
 	};
 
+	// A Figmagent tool name in `uniqueTools` is necessary but not sufficient — the
+	// call has to have succeeded and done something (INFRA-005). Sub-agent
+	// transcripts count too (`--include-agents`), so a session that delegated its
+	// canvas work is not demoted on the parent's own failed calls. When the
+	// messages are unavailable, fall back to the old presence test.
+	const ranFigmagent = figmaTools.length > 0 && (sessionHasEffectiveFigmaCall(data) ?? true);
+
 	if (tc === 0) {
 		entry.sessionType = "empty";
 		entry.skip = true;
-	} else if (figmaTools.length > 0) {
+	} else if (ranFigmagent) {
 		entry.sessionType = "figma";
 		entry.sourceSignature = sourceSignature;
 		if (existing.analysis) {
@@ -157,6 +167,20 @@ for (const f of files) {
 	} else {
 		entry.sessionType = "dev";
 		entry.skip = true;
+		// Carry any recorded analysis mapping through the demotion. The manifest is
+		// rewritten in full every run, so dropping it here is permanent: a session
+		// that ever classifies back as "figma" (the undecidable fallback, a
+		// re-extraction, a rule change) would be re-analyzed from scratch — exactly
+		// the wasted passes INFRA-005 removes — and its analysis doc left orphaned.
+		// The needs-analysis filter only looks at figma entries, so this is inert
+		// while the session stays dev. (SKILL.md promises the mapping is preserved.)
+		if (existing.analysis) {
+			entry.analysis = existing.analysis;
+			if (existing.analyzedAt !== undefined) entry.analyzedAt = existing.analyzedAt;
+			if (existing.analyzedSignature !== undefined) {
+				entry.analyzedSignature = existing.analyzedSignature;
+			}
+		}
 	}
 
 	manifest.sessions[sid] = entry;
