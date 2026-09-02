@@ -3,7 +3,7 @@
 // variable bindings, text styles, effect styles, and deletion in a single call.
 // Accepts a flat list or nested tree of node references.
 
-import { toNumber, sendProgressUpdate, findNodeByIdInTree, prop, fail } from "../helpers.js";
+import { toNumber, sendProgressUpdate, findNodeByIdInTree, hasAutoLayout, prop, fail } from "../helpers.js";
 import { setCharacters } from "../setcharacters.js";
 import { FIELD_MAP } from "./styles.js";
 import { runPostWriteAssertions } from "../assertions.js";
@@ -44,10 +44,7 @@ function isInsideInstance(node) {
 }
 
 function parentHasAutoLayout(node) {
-  const parent = prop(node, "parent");
-  if (!parent) return false;
-  const layoutMode = prop(parent, "layoutMode");
-  return !!layoutMode && layoutMode !== "NONE";
+  return hasAutoLayout(prop(node, "parent"));
 }
 
 // Flatten a potentially nested node list into a flat array of operations
