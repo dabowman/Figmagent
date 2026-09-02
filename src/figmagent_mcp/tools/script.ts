@@ -23,6 +23,25 @@ export const PLUGIN_TRANSPORT_REFUSAL =
   "On the plugin transport, use the first-class tools (read/grep/edit/write/lint/screenshot) instead.";
 
 // ─── Read-mode deny list ─────────────────────────────────────────────────────
+/**
+ * BUG-026 — a mode mismatch is a REJECTION: nothing ran. Without the explicit flag
+ * it shipped as is_error: false, and the `looksLikeError` backstop does not catch it
+ * either, because the text is prose rather than a start-anchored error sentinel. A
+ * caller following CLAUDE.md's "prefer branching on is_error" guidance therefore read
+ * a refusal as a result. Exported for tests.
+ */
+export function buildModeMismatchResult(offender: string) {
+  return {
+    isError: true,
+    content: [
+      {
+        type: "text" as const,
+        text: `This script calls ${offender} but mode is 'read'; rerun with mode: 'write'.`,
+      },
+    ],
+  };
+}
+
 // Best-effort static scan for mutating Plugin API calls. Order matters where
 // one name prefixes another (setBoundVariableForPaint before setBoundVariable
 // is not needed thanks to \b, but keep specific-first for clear reporting).
@@ -180,23 +199,19 @@ export async function runScriptHandler({
 }) {
   try {
     if (getTransport().name !== "remote") {
+      // Same verdict rule as the mode mismatch below: nothing ran, so this must
+      // not ship as is_error: false. The prose ("run_script requires the remote
+      // transport …") matches none of looksLikeError's start-anchored sentinels,
+      // so the flag has to be explicit.
       return {
+        isError: true,
         content: [{ type: "text" as const, text: PLUGIN_TRANSPORT_REFUSAL }],
       };
     }
 
     if (mode === "read") {
       const offender = findWriteCall(code);
-      if (offender) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `This script calls ${offender} but mode is 'read'; rerun with mode: 'write'.`,
-            },
-          ],
-        };
-      }
+      if (offender) return buildModeMismatchResult(offender);
     }
 
     const fileKey = resolveFileKey();
@@ -218,6 +233,7 @@ export async function runScriptHandler({
     };
   } catch (error) {
     return {
+      isError: true,
       content: [
         {
           type: "text" as const,

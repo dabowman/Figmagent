@@ -133,6 +133,80 @@ server.tool(
   },
 );
 
+// Both viewport commands are deliberate no-ops on the remote transport, which
+// returns a `note` instead of node details. Say what to do instead, once.
+const NO_OP_FIX =
+  "Fix: nothing was selected or scrolled — on remote, work from node IDs directly (grep/read) " +
+  "rather than driving the viewport, or switch to the plugin transport if a human needs to see the selection.";
+
+/** set_focus result → content block. Exported for tests. */
+export function buildFocusResult(result: unknown, nodeId: string) {
+  const typed = (result || {}) as { name?: string; id?: string; note?: string };
+  if (typed.note) {
+    return { content: [{ type: "text" as const, text: `${typed.note} ${NO_OP_FIX}` }] };
+  }
+  if (!typed.id) {
+    return {
+      isError: true,
+      content: [
+        {
+          type: "text" as const,
+          text:
+            `Error setting focus: the focus request for ${nodeId} returned no node. ` +
+            "Fix: retry, and confirm the node ID exists in the selected file (read it first).",
+        },
+      ],
+    };
+  }
+  return {
+    content: [{ type: "text" as const, text: `Focused on node "${typed.name}" (ID: ${typed.id})` }],
+  };
+}
+
+/** set_selections result → content block. Exported for tests. */
+export function buildSelectionsResult(result: unknown) {
+  const typed = (result || {}) as {
+    selectedNodes?: Array<{ name: string; id: string }>;
+    count?: number;
+    note?: string;
+    notFoundIds?: string[];
+  };
+  if (typed.note) {
+    return { content: [{ type: "text" as const, text: `${typed.note} ${NO_OP_FIX}` }] };
+  }
+  if (!Array.isArray(typed.selectedNodes)) {
+    return {
+      isError: true,
+      content: [
+        {
+          type: "text" as const,
+          text:
+            "Error setting selections: the selection request returned no nodes. " +
+            "Fix: retry, and confirm the node IDs exist in the selected file (read them first).",
+        },
+      ],
+    };
+  }
+  const names = typed.selectedNodes.map((node) => `"${node.name}" (${node.id})`).join(", ");
+  // The plugin selects the ids it found and reports the rest in notFoundIds.
+  // Dropping that list reported a partial selection as a complete one — the same
+  // "the response didn't say what happened" defect this file's other builders fix.
+  // Partial failures stay is_error: false (CLAUDE.md); the text carries the verdict.
+  const missing = Array.isArray(typed.notFoundIds) ? typed.notFoundIds : [];
+  const missingNote = missing.length
+    ? ` — ${missing.length} not found and NOT selected: ${missing.join(", ")}. ` +
+      "Fix: confirm those IDs with read/grep (a node from another file won't resolve here)."
+    : "";
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: `Selected ${typed.count ?? typed.selectedNodes.length} nodes: ${names}${missingNote}`,
+      },
+    ],
+  };
+}
+
 // Set Focus Tool
 server.tool(
   "set_focus",
@@ -143,15 +217,7 @@ server.tool(
   async ({ nodeId }: any) => {
     try {
       const result = await sendCommandToFigma("set_focus", { nodeId });
-      const typedResult = result as { name: string; id: string };
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Focused on node "${typedResult.name}" (ID: ${typedResult.id})`,
-          },
-        ],
-      };
+      return buildFocusResult(result, nodeId);
     } catch (error) {
       return {
         content: [
@@ -175,15 +241,7 @@ server.tool(
   async ({ nodeIds }: any) => {
     try {
       const result = await sendCommandToFigma("set_selections", { nodeIds });
-      const typedResult = result as { selectedNodes: Array<{ name: string; id: string }>; count: number };
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Selected ${typedResult.count} nodes: ${typedResult.selectedNodes.map((node) => `"${node.name}" (${node.id})`).join(", ")}`,
-          },
-        ],
-      };
+      return buildSelectionsResult(result);
     } catch (error) {
       return {
         content: [

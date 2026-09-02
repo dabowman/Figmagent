@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { server } from "../instance.js";
 import { sendCommandToFigma } from "../connection.js";
-import { formatWarningsBlock, normalizeNodeId } from "../utils.js";
+import { formatWarningsBlock, colorSchema, numericParam, normalizeNodeId } from "../utils.js";
 
 // Text-only spec properties — rejected at schema level when the spec's type
 // is known to be non-TEXT (boundary validation, Phase 4.3).
@@ -17,16 +17,6 @@ const TEXT_ONLY_SPEC_PROPS = [
   "maxLines",
 ] as const;
 
-// Shared color schema
-const colorSchema = z
-  .object({
-    r: z.number().min(0).max(1).describe("Red (0-1)"),
-    g: z.number().min(0).max(1).describe("Green (0-1)"),
-    b: z.number().min(0).max(1).describe("Blue (0-1)"),
-    a: z.number().min(0).max(1).optional().describe("Alpha (0-1)"),
-  })
-  .optional();
-
 // Recursive node spec schema (exported for tests)
 export const nodeSpecSchema: z.ZodType<any> = z.lazy(() =>
   z
@@ -38,31 +28,31 @@ export const nodeSpecSchema: z.ZodType<any> = z.lazy(() =>
           "Node type (default: FRAME). COMPONENT works like FRAME but creates a component. INSTANCE requires componentId or componentKey. SVG requires the svg property with an SVG string.",
         ),
       name: z.string().optional().describe("Node name"),
-      x: z.number().optional().describe("X position"),
-      y: z.number().optional().describe("Y position"),
-      width: z.number().optional().describe("Width"),
-      height: z.number().optional().describe("Height"),
+      x: numericParam(z.number()).optional().describe("X position"),
+      y: numericParam(z.number()).optional().describe("Y position"),
+      width: numericParam(z.number()).optional().describe("Width"),
+      height: numericParam(z.number()).optional().describe("Height"),
       // Frame layout
       layoutMode: z.enum(["NONE", "HORIZONTAL", "VERTICAL"]).optional(),
       layoutWrap: z.enum(["NO_WRAP", "WRAP"]).optional(),
-      paddingTop: z.number().optional(),
-      paddingRight: z.number().optional(),
-      paddingBottom: z.number().optional(),
-      paddingLeft: z.number().optional(),
+      paddingTop: numericParam(z.number()).optional(),
+      paddingRight: numericParam(z.number()).optional(),
+      paddingBottom: numericParam(z.number()).optional(),
+      paddingLeft: numericParam(z.number()).optional(),
       primaryAxisAlignItems: z.enum(["MIN", "MAX", "CENTER", "SPACE_BETWEEN"]).optional(),
       counterAxisAlignItems: z.enum(["MIN", "MAX", "CENTER", "BASELINE"]).optional(),
       layoutSizingHorizontal: z.enum(["FIXED", "HUG", "FILL"]).optional(),
       layoutSizingVertical: z.enum(["FIXED", "HUG", "FILL"]).optional(),
-      itemSpacing: z.number().optional(),
-      cornerRadius: z.number().min(0).optional(),
+      itemSpacing: numericParam(z.number()).optional(),
+      cornerRadius: numericParam(z.number().min(0)).optional(),
       // Colors
       fillColor: colorSchema,
       strokeColor: colorSchema,
-      strokeWeight: z.number().optional(),
+      strokeWeight: numericParam(z.number()).optional(),
       // Text-specific
       text: z.string().optional().describe("Text content (for TEXT nodes)"),
-      fontSize: z.number().optional(),
-      fontWeight: z.number().optional(),
+      fontSize: numericParam(z.number()).optional(),
+      fontWeight: numericParam(z.number()).optional(),
       fontFamily: z.string().optional().describe("Font family (default: Inter)"),
       fontStyle: z.string().optional().describe("Font style (default: Regular)"),
       fontColor: colorSchema,
@@ -76,9 +66,7 @@ export const nodeSpecSchema: z.ZodType<any> = z.lazy(() =>
         .enum(["DISABLED", "ENDING"])
         .optional()
         .describe("Ellipsis truncation when text overflows. ENDING adds '...' at the end."),
-      maxLines: z
-        .number()
-        .positive()
+      maxLines: numericParam(z.number().positive())
         .optional()
         .describe("Max lines before truncation. Requires textTruncation: ENDING."),
       // SVG-specific (type: SVG)
