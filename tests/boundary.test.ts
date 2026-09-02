@@ -52,6 +52,148 @@ describe("edit schema: delete combined with children ops", () => {
   });
 });
 
+// ─── Numeric parameter coercion ([TOOL-006]) ────────────────────────────────
+
+describe("write/edit schemas: quoted numbers are accepted", () => {
+  test("edit coerces every numeric field from a string", () => {
+    const r = nodeOpSchema.safeParse({
+      nodeId: "1:1",
+      x: "100",
+      y: "-20.5",
+      index: "0",
+      width: "48",
+      height: "24",
+      opacity: "0.85",
+      cornerRadius: "4",
+      strokeWeight: "1.5",
+      fontSize: "14",
+      fontWeight: "700",
+      maxLines: "3",
+      paddingTop: "8",
+      itemSpacing: "12",
+      counterAxisSpacing: "6",
+      fillColor: { r: "0.85", g: "0.1", b: 0.1, a: "0.5" },
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.x).toBe(100);
+      expect(r.data.y).toBe(-20.5);
+      expect(r.data.index).toBe(0);
+      expect(r.data.opacity).toBe(0.85);
+      expect(r.data.fontWeight).toBe(700);
+      expect(r.data.maxLines).toBe(3);
+      expect(r.data.fillColor).toEqual({ r: 0.85, g: 0.1, b: 0.1, a: 0.5 });
+    }
+  });
+
+  test("write coerces every numeric field from a string", () => {
+    const r = nodeSpecSchema.safeParse({
+      type: "TEXT",
+      text: "hi",
+      x: "10",
+      width: "200",
+      fontSize: "14",
+      fontWeight: "700",
+      maxLines: "2",
+      fillColor: { r: "1", g: "0", b: "0" },
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.fontWeight).toBe(700);
+      expect(r.data.maxLines).toBe(2);
+      expect(r.data.fillColor).toEqual({ r: 1, g: 0, b: 0 });
+    }
+  });
+
+  test("range and integer checks still run after coercion", () => {
+    expect(nodeOpSchema.safeParse({ nodeId: "1:1", opacity: "2" }).success).toBe(false);
+    expect(nodeOpSchema.safeParse({ nodeId: "1:1", cornerRadius: "-1" }).success).toBe(false);
+    expect(nodeOpSchema.safeParse({ nodeId: "1:1", width: "0" }).success).toBe(false);
+    expect(nodeOpSchema.safeParse({ nodeId: "1:1", index: "1.5" }).success).toBe(false);
+    expect(nodeOpSchema.safeParse({ nodeId: "1:1", cornerRadius: "4px" }).success).toBe(false);
+  });
+
+  // z.coerce.number() would turn each of these into 0 and silently apply it —
+  // `opacity: null` would make the node invisible instead of erroring.
+  test("null, empty string, booleans and arrays stay hard errors (never 0)", () => {
+    for (const bad of [null, "", "   ", false, true, []]) {
+      expect(nodeOpSchema.safeParse({ nodeId: "1:1", opacity: bad }).success).toBe(false);
+      expect(nodeOpSchema.safeParse({ nodeId: "1:1", x: bad }).success).toBe(false);
+      expect(nodeSpecSchema.safeParse({ type: "FRAME", width: bad }).success).toBe(false);
+    }
+    expect(nodeOpSchema.safeParse({ nodeId: "1:1", fillColor: { r: 1, g: 0, b: 0, a: null } }).success).toBe(false);
+  });
+
+  test("a missing color channel still reports 'Required', not a NaN type error", () => {
+    const r = nodeOpSchema.safeParse({ nodeId: "1:1", fillColor: { r: 1, g: 0 } });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.issues.map((i) => i.message).join("\n")).toContain("Required");
+    }
+  });
+
+  test("real numbers pass through untouched", () => {
+    const r = nodeOpSchema.safeParse({
+      nodeId: "1:1",
+      x: 100,
+      y: -20.5,
+      index: 0,
+      opacity: 0.85,
+      cornerRadius: 0,
+      fontWeight: 700,
+      fillColor: { r: 1, g: 0, b: 0.5, a: 1 },
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.x).toBe(100);
+      expect(r.data.y).toBe(-20.5);
+      expect(r.data.index).toBe(0);
+      expect(r.data.opacity).toBe(0.85);
+      expect(r.data.cornerRadius).toBe(0);
+      expect(r.data.fillColor).toEqual({ r: 1, g: 0, b: 0.5, a: 1 });
+    }
+  });
+
+  // The plugin receives whatever the schema emits, and consumes these fields as
+  // numbers (`node.x = toNumber(op.x, 0)`). Conversion happens server-side, so
+  // the wire protocol still only ever carries real numbers — never a string.
+  test("coerced values reach the wire as real numbers, not strings", () => {
+    const r = nodeOpSchema.safeParse({ nodeId: "1:1", x: "100", opacity: "0.5", fillColor: { r: "1", g: 0, b: 0 } });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(typeof r.data.x).toBe("number");
+      expect(typeof r.data.opacity).toBe("number");
+      expect(typeof r.data.fillColor.r).toBe("number");
+      expect(JSON.stringify(r.data.fillColor)).toBe('{"r":1,"g":0,"b":0}');
+    }
+  });
+
+  test("omitted optional params stay undefined — never NaN", () => {
+    const r = nodeOpSchema.safeParse({ nodeId: "1:1", name: "just a rename" });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      for (const field of ["x", "y", "index", "opacity", "width", "fontSize", "maxLines", "paddingTop"]) {
+        expect(r.data[field]).toBeUndefined();
+        expect(Number.isNaN(r.data[field])).toBe(false);
+      }
+      expect("x" in r.data).toBe(false);
+    }
+    const w = nodeSpecSchema.safeParse({ type: "FRAME", name: "empty frame" });
+    expect(w.success).toBe(true);
+    if (w.success) {
+      expect(w.data.width).toBeUndefined();
+      expect(w.data.fontSize).toBeUndefined();
+    }
+  });
+
+  test("non-numeric strings and other junk types are still rejected", () => {
+    for (const bad of ["abc", "4px", "1,5", "", {}, Number.NaN, [4]]) {
+      expect(nodeOpSchema.safeParse({ nodeId: "1:1", cornerRadius: bad }).success).toBe(false);
+      expect(nodeSpecSchema.safeParse({ type: "FRAME", itemSpacing: bad }).success).toBe(false);
+    }
+  });
+});
+
 // ─── Plugin-side checks against a mocked figma global ───────────────────────
 
 let fakeNodes: Record<string, any>;
