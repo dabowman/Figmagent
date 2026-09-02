@@ -1249,14 +1249,55 @@ export async function getLibraryVariables(params) {
   // identical by construction rather than by two implementations agreeing.
   const queryRaw = params && params.query;
   const queriesRaw = params && params.queries;
-  const termList = Array.isArray(queriesRaw) && queriesRaw.length ? queriesRaw : queryRaw ? [queryRaw] : [];
-  const terms = termList.map((t) => String(t).toLowerCase()).filter(Boolean);
+  // Labels (termList) and match terms (terms) are built in ONE pass so index ti
+  // always names the same term in both. Filtering `terms` alone shifted every
+  // later label by one, filing a term's matches under its neighbour's name and
+  // dropping the last term entirely. `query` and `queries` are merged rather than
+  // one silently winning, and blank/duplicate terms are dropped — a blank term
+  // matches every variable via indexOf("").
+  const rawTerms = [];
+  if (Array.isArray(queriesRaw)) {
+    for (let i = 0; i < queriesRaw.length; i++) rawTerms.push(queriesRaw[i]);
+  }
+  if (queryRaw) rawTerms.push(queryRaw);
+
+  const termList = [];
+  const terms = [];
+  for (let i = 0; i < rawTerms.length; i++) {
+    const label = String(rawTerms[i]).trim();
+    const term = label.toLowerCase();
+    if (!term || terms.indexOf(term) !== -1) continue;
+    termList.push(label);
+    terms.push(term);
+  }
+
   const multiQuery = terms.length > 1;
   // The 0- and 1-term paths below are unchanged, so today's response shape is exact.
   const query = terms.length === 1 ? terms[0] : null;
 
-  function matchTerm(list, term) {
-    return list.filter((v) => v.name.toLowerCase().indexOf(term) !== -1);
+  // One lowercase pass over the names, reused by every term — N terms cost N
+  // substring scans, not N lowercasing passes over the whole collection.
+  function matchTerms(list) {
+    const lowerNames = list.map((v) => v.name.toLowerCase());
+    const hitsPerTerm = [];
+    for (let ti = 0; ti < terms.length; ti++) {
+      const term = terms[ti];
+      const hits = [];
+      for (let i = 0; i < list.length; i++) {
+        if (lowerNames[i].indexOf(term) !== -1) hits.push(list[i]);
+      }
+      hitsPerTerm.push(hits);
+    }
+    return hitsPerTerm;
+  }
+
+  function groupByTerm(list) {
+    const hitsPerTerm = matchTerms(list);
+    const byQuery = {};
+    for (let ti = 0; ti < terms.length; ti++) {
+      byQuery[termList[ti]] = hitsPerTerm[ti];
+    }
+    return byQuery;
   }
 
   if (!figma.teamLibrary || typeof figma.teamLibrary.getAvailableLibraryVariableCollectionsAsync !== "function") {
@@ -1297,17 +1338,13 @@ export async function getLibraryVariables(params) {
     }
     let variables = vars.map((v) => ({ key: v.key, name: v.name, resolvedType: v.resolvedType }));
     if (multiQuery) {
-      const byQuery = {};
-      for (let ti = 0; ti < terms.length; ti++) {
-        byQuery[termList[ti]] = matchTerm(variables, terms[ti]);
-      }
       return {
         collection: { key: match.key, name: match.name, libraryName: match.libraryName },
-        queries: byQuery,
+        queries: groupByTerm(variables),
       };
     }
     if (query) {
-      variables = matchTerm(variables, query);
+      variables = matchTerms(variables)[0];
     }
     return {
       collection: { key: match.key, name: match.name, libraryName: match.libraryName },
@@ -1331,13 +1368,9 @@ export async function getLibraryVariables(params) {
         }
         const mapped = vars.map((v) => ({ key: v.key, name: v.name, resolvedType: v.resolvedType }));
         if (multiQuery) {
-          const byQuery = {};
-          for (let ti = 0; ti < terms.length; ti++) {
-            byQuery[termList[ti]] = matchTerm(mapped, terms[ti]);
-          }
-          entry.queries = byQuery;
+          entry.queries = groupByTerm(mapped);
         } else {
-          entry.variables = matchTerm(mapped, query);
+          entry.variables = matchTerms(mapped)[0];
         }
       }
       return entry;
