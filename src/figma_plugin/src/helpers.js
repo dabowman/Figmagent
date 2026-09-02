@@ -61,6 +61,16 @@ export function hasAutoLayout(node) {
   return !!layoutMode && layoutMode !== "NONE";
 }
 
+// Walk up to the PAGE a node lives on. Returns null for a node that is not yet
+// in the document tree. Lives here rather than in components.js because it is
+// generic: any command that touches page-scoped state (selection, currentPage)
+// for a node it did not resolve from the page itself needs the same walk.
+export function pageOf(node) {
+  var cur = node;
+  while (cur && cur.type !== "PAGE") cur = prop(cur, "parent");
+  return cur || null;
+}
+
 // Error helper: every user-facing error states its fix.
 // Rule (CLAUDE.md Agent Notes): no user-facing error without a stated fix.
 export function fail(message, fix) {
