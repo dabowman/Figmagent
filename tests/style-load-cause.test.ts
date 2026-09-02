@@ -23,6 +23,7 @@ function makeTextNode(id: string) {
     type: "TEXT",
     name: "Label",
     characters: "Hello",
+    effects: [],
     fontName: { family: "PP Neue Montreal", style: "Regular" },
     setTextStyleIdAsync: async () => {},
     setEffectStyleIdAsync: async () => {},
@@ -54,6 +55,11 @@ afterAll(() => {
 
 async function applyStyle() {
   const res = await apply({ nodes: [{ nodeId: "1:1", textStyleId: STYLE_ID }] });
+  return res.results.find((r: any) => r.nodeId === "1:1");
+}
+
+async function applyEffect() {
+  const res = await apply({ nodes: [{ nodeId: "1:1", effectStyleId: STYLE_ID }] });
   return res.results.find((r: any) => r.nodeId === "1:1");
 }
 
@@ -92,4 +98,119 @@ describe("[BUG-032] a style that failed to load reports why", () => {
     const op = await applyStyle();
     expect(op.success).toBe(true);
   });
+
+  // The font branch is the only one that may talk about fonts. A rejected id
+  // (getStyleByIdAsync throws — short def id, bare key, foreign-file id) is a
+  // lookup failure, and telling the agent to swap fonts and retry there is the
+  // same invented cause BUG-032 is about, only inverted.
+  test("a rejected style id reports the id, not a font remedy", async () => {
+    styleLookup = () => {
+      throw new Error("Invalid ID");
+    };
+
+    const op = await applyStyle();
+    expect(op.success).toBe(false);
+    expect(op.error).toContain("Invalid ID");
+    expect(op.error).toContain("Fix:");
+    expect(op.error).not.toContain("font");
+  });
+
+  // applyEffectStyle shares the styleErrors map; an effect style can only ever
+  // fail the lookup, so it must never be handed the font remedy.
+  test("an effect style that was rejected does not get font advice", async () => {
+    styleLookup = () => {
+      throw new Error("Invalid ID");
+    };
+
+    const op = await applyEffect();
+    expect(op.success).toBe(false);
+    expect(op.error).toContain("Effect style id");
+    expect(op.error).toContain("Fix:");
+    expect(op.error).not.toContain("font");
+  });
+
+  // BUG-033's trigger on the other side of the style: the style loads, but the
+  // node's own family is absent from the VM. Figma's raw "call loadFontAsync
+  // first" text is unactionable, so it must carry a fix like everything else.
+  test("an unloadable font on the node itself states a fix", async () => {
+    styleLookup = () => ({ id: STYLE_ID, type: "TEXT", fontName: { family: "Inter", style: "Regular" } });
+    loadFontBehavior = () => {
+      // Only the node's own family is missing; the style's font loads.
+      throw new Error(FONT_ERROR);
+    };
+    (globalThis as any).figma.loadFontAsync = async (f: { family: string }) => {
+      if (f.family === "PP Neue Montreal") loadFontBehavior();
+    };
+
+    const op = await applyStyle();
+    expect(op.success).toBe(false);
+    expect(op.error).toContain(FONT_ERROR);
+    expect(op.error).toContain("Fix:");
+  });
+});
+
+// An error message is only as good as the route it points at. Every remedy
+// added above tells the agent to move the node onto an available font with
+// `edit({ fontFamily })` — so that call has to actually work on a node whose
+// current font is the absent one. It did not: the font-property path loaded the
+// node's current font unguarded and threw before reaching the swap, making the
+// advice circular and the agent's next call fail identically. That is the
+// AGENT-029 loop BUG-032 exists to break, so it is covered here rather than
+// left to the reader.
+describe("[BUG-032] the prescribed remedy is reachable", () => {
+  const ABSENT = "PP Neue Montreal";
+
+  // Only ABSENT is missing from this VM; every other family loads.
+  function onlyAbsentMissing() {
+    (globalThis as any).figma.loadFontAsync = async (f: { family: string; style: string }) => {
+      if (f && f.family === ABSENT) throw new Error(FONT_ERROR);
+    };
+  }
+
+  test("edit({ fontFamily }) escapes an absent current font", async () => {
+    onlyAbsentMissing();
+    const node = fakeNodes["1:1"];
+
+    const res = await apply({ nodes: [{ nodeId: "1:1", fontFamily: "Inter" }] });
+    const op = res.results.find((r: any) => r.nodeId === "1:1");
+
+    expect(op.success).toBe(true);
+    expect(node.fontName.family).toBe("Inter");
+  });
+
+  test("the swap also works when the node's fonts are mixed", async () => {
+    onlyAbsentMissing();
+    const node = fakeNodes["1:1"];
+    node.fontName = (globalThis as any).figma.mixed;
+    node.getRangeFontName = () => ({ family: ABSENT, style: "Regular" });
+
+    const res = await apply({ nodes: [{ nodeId: "1:1", fontFamily: "Inter" }] });
+    const op = res.results.find((r: any) => r.nodeId === "1:1");
+
+    expect(op.success).toBe(true);
+    expect(node.fontName.family).toBe("Inter");
+  });
+
+  // The escape hatch is the replacement FAMILY. An op that only changes size or
+  // weight stays on the absent family, so it must keep failing loudly — letting
+  // it through would report success having changed nothing, which is exactly the
+  // is_error:false hole BUG-033 records.
+  for (const [label, op] of [
+    ["fontSize", { fontSize: 20 }],
+    ["fontWeight", { fontWeight: 700 }],
+  ] as const) {
+    test(`${label}-only cannot escape, so it fails with a fix instead of silently passing`, async () => {
+      onlyAbsentMissing();
+      const node = fakeNodes["1:1"];
+
+      const res = await apply({ nodes: [Object.assign({ nodeId: "1:1" }, op)] });
+      const result = res.results.find((r: any) => r.nodeId === "1:1");
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Fix:");
+      expect(result.error).toContain("fontFamily");
+      // Unchanged — no partial write hiding behind the failure.
+      expect(node.fontName.family).toBe(ABSENT);
+    });
+  }
 });
