@@ -11,6 +11,7 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { nodeOpSchema } from "../src/figmagent_mcp/tools/apply.js";
 import { apply } from "../src/figma_plugin/src/commands/apply.js";
+import { getNodeTree } from "../src/figma_plugin/src/commands/document.js";
 
 let fakeNodes: Record<string, any>;
 const MIXED = Symbol("mixed");
@@ -45,6 +46,11 @@ function makeFrame(id: string, extra: Record<string, any> = {}) {
       minHeight: null,
       maxHeight: null,
       layoutPositioning: "AUTO",
+      // Real SceneNodes always carry x/y — without them the `"x" in node`
+      // guards skip every position write and a test asserting one passes
+      // vacuously.
+      x: 0,
+      y: 0,
       width: 100,
       height: 100,
       children: [],
@@ -266,6 +272,41 @@ describe("[TOOL-035] per-side stroke weight", () => {
     expect(w.message).toContain("strokeBottomWeight");
     expect(w.message).toContain("Fix:");
   });
+
+  test("per-side and min/max get their own remedy — a RECTANGLE is no fix for min/max sizing", async () => {
+    fakeNodes["1:1"] = { id: "1:1", type: "TEXT", name: "t", characters: "x" };
+
+    const res = await apply({ nodes: [{ nodeId: "1:1", strokeBottomWeight: 1, minWidth: 120 }] });
+
+    const stroke = res.warnings.find((x: any) => x.message.indexOf("strokeBottomWeight") !== -1);
+    const sizing = res.warnings.find((x: any) => x.message.indexOf("minWidth") !== -1);
+    expect(stroke.message).toContain("RECTANGLE");
+    expect(sizing.message).toContain("auto-layout");
+    expect(sizing.message).not.toContain("RECTANGLE");
+  });
+
+  test("read reports the four sides once strokeWeight goes mixed — otherwise the border reads back weightless", async () => {
+    // Figma returns figma.mixed for strokeWeight as soon as the sides differ,
+    // which is exactly what the per-side fields produce. Without the per-side
+    // read-back, `read` shows a stroke with a color and no weight at all.
+    fakeNodes["1:1"] = {
+      id: "1:1",
+      type: "FRAME",
+      name: "Card header",
+      visible: true,
+      strokes: [{ type: "SOLID", color: { r: 0, g: 0, b: 0 } }],
+      strokeWeight: MIXED,
+      strokeAlign: "INSIDE",
+      strokeTopWeight: 0,
+      strokeBottomWeight: 1,
+      strokeLeftWeight: 0,
+      strokeRightWeight: 0,
+    };
+
+    const tree = await getNodeTree({ nodeId: "1:1", detail: "full" });
+
+    expect(tree.rawTree[0].strokes[0].weights).toEqual({ top: 0, bottom: 1, left: 0, right: 0 });
+  });
 });
 
 // ─── [TOOL-025] text properties ──────────────────────────────────────────────
@@ -331,6 +372,41 @@ describe("[TOOL-025] text style properties", () => {
     expect(loadedFonts).toContainEqual({ family: "Inter", style: "Regular" });
   });
 
+  test("a bare lineHeight small enough to be a multiplier warns — create_styles reads it the other way", async () => {
+    // styles.js coerceLineHeight turns 1.5 into 150%; edit turns it into 1.5px.
+    // Whichever the agent meant, the divergence must not apply in silence.
+    fakeNodes["1:1"] = makeText("1:1");
+
+    const res = await apply({ nodes: [{ nodeId: "1:1", lineHeight: 1.5 }] });
+
+    expect(fakeNodes["1:1"].lineHeight).toEqual({ value: 1.5, unit: "PIXELS" });
+    const w = res.warnings.find((x: any) => x.check === "ambiguous_unit");
+    expect(w.message).toContain("150");
+    expect(w.message).toContain("PERCENT");
+    expect(w.message).toContain("Fix:");
+  });
+
+  test("a plausible pixel lineHeight passes without noise", async () => {
+    fakeNodes["1:1"] = makeText("1:1");
+    const res = await apply({ nodes: [{ nodeId: "1:1", lineHeight: 24 }] });
+    expect(res.warnings).toBeUndefined();
+  });
+
+  test("an unloadable font is not blamed on a missing fontFamily the op already sent", async () => {
+    // Phase 2.5 swallows a failed swap, so phase 2.6 would otherwise tell the
+    // caller to "send fontFamily in an edit" — which is exactly what they did.
+    fakeNodes["1:1"] = makeText("1:1", { fontName: { family: "Söhne", style: "Buch" } });
+    (globalThis as any).figma.loadFontAsync = async () => {
+      throw new Error("font not available");
+    };
+
+    const res = await apply({ nodes: [{ nodeId: "1:1", fontFamily: "Söhne Breit", textCase: "UPPER" }] });
+
+    expect(res.failureCount).toBe(1);
+    expect(res.results[0].error).toContain("Söhne Breit");
+    expect(res.results[0].error).toContain("Fix:");
+  });
+
   test("text props on a non-TEXT node warn rather than vanishing", async () => {
     fakeNodes["1:1"] = makeFrame("1:1");
 
@@ -363,6 +439,58 @@ describe("[TOOL-025] visible and min/max sizing", () => {
     fakeNodes["1:1"] = makeFrame("1:1", { minWidth: 120 });
     await apply({ nodes: [{ nodeId: "1:1", minWidth: null }] });
     expect(fakeNodes["1:1"].minWidth).toBeNull();
+  });
+
+  test("setting both bounds clears the stale pair first — Figma rejects a min above the current max", async () => {
+    // The frame is already capped at 100. Writing minWidth 200 against that
+    // stale cap is what Figma rejects, so the pair has to be cleared first.
+    const node = makeFrame("1:1");
+    let min: number | null = null;
+    let max: number | null = 100;
+    Object.defineProperty(node, "minWidth", {
+      get: () => min,
+      set(v) {
+        if (v !== null && max !== null && v > max) throw new Error("minWidth cannot exceed maxWidth");
+        min = v;
+      },
+      enumerable: true,
+      configurable: true,
+    });
+    Object.defineProperty(node, "maxWidth", {
+      get: () => max,
+      set(v) {
+        if (v !== null && min !== null && v < min) throw new Error("maxWidth cannot be below minWidth");
+        max = v;
+      },
+      enumerable: true,
+      configurable: true,
+    });
+    fakeNodes["1:1"] = node;
+
+    const res = await apply({ nodes: [{ nodeId: "1:1", minWidth: 200, maxWidth: 400 }] });
+
+    expect(res.successCount).toBe(1);
+    expect(node.minWidth).toBe(200);
+    expect(node.maxWidth).toBe(400);
+  });
+
+  test("a bound Figma still rejects fails with a stated fix, not Figma's bare message", async () => {
+    const node = makeFrame("1:1");
+    Object.defineProperty(node, "minWidth", {
+      get: () => null,
+      set() {
+        throw new Error("minWidth cannot exceed maxWidth");
+      },
+      enumerable: true,
+      configurable: true,
+    });
+    fakeNodes["1:1"] = node;
+
+    const res = await apply({ nodes: [{ nodeId: "1:1", minWidth: 900 }] });
+
+    expect(res.failureCount).toBe(1);
+    expect(res.results[0].error).toContain("Fix:");
+    expect(res.results[0].error).toContain("maxWidth");
   });
 });
 
@@ -433,8 +561,29 @@ describe("[TOOL-027] layoutPositioning", () => {
     await apply({ nodes: [{ nodeId: "1:1", layoutPositioning: "ABSOLUTE", x: -8, y: -8 }] });
 
     expect(child.x).toBe(-8);
+    expect(child.y).toBe(-8);
     expect(order.at(-1)).toBe("x=-8");
     expect(order.indexOf("layoutPositioning=ABSOLUTE")).toBeLessThan(order.lastIndexOf("x=-8"));
+  });
+
+  test("width/height land where the caller asked too — the layout owned them before the flip", async () => {
+    // Same failure as x/y: an auto-layout parent owns a FILL/STRETCH child's
+    // size, so the phase-2 resize is recomputed away and the ABSOLUTE flip
+    // freezes whatever the layout left. Model that with a parent that snaps its
+    // children back while they are still AUTO.
+    const parent = makeFrame("0:9", { layoutMode: "HORIZONTAL" });
+    const child = makeFrame("1:1", { parent });
+    child.resize = function (w: number, h: number) {
+      // AUTO children get their size from the layout; ABSOLUTE ones keep it.
+      this.width = this.layoutPositioning === "ABSOLUTE" ? w : 100;
+      this.height = this.layoutPositioning === "ABSOLUTE" ? h : 100;
+    };
+    fakeNodes["1:1"] = child;
+
+    await apply({ nodes: [{ nodeId: "1:1", layoutPositioning: "ABSOLUTE", width: 8, height: 8 }] });
+
+    expect(child.width).toBe(8);
+    expect(child.height).toBe(8);
   });
 
   test("a PAGE target warns instead of reporting a successful no-op", async () => {

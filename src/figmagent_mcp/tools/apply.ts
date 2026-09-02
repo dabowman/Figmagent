@@ -90,7 +90,7 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
         .boolean()
         .optional()
         .describe(
-          "Show or hide the node. Works on instance-override sub-nodes (I<instanceId>;<nodeId>) to hide unused slots without detaching.",
+          "Show or hide the node. Works on instance-override sub-nodes (I<instanceId>;<nodeId>) to hide unused slots without detaching. Note that a hidden node then disappears from discovery: grep skips invisible subtrees entirely, and read skips them unless you pass filter: { visibleOnly: false } — use that (on the parent) to find it again and set visible: true.",
         ),
       width: numericParam(z.number().positive()).optional().describe("Width (resizes the node)"),
       height: numericParam(z.number().positive()).optional().describe("Height (resizes the node)"),
@@ -136,14 +136,14 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
         ),
       lineHeight: z
         .union([
-          numericParam(z.number()),
+          numericParam(z.number().min(0)),
           z.literal("AUTO"),
           z.object({ unit: z.literal("AUTO") }),
-          z.object({ value: numericParam(z.number()), unit: z.enum(["PIXELS", "PERCENT"]) }),
+          z.object({ value: numericParam(z.number().min(0)), unit: z.enum(["PIXELS", "PERCENT"]) }),
         ])
         .optional()
         .describe(
-          "Line height. A bare number is PIXELS; 'AUTO' restores automatic; pass { value, unit: 'PERCENT' } for percentage. TEXT nodes only.",
+          "Line height (never negative). A bare number is PIXELS; 'AUTO' restores automatic; pass { value, unit: 'PERCENT' } for percentage. NOTE: create_styles/update_styles read a bare number under 10 as a unitless multiplier (1.5 = 150%) — here it is always pixels, and a bare number under 10 comes back with a warning naming both readings. TEXT nodes only.",
         ),
       textCase: z
         .enum(["ORIGINAL", "UPPER", "LOWER", "TITLE", "SMALL_CAPS", "SMALL_CAPS_FORCED"])
@@ -283,7 +283,7 @@ Expose a nested instance's properties at the parent component level:
 Set component-property values on an instance (toggle a BOOLEAN, pick a VARIANT, swap an INSTANCE_SWAP, set a TEXT property):
   { nodes: [{ nodeId: "instance1", componentProperties: { "Actions?": false, "Size": "Small" } }] }
 
-Execution order per node: component ops (swapVariantId/isExposedInstance/componentProperties) → layout mode → rename/move/reorder → direct values → font properties → characters → variable bindings → text style → effect style → delete last.
+Execution order per node: component ops (swapVariantId/isExposedInstance/componentProperties) → layout mode → rename/move/reorder → direct values (incl. stroke weights, min/max sizing, resize) → font properties → text style properties (letterSpacing/lineHeight/textCase/textDecoration) → layout values (padding/alignment/spacing/sizing/layoutPositioning) → characters → variable bindings → text style → effect style → delete last. layoutPositioning: 'ABSOLUTE' re-applies x/y/width/height after the flip, so send them in the same op.
 Variable bindings override direct values (set both to get a fallback + token).
 x/y move the node but do NOT change its parent. To reparent: write({ fromNodeId, parentId: newParent }) then edit with delete: true on the original.
 Width and height resize the node. Use variables.width/height to bind dimension tokens.
