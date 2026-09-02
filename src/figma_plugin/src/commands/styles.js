@@ -1240,8 +1240,65 @@ export async function describeEnabledLibraryVariables() {
 // single collection's variables; omit it for a collections overview.
 export async function getLibraryVariables(params) {
   const collectionKey = params && params.collectionKey;
+  // TOOL-026 — accept several terms in one call. Filtering happens HERE rather than
+  // server-side because without a query this command returns a collections overview
+  // with no variables at all: there would be nothing for the server to filter, short
+  // of shipping every variable in every enabled library over the wire. Doing it here
+  // keeps one round trip and one getVariablesInLibraryCollectionAsync per collection
+  // however many terms are asked for — and makes single- and multi-term matching
+  // identical by construction rather than by two implementations agreeing.
   const queryRaw = params && params.query;
-  const query = queryRaw ? String(queryRaw).toLowerCase() : null;
+  const queriesRaw = params && params.queries;
+  // Labels (termList) and match terms (terms) are built in ONE pass so index ti
+  // always names the same term in both. Filtering `terms` alone shifted every
+  // later label by one, filing a term's matches under its neighbour's name and
+  // dropping the last term entirely. `query` and `queries` are merged rather than
+  // one silently winning, and blank/duplicate terms are dropped — a blank term
+  // matches every variable via indexOf("").
+  const rawTerms = [];
+  if (Array.isArray(queriesRaw)) {
+    for (let i = 0; i < queriesRaw.length; i++) rawTerms.push(queriesRaw[i]);
+  }
+  if (queryRaw) rawTerms.push(queryRaw);
+
+  const termList = [];
+  const terms = [];
+  for (let i = 0; i < rawTerms.length; i++) {
+    const label = String(rawTerms[i]).trim();
+    const term = label.toLowerCase();
+    if (!term || terms.indexOf(term) !== -1) continue;
+    termList.push(label);
+    terms.push(term);
+  }
+
+  const multiQuery = terms.length > 1;
+  // The 0- and 1-term paths below are unchanged, so today's response shape is exact.
+  const query = terms.length === 1 ? terms[0] : null;
+
+  // One lowercase pass over the names, reused by every term — N terms cost N
+  // substring scans, not N lowercasing passes over the whole collection.
+  function matchTerms(list) {
+    const lowerNames = list.map((v) => v.name.toLowerCase());
+    const hitsPerTerm = [];
+    for (let ti = 0; ti < terms.length; ti++) {
+      const term = terms[ti];
+      const hits = [];
+      for (let i = 0; i < list.length; i++) {
+        if (lowerNames[i].indexOf(term) !== -1) hits.push(list[i]);
+      }
+      hitsPerTerm.push(hits);
+    }
+    return hitsPerTerm;
+  }
+
+  function groupByTerm(list) {
+    const hitsPerTerm = matchTerms(list);
+    const byQuery = {};
+    for (let ti = 0; ti < terms.length; ti++) {
+      byQuery[termList[ti]] = hitsPerTerm[ti];
+    }
+    return byQuery;
+  }
 
   if (!figma.teamLibrary || typeof figma.teamLibrary.getAvailableLibraryVariableCollectionsAsync !== "function") {
     fail(
@@ -1280,8 +1337,14 @@ export async function getLibraryVariables(params) {
       );
     }
     let variables = vars.map((v) => ({ key: v.key, name: v.name, resolvedType: v.resolvedType }));
+    if (multiQuery) {
+      return {
+        collection: { key: match.key, name: match.name, libraryName: match.libraryName },
+        queries: groupByTerm(variables),
+      };
+    }
     if (query) {
-      variables = variables.filter((v) => v.name.toLowerCase().indexOf(query) !== -1);
+      variables = matchTerms(variables)[0];
     }
     return {
       collection: { key: match.key, name: match.name, libraryName: match.libraryName },
@@ -1296,16 +1359,19 @@ export async function getLibraryVariables(params) {
   const result = await Promise.all(
     collections.map(async (c) => {
       const entry = { key: c.key, name: c.name, libraryName: c.libraryName };
-      if (query) {
+      if (terms.length > 0) {
         let vars;
         try {
           vars = await figma.teamLibrary.getVariablesInLibraryCollectionAsync(c.key);
         } catch (_e) {
           vars = [];
         }
-        entry.variables = vars
-          .filter((v) => v.name.toLowerCase().indexOf(query) !== -1)
-          .map((v) => ({ key: v.key, name: v.name, resolvedType: v.resolvedType }));
+        const mapped = vars.map((v) => ({ key: v.key, name: v.name, resolvedType: v.resolvedType }));
+        if (multiQuery) {
+          entry.queries = groupByTerm(mapped);
+        } else {
+          entry.variables = matchTerms(mapped)[0];
+        }
       }
       return entry;
     }),
