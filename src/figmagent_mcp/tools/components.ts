@@ -123,12 +123,18 @@ server.tool(
   {
     componentIds: z.array(nodeIdParam()).min(1).describe("Array of COMPONENT node IDs to combine"),
     parentId: nodeIdParam().optional().describe("Optional parent node ID for the resulting COMPONENT_SET"),
+    name: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Name for the resulting COMPONENT_SET (e.g. 'Button'). Without it Figma names the set 'Component N'."),
   },
-  async ({ componentIds, parentId }: any) => {
+  async ({ componentIds, parentId, name }: any) => {
     try {
       const result = await sendCommandToFigma("combine_as_variants", {
         componentIds,
         parentId,
+        name,
       });
       return {
         content: [

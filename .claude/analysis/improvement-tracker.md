@@ -573,6 +573,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 
 ### [BUG-014] Remote transport: document overview lists only one page; no live selection — [#64](https://github.com/dabowman/Figmagent/issues/64)
 - **Status**: identified
+- **Onboarding half shipped**: the MCP server instructions' Quick Start (`instance.ts`) now says the remote transport has no auto-join and to call `use_file` first — the one place every external repo reads. The single-page document overview stays open.
 - **Priority**: P2
 - **Category**: plugin-bug
 - **First seen**: Session 27 (2026-06-16, remote transport)
@@ -1496,7 +1497,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 
 ### [TOOL-037] `edit` cannot bind `fontWeight`, and the rejection message states a false reason
 
-- **Status**: identified
+- **Status**: implemented — `fontWeight` added to `FIELD_MAP` (`styles.js`, fixes `edit` and `fig.bindVariable` in one change) and to `apply.ts`'s `variableFieldEnum`; the false `fontStyle` redirect and the "not bindable" description text are gone. Test in `tests/criteria-and-binding-errors.test.ts`.
 - **Priority**: P1
 - **Category**: missing-tool
 - **First seen**: Session 53 second half (2026-09-01, external storybook/"Archer", remote transport)
@@ -1741,7 +1742,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 
 ### [TOOL-044] `fig.prop` throws a raw `TypeError: invalid 'in' operand` on a null node, naming neither the node nor a fix
 
-- **Status**: identified
+- **Status**: implemented — `fig.prop` fails with the argument echoed and the deleted/other-file remedy when the node is not an object (`remote_entries/stdlib.js`). Test in `tests/stdlib.test.ts`.
 - **Priority**: P2
 - **Category**: plugin-bug
 - **First seen**: Session 56 (2026-09-01, external storybook/"Archer", remote transport)
@@ -1768,7 +1769,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 
 ### [BUG-041] `fig.loadFont` reports success for a font it never loaded
 
-- **Status**: identified
+- **Status**: implemented — `fig.loadFont` is now `loadFontStrict` (`helpers.js`): same resolution as `loadFontWithFallback`, but a fallback fails with the remote-font remedy. Internal callers keep the silent fallback. Test in `tests/stdlib.test.ts`.
 - **Priority**: P1
 - **Category**: plugin-bug
 - **First seen**: Session 57 (2026-09-01, external storybook/"Archer", remote transport)
@@ -1782,7 +1783,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 
 ### [BUG-042] `lint` counts an invisible paint as an unbound fill
 
-- **Status**: identified
+- **Status**: implemented — `checkColorProperty` (`lint.js`) skips a paint with `visible === false`; fills and strokes share the function. Test in `tests/minilint.test.ts`.
 - **Priority**: P2
 - **Category**: plugin-bug
 - **First seen**: Session 57 (2026-09-01, external storybook/"Archer", remote transport)
@@ -1826,7 +1827,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 
 ### [AGENT-035] `grep({variableId: [...]})` already does the cross-page token scan agents hand-roll in `run_script`
 
-- **Status**: identified
+- **Status**: implemented — `grep`'s `variableId` description now states the array + paint-level (fills/strokes) coverage and the `scope: "DOCUMENT"` idiom.
 - **Priority**: P2
 - **Category**: agent-behavior
 - **First seen**: Session 58 (2026-09-01, external storybook/"Archer", remote transport)
@@ -1889,6 +1890,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 ### [TOOL-047] `combine_as_variants` cannot name the set it creates, and reports nothing about what its auto-layout did to the variants
 
 - **Status**: identified
+- **Partially shipped**: (a) `combine_as_variants` accepts an optional `name` and sets it on the resulting set. (b) per-child sizing readback / assertions over re-parented children still open.
 - **Priority**: P2
 - **Category**: missing-tool
 - **First seen**: Session 59 (2026-09-01, external storybook/"Archer", remote transport)
@@ -1901,7 +1903,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 
 ### [BUG-045] `get_reactions` silently drops every `CHANGE_TO` reaction — an interactive component always reads as "no interactions"
 
-- **Status**: identified
+- **Status**: implemented — the `CHANGE_TO` filter is gone from `getReactions` (`document.js`); every reaction is returned. The `reaction_to_connector_strategy` prompt already drops CHANGE_TO at its Step 3, the only consumer that needs to.
 - **Priority**: P1
 - **Category**: plugin-bug
 - **First seen**: Session 60 (2026-09-02, external storybook/"Archer", remote transport)
@@ -1929,7 +1931,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 
 ### [BUG-046] `get_reactions` appends an unconditional "You MUST … required next step" — false on an empty result, and false for the read case
 
-- **Status**: identified
+- **Status**: implemented — `get_reactions` is described as a read; the connector hint is appended only when `nodesWithReactions > 0` and phrased as optional (`buildReactionsResult` in `tools/scan.ts`). Test in `tests/no-op-verdicts.test.ts`.
 - **Priority**: P2
 - **Category**: plugin-bug
 - **First seen**: Session 60 (2026-09-02, external storybook/"Archer", remote transport)
@@ -1957,7 +1959,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 
 ### [TOOL-049] `lint` counts COMPONENT_SET wrapper chrome as unbound-token issues — 67% of findings were unactionable
 
-- **Status**: identified
+- **Status**: implemented — `lint.js` skips a COMPONENT_SET node's own `cornerRadius`/`itemSpacing`/`counterAxisSpacing`/`padding*`; children are linted unchanged. Test in `tests/minilint.test.ts`.
 - **Priority**: P2
 - **Category**: plugin-bug
 - **First seen**: Session 61 (2026-09-02, external storybook/"Archer", remote transport)
@@ -1970,7 +1972,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 
 ### [TOOL-050] `create_styles` implements the variable-bound text-style recipe correctly — and its description sends agents to `run_script` instead
 
-- **Status**: identified
+- **Status**: implemented — `create_styles`/`update_styles` descriptions list `fontWeight`, carry a worked remote example (author on Inter, bind the family through `variables.fontFamily`), and `loadFontOrFail`'s fix names font absence alongside spelling. The end-to-end `create_styles` run on a custom-font file is still unverified in a session.
 - **Priority**: P1
 - **Category**: missing-tool
 - **First seen**: Session 62 (2026-09-02, external storybook/"Archer", remote transport)
@@ -2027,7 +2029,7 @@ Sessions analyzed: 62 (session 42 covers an 11-session placeholder cohort; sessi
 
 ### [TOOL-053] `get_design_system` has no collections-only mode — agents reinvent an empty-regex probe
 
-- **Status**: identified
+- **Status**: implemented — `get_design_system({ collectionsOnly: true })` returns just the collection names without fetching variables or styles. Test in `tests/design-system.test.ts`.
 - **Priority**: P2
 - **Category**: missing-tool
 - **First seen**: Session 62 (2026-09-02, external storybook/"Archer", remote transport)

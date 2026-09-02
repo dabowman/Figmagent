@@ -1,6 +1,14 @@
 // Document, selection, node info, and export commands
 
-import { sendProgressUpdate, generateCommandId, customBase64Encode, rgbaToHex, toNumber, prop, fail } from "../helpers.js";
+import {
+  sendProgressUpdate,
+  generateCommandId,
+  customBase64Encode,
+  rgbaToHex,
+  toNumber,
+  prop,
+  fail,
+} from "../helpers.js";
 
 export async function getDocumentInfo() {
   await figma.currentPage.loadAsync();
@@ -61,27 +69,22 @@ export async function getReactions(nodeIds) {
 
       processedNodes.add(node.id);
 
-      let filteredReactions = [];
-      const reactions = prop(node, "reactions");
-      if (reactions && reactions.length > 0) {
-        filteredReactions = reactions.filter((r) => {
-          if (r.action && r.action.navigation === "CHANGE_TO") return false;
-          if (Array.isArray(r.actions)) {
-            return !r.actions.some((a) => a.navigation === "CHANGE_TO");
-          }
-          return true;
-        });
-      }
-      const hasFilteredReactions = filteredReactions.length > 0;
+      // Return every reaction. CHANGE_TO (variant swap) used to be filtered out
+      // here for the FigJam-connector use case, which made every interactive
+      // component read as "no interactions" (BUG-045). The connector prompt
+      // (reaction_to_connector_strategy) drops CHANGE_TO itself, at the point
+      // where connector params are built — the only consumer that needs to.
+      const rawReactions = prop(node, "reactions");
+      const reactions = Array.isArray(rawReactions) ? rawReactions : [];
 
-      if (hasFilteredReactions) {
+      if (reactions.length > 0) {
         results.push({
           id: node.id,
           name: node.name,
           type: node.type,
           depth: depth,
           hasReactions: true,
-          reactions: filteredReactions,
+          reactions: reactions,
           path: getNodePath(node),
         });
         await highlightNodeWithAnimation(node);
@@ -649,11 +652,17 @@ function mimeTypeForFormat(format) {
 async function exportSingleNode(nodeId, format, scale, maxPayloadChars) {
   const node = await figma.getNodeByIdAsync(nodeId);
   if (!node) {
-    fail(`Node not found with ID: ${nodeId}`, "Verify the node ID with `grep` or `read` — it may be stale after a delete.");
+    fail(
+      `Node not found with ID: ${nodeId}`,
+      "Verify the node ID with `grep` or `read` — it may be stale after a delete.",
+    );
   }
 
   if (!("exportAsync" in node)) {
-    fail(`Node does not support exporting: ${nodeId}`, "Export a node that supports rendering, such as a FRAME, COMPONENT, or GROUP.");
+    fail(
+      `Node does not support exporting: ${nodeId}`,
+      "Export a node that supports rendering, such as a FRAME, COMPONENT, or GROUP.",
+    );
   }
 
   const settings = {
@@ -693,7 +702,7 @@ export async function exportNodeAsImage(params) {
   if (p.nodeIds !== undefined) {
     const nodeIds = p.nodeIds;
     if (!Array.isArray(nodeIds) || nodeIds.length === 0) {
-      fail("nodeIds must be a non-empty array of node IDs", "Pass nodeIds: [\"1:2\", \"3:4\"] or use a single nodeId.");
+      fail("nodeIds must be a non-empty array of node IDs", 'Pass nodeIds: ["1:2", "3:4"] or use a single nodeId.');
     }
     if (nodeIds.length > EXPORT_MAX_NODES) {
       fail(
