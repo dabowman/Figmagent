@@ -1,6 +1,6 @@
 // Component commands: create, combine, instances, swap, main component, instance overrides
 
-import { fail, pageOf } from "../helpers.js";
+import { fail, pageOf, importComponentByKeyOrFail } from "../helpers.js";
 
 export async function createComponent(params) {
   const { x = 0, y = 0, width = 100, height = 100, name = "Component", parentId } = params || {};
@@ -114,7 +114,7 @@ export async function createComponentInstance(params) {
         throw new Error("Node is not a COMPONENT: " + componentId + " (type: " + node.type + ")");
       component = node;
     } else {
-      component = await figma.importComponentByKeyAsync(componentKey);
+      component = await importComponentByKeyOrFail(componentKey);
     }
 
     const instance = component.createInstance();
@@ -172,26 +172,7 @@ export async function importLibraryComponent(params) {
       );
   }
 
-  let imported;
-  try {
-    imported = await figma.importComponentByKeyAsync(componentKey);
-  } catch (e) {
-    throw new Error(
-      "Failed to import component with key " +
-        componentKey +
-        ": " +
-        (e && e.message ? e.message : String(e)) +
-        ". This may be a component set key — use get_component_variants to find individual variant keys, then import those instead.",
-    );
-  }
-
-  if (imported.type !== "COMPONENT") {
-    throw new Error(
-      "Imported node is type " +
-        imported.type +
-        ", not COMPONENT. You likely used a component set key. Use get_component_variants to find individual variant keys, then import a specific variant.",
-    );
-  }
+  const imported = await importComponentByKeyOrFail(componentKey);
 
   const instance = imported.createInstance();
 
