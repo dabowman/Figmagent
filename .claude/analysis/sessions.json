@@ -1723,11 +1723,10 @@
       "figmaToolCalls": 1,
       "durationMinutes": 1,
       "sourceModified": 1782945767.35,
-      "sessionType": "figma",
-      "sourceSignature": "10:1",
+      "sessionType": "dev",
+      "skip": true,
       "analysis": "figma-mcp-session42-analysis.md",
-      "analyzedAt": 1787185165.01,
-      "analyzedSignature": "10:1"
+      "analyzedAt": 1787185165.01
     },
     "087bd997-8e00-4c3e-952e-2da99490cf5d": {
       "toolCalls": 313,
@@ -1756,11 +1755,10 @@
       "figmaToolCalls": 1,
       "durationMinutes": 1,
       "sourceModified": 1782777860.97,
-      "sessionType": "figma",
-      "sourceSignature": "3:1",
+      "sessionType": "dev",
+      "skip": true,
       "analysis": "figma-mcp-session42-analysis.md",
-      "analyzedAt": 1787185165.01,
-      "analyzedSignature": "3:1"
+      "analyzedAt": 1787185165.01
     },
     "32ede50a-369c-443a-9961-3ed6b437b245": {
       "toolCalls": 183,
@@ -1778,77 +1776,70 @@
       "figmaToolCalls": 1,
       "durationMinutes": 1,
       "sourceModified": 1782774901.41,
-      "sessionType": "figma",
-      "sourceSignature": "4:1",
+      "sessionType": "dev",
+      "skip": true,
       "analysis": "figma-mcp-session42-analysis.md",
-      "analyzedAt": 1787185165.01,
-      "analyzedSignature": "4:1"
+      "analyzedAt": 1787185165.01
     },
     "41f7b06e-63cd-45fe-80ea-45e35776a7f9": {
       "toolCalls": 15,
       "figmaToolCalls": 1,
       "durationMinutes": 2,
       "sourceModified": 1782965268.09,
-      "sessionType": "figma",
-      "sourceSignature": "15:1",
+      "sessionType": "dev",
+      "skip": true,
       "analysis": "figma-mcp-session42-analysis.md",
-      "analyzedAt": 1787185165.01,
-      "analyzedSignature": "15:1"
+      "analyzedAt": 1787185165.01
     },
     "4a6dbf76-eaf5-4394-a505-7d8a22659702": {
       "toolCalls": 13,
       "figmaToolCalls": 1,
       "durationMinutes": 2,
       "sourceModified": 1782945926.46,
-      "sessionType": "figma",
-      "sourceSignature": "13:1",
+      "sessionType": "dev",
+      "skip": true,
       "analysis": "figma-mcp-session42-analysis.md",
-      "analyzedAt": 1787185165.01,
-      "analyzedSignature": "13:1"
+      "analyzedAt": 1787185165.01
     },
     "5c2e6cb0-ffbc-4327-9e34-c4ad85eb9a20": {
       "toolCalls": 10,
       "figmaToolCalls": 1,
       "durationMinutes": 1,
       "sourceModified": 1782881503.33,
-      "sessionType": "figma",
-      "sourceSignature": "10:1",
+      "sessionType": "dev",
+      "skip": true,
       "analysis": "figma-mcp-session42-analysis.md",
-      "analyzedAt": 1787185165.01,
-      "analyzedSignature": "10:1"
+      "analyzedAt": 1787185165.01
     },
     "8ad309aa-1f72-4f1d-9196-c2b8d91045ec": {
       "toolCalls": 5,
       "figmaToolCalls": 1,
       "durationMinutes": 1,
       "sourceModified": 1783702625.55,
-      "sessionType": "figma",
-      "sourceSignature": "5:1",
+      "sessionType": "dev",
+      "skip": true,
       "analysis": "figma-mcp-session42-analysis.md",
-      "analyzedAt": 1787185165.01,
-      "analyzedSignature": "5:1"
+      "analyzedAt": 1787185165.01
     },
     "8bf51a2f-2855-4060-b64a-d10568327016": {
       "toolCalls": 4,
       "figmaToolCalls": 1,
       "durationMinutes": 1,
       "sourceModified": 1782965449.19,
-      "sessionType": "figma",
-      "sourceSignature": "4:1",
+      "sessionType": "dev",
+      "skip": true,
       "analysis": "figma-mcp-session42-analysis.md",
-      "analyzedAt": 1787185165.01,
-      "analyzedSignature": "4:1"
+      "analyzedAt": 1787185165.01
     },
     "8ca1f562-2e06-460c-967a-4609e9cbc6e9": {
       "toolCalls": 9,
       "figmaToolCalls": 1,
       "durationMinutes": 1,
       "sourceModified": 1782927549.95,
-      "sessionType": "figma",
-      "sourceSignature": "9:1",
+      "sessionType": "dev",
+      "skip": true,
       "analysis": "figma-mcp-session42-analysis.md",
-      "analyzedAt": 1787185165.01,
-      "analyzedSignature": "9:1"
+      "analyzedAt": 1787185165.01
     },
     "8caa2afa-e1c6-4dd1-87d8-9c09b7037b18": {
       "toolCalls": 41,
@@ -1866,22 +1857,20 @@
       "figmaToolCalls": 1,
       "durationMinutes": 0,
       "sourceModified": 1783960839.92,
-      "sessionType": "figma",
-      "sourceSignature": "2:1",
+      "sessionType": "dev",
+      "skip": true,
       "analysis": "figma-mcp-session42-analysis.md",
-      "analyzedAt": 1787185165.01,
-      "analyzedSignature": "2:1"
+      "analyzedAt": 1787185165.01
     },
     "d5995279-b8ee-43f8-8cb8-5c6dc612077c": {
       "toolCalls": 12,
       "figmaToolCalls": 1,
       "durationMinutes": 1,
       "sourceModified": 1782881618.46,
-      "sessionType": "figma",
-      "sourceSignature": "12:1",
+      "sessionType": "dev",
+      "skip": true,
       "analysis": "figma-mcp-session42-analysis.md",
-      "analyzedAt": 1787185165.01,
-      "analyzedSignature": "12:1"
+      "analyzedAt": 1787185165.01
     },
     "ec9d6e90-b68c-41f3-b033-84ed24115476": {
       "toolCalls": 369,
@@ -1954,7 +1943,7 @@
       "toolCalls": 100,
       "figmaToolCalls": 7,
       "durationMinutes": 8794,
-      "sourceModified": 1788302104.43,
+      "sourceModified": 1788345304.45,
       "sessionType": "figma",
       "sourceSignature": "100:7",
       "analysis": "figma-mcp-session46-analysis.md",
@@ -2116,7 +2105,7 @@
       "toolCalls": 233,
       "figmaToolCalls": 18,
       "durationMinutes": 4275,
-      "sourceModified": 1788301959.76,
+      "sourceModified": 1788345159.79,
       "sessionType": "figma",
       "sourceSignature": "233:18",
       "analysis": "figma-mcp-session52-analysis.md",
@@ -2148,21 +2137,21 @@
       "skip": true
     },
     "8ecb5292-12a8-4c69-848d-7aec4a9db1fd": {
-      "toolCalls": 67,
+      "toolCalls": 86,
       "figmaToolCalls": 10,
-      "durationMinutes": 18,
-      "sourceModified": 1788302460.72,
+      "durationMinutes": 37,
+      "sourceModified": 1788303252.4,
       "sessionType": "figma",
-      "sourceSignature": "67:10",
+      "sourceSignature": "86:10",
       "analysis": "figma-mcp-session53-analysis.md",
-      "analyzedAt": 1788302383.06,
-      "analyzedSignature": "67:10"
+      "analyzedAt": 1788340141.3,
+      "analyzedSignature": "86:10"
     },
     "01c2b009-8224-47a1-bded-bba98fc812e8": {
-      "toolCalls": 4,
+      "toolCalls": 47,
       "figmaToolCalls": 0,
-      "durationMinutes": 1,
-      "sourceModified": 1788302113.31,
+      "durationMinutes": 35,
+      "sourceModified": 1788345291.69,
       "sessionType": "dev",
       "skip": true
     },
@@ -2183,9 +2172,9 @@
       "skip": true
     },
     "408432d3-aba0-44c9-8fd3-da2cd610f1e6": {
-      "toolCalls": 1,
+      "toolCalls": 27,
       "figmaToolCalls": 0,
-      "durationMinutes": 0,
+      "durationMinutes": 6,
       "sourceModified": 1788302487.49,
       "sessionType": "dev",
       "skip": true
@@ -2211,6 +2200,193 @@
       "figmaToolCalls": 0,
       "durationMinutes": 2,
       "sourceModified": 1788253332.1,
+      "sessionType": "dev",
+      "skip": true
+    },
+    "05ec0bc5-ee21-4573-a362-d9b5ef92284c": {
+      "toolCalls": 69,
+      "figmaToolCalls": 10,
+      "durationMinutes": 19,
+      "sourceModified": 1788319353.19,
+      "sessionType": "figma",
+      "sourceSignature": "69:10",
+      "analysis": "figma-mcp-session58-analysis.md",
+      "analyzedAt": 1788343900.61,
+      "analyzedSignature": "69:10"
+    },
+    "0fd99f95-1b29-490e-b5f7-471e1ac2c54e": {
+      "toolCalls": 134,
+      "figmaToolCalls": 4,
+      "durationMinutes": 64,
+      "sourceModified": 1788344436.73,
+      "sessionType": "figma",
+      "sourceSignature": "134:4",
+      "analysis": "figma-mcp-session62-analysis.md",
+      "analyzedAt": 1788347040.82,
+      "analyzedSignature": "134:4"
+    },
+    "2be20c1a-fc5e-4df3-9568-ca461678c34d": {
+      "toolCalls": 73,
+      "figmaToolCalls": 10,
+      "durationMinutes": 25,
+      "sourceModified": 1788319390.47,
+      "sessionType": "figma",
+      "sourceSignature": "73:10",
+      "analysis": "figma-mcp-session54-analysis.md",
+      "analyzedAt": 1788340806.57,
+      "analyzedSignature": "73:10"
+    },
+    "38220a4e-1936-4e6a-9032-c9780fd86f18": {
+      "toolCalls": 32,
+      "figmaToolCalls": 11,
+      "durationMinutes": 12,
+      "sourceModified": 1788319355.74,
+      "sessionType": "figma",
+      "sourceSignature": "32:11",
+      "analysis": "figma-mcp-session59-analysis.md",
+      "analyzedAt": 1788344803.34,
+      "analyzedSignature": "32:11"
+    },
+    "4ac78b46-0597-4c26-940e-d8d3db41a251": {
+      "toolCalls": 35,
+      "figmaToolCalls": 8,
+      "durationMinutes": 29,
+      "sourceModified": 1788322768.01,
+      "sessionType": "figma",
+      "sourceSignature": "35:8",
+      "analysis": "figma-mcp-session61-analysis.md",
+      "analyzedAt": 1788346112.39,
+      "analyzedSignature": "35:8"
+    },
+    "7516416f-fb2f-45a9-beea-7e43ac45277d": {
+      "toolCalls": 85,
+      "figmaToolCalls": 9,
+      "durationMinutes": 22,
+      "sourceModified": 1788319344.01,
+      "sessionType": "figma",
+      "sourceSignature": "85:9",
+      "analysis": "figma-mcp-session56-analysis.md",
+      "analyzedAt": 1788342714.47,
+      "analyzedSignature": "85:9"
+    },
+    "e713f226-3d69-4283-8ec1-e7ca73e00116": {
+      "toolCalls": 35,
+      "figmaToolCalls": 6,
+      "durationMinutes": 10,
+      "sourceModified": 1788319348.75,
+      "sessionType": "figma",
+      "sourceSignature": "35:6",
+      "analysis": "figma-mcp-session57-analysis.md",
+      "analyzedAt": 1788343318.14,
+      "analyzedSignature": "35:6"
+    },
+    "e95d2d76-6d8e-4295-a5f9-a9f15ed8d1aa": {
+      "toolCalls": 24,
+      "figmaToolCalls": 6,
+      "durationMinutes": 12,
+      "sourceModified": 1788322757.01,
+      "sessionType": "figma",
+      "sourceSignature": "24:6",
+      "analysis": "figma-mcp-session60-analysis.md",
+      "analyzedAt": 1788345379.82,
+      "analyzedSignature": "24:6"
+    },
+    "fa71c504-323e-4872-8072-d7e827b074b5": {
+      "toolCalls": 92,
+      "figmaToolCalls": 13,
+      "durationMinutes": 29,
+      "sourceModified": 1788319358.34,
+      "sessionType": "figma",
+      "sourceSignature": "92:13",
+      "analysis": "figma-mcp-session55-analysis.md",
+      "analyzedAt": 1788341952.93,
+      "analyzedSignature": "92:13"
+    },
+    "2c2d03ee-1b54-476f-8b97-240d32bbdaff": {
+      "toolCalls": 7,
+      "figmaToolCalls": 0,
+      "durationMinutes": 1,
+      "sourceModified": 1788302544.41,
+      "sessionType": "dev",
+      "skip": true
+    },
+    "330435e9-e974-4a47-b2e5-9659fb7a35a5": {
+      "toolCalls": 34,
+      "figmaToolCalls": 0,
+      "durationMinutes": 9,
+      "sourceModified": 1788340176.1,
+      "sessionType": "dev",
+      "skip": true
+    },
+    "afd4adf6-aeeb-4f16-b013-a17853725dcd": {
+      "toolCalls": 50,
+      "figmaToolCalls": 0,
+      "durationMinutes": 15,
+      "sourceModified": 1788341056.92,
+      "sessionType": "dev",
+      "skip": true
+    },
+    "950e4806-83f9-4cf5-8c9e-7a711fe8d14f": {
+      "toolCalls": 74,
+      "figmaToolCalls": 0,
+      "durationMinutes": 20,
+      "sourceModified": 1788342238.91,
+      "sessionType": "dev",
+      "skip": true
+    },
+    "431c5f99-e025-44aa-b993-ae9145e88f5d": {
+      "toolCalls": 30,
+      "figmaToolCalls": 0,
+      "durationMinutes": 9,
+      "sourceModified": 1788343473.7,
+      "sessionType": "dev",
+      "skip": true
+    },
+    "4b6b49f4-6031-486a-a5b8-e5b3026a28d3": {
+      "toolCalls": 33,
+      "figmaToolCalls": 0,
+      "durationMinutes": 11,
+      "sourceModified": 1788342906.45,
+      "sessionType": "dev",
+      "skip": true
+    },
+    "43f3beed-39d9-4047-a1b8-547908a93998": {
+      "toolCalls": 32,
+      "figmaToolCalls": 0,
+      "durationMinutes": 11,
+      "sourceModified": 1788344151.12,
+      "sessionType": "dev",
+      "skip": true
+    },
+    "89f7e379-a686-4d10-9e68-b1bb5cae35d9": {
+      "toolCalls": 43,
+      "figmaToolCalls": 0,
+      "durationMinutes": 13,
+      "sourceModified": 1788344912.22,
+      "sessionType": "dev",
+      "skip": true
+    },
+    "d5bc91ba-9247-464c-9ff3-e8845de924df": {
+      "toolCalls": 26,
+      "figmaToolCalls": 0,
+      "durationMinutes": 9,
+      "sourceModified": 1788345491.58,
+      "sessionType": "dev",
+      "skip": true
+    },
+    "5044b82c-d667-48e3-a9d8-d04ccbeaea95": {
+      "toolCalls": 1,
+      "figmaToolCalls": 0,
+      "durationMinutes": 0,
+      "sourceModified": 1788347067.92,
+      "sessionType": "dev",
+      "skip": true
+    },
+    "96e51e1f-492e-4dab-b214-695c9415a94b": {
+      "toolCalls": 45,
+      "figmaToolCalls": 0,
+      "durationMinutes": 14,
+      "sourceModified": 1788346315.68,
       "sessionType": "dev",
       "skip": true
     }

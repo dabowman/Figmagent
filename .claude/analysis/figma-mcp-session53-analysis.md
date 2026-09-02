@@ -3,39 +3,41 @@
 ## Session Overview
 
 - **Transcript**: `.claude/sessions-json/8ecb5292-12a8-4c69-848d-7aec4a9db1fd.json`
-- **Duration**: 18 minutes (2026-09-01 22:16 → 22:34 UTC)
-- **Total tool calls**: 67 (54 Figmagent, 9 Bash, 4 ToolSearch)
-- **Total errors**: 18 hard (`is_error: true`) + 2 unflagged soft failures
+- **Duration**: 37 minutes (2026-09-01 22:16 → 22:52 UTC)
+- **Total tool calls**: 86 (65 Figmagent, 15 Bash, 4 ToolSearch, 2 AskUserQuestion)
+- **Total errors**: 21 hard (`is_error: true`) + 4 unflagged soft failures
+- **Re-analysis note**: this document originally covered calls #1–#67. The session continued for a further 19 calls (#68–#86, 18 minutes) after the first analysis was written; that segment is analysed in **"Second half"** below and produced the session's most consequential findings.
 - **Reconnections**: 0 (1 `use_file`, 1 `reauthenticate`)
 - **Context restarts**: 0
 - **Transport**: remote
 - **Project**: external `~/Github/storybook` — **first analysed session on this project**; Figma file `C4zLeQJs8qkAhFSLwMKP9J` ("Archer")
-- **Task**: mirror the Storybook `Accordion` component (Base UI + `config/*.tokens.json`) into the Archer Figma file — an 8-variant `Accordion Item` COMPONENT_SET (`Open` x `State`) plus an assembled `Accordion` COMPONENT, bound to `accordion/*` variables; then create the 12 system type styles as Figma text styles bound to font primitives.
+- **Task**: mirror the Storybook `Accordion` component (Base UI + `config/*.tokens.json`) into the Archer Figma file — an 8-variant `Accordion Item` COMPONENT_SET (`Open` x `State`) plus an assembled `Accordion` COMPONENT, bound to `accordion/*` variables; then create the 12 system type styles as Figma text styles bound to font primitives; then bind `font/weight/semibold` to the 8 trigger labels — which is where the session's central defect surfaced.
 
 ## Metrics
 
 | Metric | Session 52 | This Session | Change |
 |---|---|---|---|
-| Total tool calls | 233 | 67 | −71% (smaller task) |
-| Figma tool calls | 194 | 54 | −72% |
+| Total tool calls | 233 | 86 | −63% (smaller task) |
+| Figma tool calls | 194 | 65 | −66% |
 | Official-MCP calls | 0 | **0** | held (7th session) |
-| Hard errors | 34 | 18 | — |
-| Figma error rate | 16.0% | **33.3%** (18 of 54) | +17.3pp |
-| Estimated waste % | ~21% | **~39%** (26 of 67) | +18pp |
-| ToolSearch calls | 4 (1.7%) | 4 (6.0%) | +4.3pp |
-| `run_script` share of figma calls | 27% | **37%** (20 of 54) | +10pp |
+| Hard errors | 34 | 21 | — |
+| Figma error rate | 16.0% | **32.3%** (21 of 65) | +16.3pp |
+| Estimated waste % | ~21% | **~36%** (31 of 86) | +15pp |
+| ToolSearch calls | 4 (1.7%) | 4 (4.7%) | +3.0pp |
+| `run_script` share of figma calls | 27% | **44.6%** (29 of 65) | +17.6pp |
 | `run_script` share of write ops | 100% | **100%** (0 `write`, 4 `edit` all failed) | held |
 
-Highest waste percentage since session 6. Three distinct defects account for 24 of the 26 wasted calls, and none of them are agent error.
+Highest `run_script` share on record, and the highest waste percentage since session 6. Five distinct defects account for 29 of the 31 wasted calls, and none of them are agent error.
 
 ## Tool Call Distribution
 
 | Tool | Calls | Errors | Notes |
 |---|---|---|---|
-| `run_script` | 20 | 5 hard + 2 soft | 100% of write operations; 8 of 20 were diagnostic |
-| `screenshot` | 15 | 7 | **46.7% failure rate** — [BUG-016] 15th recurrence |
-| Bash | 9 | 0 | reading component source + token JSON |
-| `read` | 5 | 1 | 1 blocked by edit-access; 1 returned 1 page for a ~40-page file |
+| `run_script` | 29 | 8 hard + 4 soft | 100% of write operations; 13 of 29 were diagnostic |
+| `screenshot` | 16 | 7 | **43.8% failure rate** — [BUG-016] 15th recurrence |
+| Bash | 15 | 0 | component source, token JSON, and (#78–#82) reading Figmagent's own plugin source |
+| `read` | 6 | 1 | 1 blocked by edit-access; 1 returned 1 page for a ~40-page file |
+| AskUserQuestion | 2 | 0 | both well-formed; #85 got a direction change from the user |
 | `get_design_system` | 5 | 1 | filtered queries worked well once authed |
 | `edit` | 4 | **4** | **100% failure rate** — all four blocked by a misreported font error |
 | ToolSearch | 4 | 0 | deferred-tool project; 6.0% overhead |
@@ -47,7 +49,7 @@ Highest waste percentage since session 6. Three distinct defects account for 24 
 
 ## Efficiency Issues
 
-### 1. `edit` misreports an unloadable font as a missing text style (saves ~6 calls)
+### 1. `edit` misreports an unloadable font as a missing text style (saves ~6 calls) — [BUG-032]
 
 `edit({ textStyleId })` failed four consecutive times on a style ID that **`get_design_system` had returned 9 seconds earlier**:
 
@@ -83,7 +85,7 @@ The style resolved fine. `loadFontAsync({family:"PP Neue Montreal", style:"Regul
 
 **Estimated savings:** 6 calls → 1 (a correct first error), and it keeps the agent on `edit` instead of defecting to `run_script`.
 
-### 2. The remote VM cannot load the file's own custom font (saves ~7 calls)
+### 2. The remote VM cannot load the file's own custom font (saves ~7 calls) — [BUG-033]
 
 `listAvailableFontsAsync()` (#21) returned **zero** matches for `PP Neue Montreal` — the font every text style, `font/family/*` variable and TEXT node in this file references. 1,938 fonts were available (#22); the file's own was not among them.
 
@@ -151,9 +153,164 @@ The agent ToolSearched `create_styles`/`update_styles` at **#58** — *after* th
 
 The agent caught both only because it had written its own verify blocks into the scripts. [TOOL-033] already records that `run_script` bypasses the assertion layer; this session shows the second-order cost — the agent must hand-write per-script verification, and when it does not (#25), the failure survives 15 calls until a repair pass (#40) finds it.
 
+## Second half (#68–#86): the `fontWeight` binding
+
+The first 67 calls built the component and hit the font wall. The last 19 chased one
+question to the bottom: **why does binding a weight variable to a TEXT node do nothing?**
+The answer is three separate defects stacked on each other, and the segment is worth
+reading as the session's real result.
+
+### 6. `edit` cannot bind `fontWeight`, and its rejection states a false reason (saves ~6 calls) — [TOOL-037]
+
+`apply.ts:45-46` and `:207` both assert:
+
+> `fontWeight` is a number, settable directly but **not bindable** — font weight binds
+> through `fontStyle` (a STRING variable holding e.g. 'Bold').
+
+**This session disproves that.** The Archer file's design system binds a **FLOAT**
+variable `font/weight/semibold` (`VariableID:2:450`) to `fontWeight` on TEXT nodes, and
+the Figma API accepts it:
+
+- #70 — `n.setBoundVariable('fontWeight', semibold)` on all 8 Label nodes: `failed: []`,
+  and the verify block lists `fontFamily,fontSize,fontWeight` for every one.
+- #73 — the raw dump reads `boundVariables` back containing `fontWeight` alongside
+  `fills`, `fontSize` and `fontFamily`.
+- #72 — Figmagent's **own** `read(detail: "full")` resolves it into `defs.vars` as
+  `v4: VariableID:2:450`. The serializer reports a binding the writer refuses to make.
+- #84 — three of the eight labels resolve to `w=600` from that binding.
+
+**Root cause is two lines, not a Figma limitation:**
+
+```js
+// src/figma_plugin/src/commands/styles.js:1166-1168 — FIELD_MAP
+  fontSize: "fontSize",
+  fontFamily: "fontFamily",
+  fontStyle: "fontStyle",     // <- no fontWeight entry
+```
+
+`apply.js:227-229` rejects anything missing from `FIELD_MAP`; `apply.ts`'s
+`variableFieldEnum` omits it in the same shape one layer up. So the field is blocked
+twice and explained once, wrongly.
+
+**Cost:** every weight binding in this session went through `run_script` — #70, #71,
+#75, #76, #77, #83, six calls `edit` could have carried as one batch. It also sent the
+[BUG-030] fix in the wrong direction: that entry accepted "not bindable" as fact and
+shipped an alias message teaching agents to bind `fontStyle` instead. `fontStyle` binding
+is a *different* operation (a STRING face literal, not a weight lookup) and would not
+have produced what this file's tokens describe.
+
+**Proposed fix:** add `fontWeight: "fontWeight"` to `FIELD_MAP`, add `"fontWeight"` to
+`variableFieldEnum`, delete the `VARIABLE_FIELD_ALIASES.fontWeight` entry and the
+parenthetical in the `variables` description. Keep [BUG-030]'s other two remedies (enum
+dump size, whole-batch discard) — those were correct.
+
+### 7. A `fontWeight` binding made from the remote VM is inert — bound but unresolved (saves ~7 calls) — [BUG-034]
+
+Figma's `fontName` is `{family, style}`. Only `family` is variable-backed; `style` is a
+plain literal. Binding `fontWeight` does not store a number — it runs a
+**family + weight → face lookup** and rewrites that literal. The lookup fires on a
+binding-change event *in a client that can enumerate the family's faces*. The headless VM
+cannot (see issue 2), so it silently no-ops and the node keeps the **authoring** font's
+face-name spelling.
+
+The spelling is the trap: Inter spells 600 `Semi Bold`, PP Neue Montreal spells it
+`Semibold`. Nodes authored on Inter land on `Semi Bold` — a face PP Neue Montreal does
+not have. Figma renders them at 400 and shows the weight variable struck through.
+
+**#84 is the measurement:**
+
+```
+Open=False, State=Default  | 11:4  | PP Neue Montreal Semibold  | w=600   ← resolved
+Open=False, State=Hover    | 11:10 | PP Neue Montreal Semibold  | w=600   ← resolved
+Open=False, State=Focused  | 11:16 | PP Neue Montreal Semibold  | w=600   ← resolved
+Open=False, State=Disabled | 11:22 | PP Neue Montreal Semi Bold | w=400   ← bound, inert
+Open=True,  State=Default  | 11:28 | PP Neue Montreal Semi Bold | w=400   ← bound, inert
+Open=True,  State=Hover    | 11:36 | PP Neue Montreal Semi Bold | w=400   ← bound, inert
+Open=True,  State=Focused  | 11:44 | PP Neue Montreal Semi Bold | w=400   ← bound, inert
+Open=True,  State=Disabled | 11:52 | PP Neue Montreal Semi Bold | w=400   ← bound, inert
+```
+
+**Five of eight nodes are bound to a 600 variable and report `fontWeight: 400`.** The node
+contradicts itself, and nothing in the response says so — #70 returned `failed: []` with
+all eight listed as bound.
+
+**#71 is the cleanest control this class of bug has had.** Four unbind/rebind cycles on a
+single node, `attempts: []` (zero exceptions thrown), face unchanged. A silent no-op
+wearing a success shape.
+
+**The workaround, verified in one call (#83):** the lookup fires on a *family* change.
+Bind `fontFamily` to a different family variable, then back:
+
+```
+before: Semibold/600
+  toSerif  → PP Editorial Old Semibold/600
+  toSans   → PP Neue Montreal Semibold/600      ← re-resolved
+```
+
+Worth noting how the agent got there: after #75/#76/#77 failed to rebuild the nodes from
+scratch, it stopped permuting the write and went and **read Figmagent's own source**
+(#78–#82, five Bash calls) to find out what the tool actually did with a weight. That is
+[AGENT-029] executed correctly — the fourth failure triggered a change of strategy, not
+another parameter.
+
+**Proposed fix:** a `fontWeight` bind whose face does not resolve must not return
+`is_error: false`. After binding, compare `node.fontWeight` against the variable's
+resolved value and, on a mismatch, either apply the family-toggle re-resolution
+automatically or `fail()` with it as the stated fix.
+
+### 8. The weight → face table is Inter-spelled, in three places, and misses silently (saves ~3 calls) — [BUG-035]
+
+```js
+// src/figma_plugin/src/helpers.js:122-132   (FONT_WEIGHT_STYLES, exported as fig.loadFont)
+// src/figma_plugin/src/commands/apply.js:838-848   (a local duplicate)
+// src/figma_plugin/src/commands/create.js:106      (imports the helpers one)
+  600: "Semi Bold",  700: "Bold",  800: "Extra Bold",
+```
+
+Every one of those spellings is Inter's. PP Neue Montreal uses `Semibold` and `Extrabold`;
+other families use `SemiBold` or `DemiBold`. On a miss, `loadFontWithFallback`
+(`helpers.js:146-152`) catches and returns **Inter Regular** with no warning, and
+`create.js:108-123` does the same. The agent read both (#81, #82) and wrote the conclusion
+into project memory: *"never let a numeric weight choose a face."*
+
+The `font_fallback` post-write assertion (`assertions.js:155-173`) does not cover this —
+it compares `fontName.family` only, so a wrong **face inside the right family** never
+warns. And `run_script`, which is where all of this session's writes happened, has no
+assertion layer at all ([TOOL-033]).
+
+This is [BUG-007]'s root cause — marked `implemented (bda7a09)`, and its description names
+*"'Semi Bold' vs 'SemiBold' mismatches are swallowed"* — still present in all three
+copies. The `create` symptom was fixed; the shared table underneath it was not.
+
+**Proposed fix:** collapse the three tables to one, and on a miss enumerate the family's
+real faces via `listAvailableFontsAsync` and pick by proximity before falling back —
+`fail()`ing with the family's actual face names rather than silently landing on Inter.
+
+### 9. Text styles self-heal; individual nodes do not — [AGENT-032]
+
+The same #84 call read the 12 text styles back:
+
+```
+body/1    | PP Neue Montreal Regular      body/3    | PP Neue Montreal Semibold
+body/2    | PP Neue Montreal Medium       heading/1 | PP Neue Montreal Extrabold
+```
+
+**Every style resolved to a correct face on its own** — including `Semibold` and
+`Extrabold`, the two spellings the VM had gotten wrong on nodes — because a client that
+*does* have the font re-fires the lookup when the style is opened. Face correctness on
+styles is a 12-place problem Figma fixes itself; on nodes it is an N-node problem needing
+manual re-picks.
+
+This is the session's most transferable lesson and the user reached it independently at
+#85: *"let's stick with the remote transport and use the type styles that apply properties
+correctly, that's what we should be doing anyways."*
+
+**Agent rule:** on the remote transport, put text on **text styles**, never per-node font
+properties. Bind the primitives once on the style; let instances inherit.
+
 ## Error Analysis
 
-### 1. `screenshot` — 7 of 15 failed (46.7%), ~8 calls lost — [BUG-016] 15th recurrence
+### 1. `screenshot` — 7 of 16 failed (43.8%), ~8 calls lost — [BUG-016] 15th recurrence
 
 Two shapes, both already tracked:
 
@@ -198,6 +355,27 @@ Nine calls later, `run_script` (#19) enumerated `figma.root.children` in the sam
 
 Cost here was small (the agent had the target page ID from the user's URL) but it is the reason `run_script` entered the session at call #19 and never left.
 
+### 4. Three failed rebuild attempts, each on a different cause (#75–#77, ~4 calls)
+
+Having found five labels stuck on an unresolvable face, the agent tried to replace them
+outright. Each attempt died on a new obstacle:
+
+| Call | Approach | Failure |
+|---|---|---|
+| #75 | `src.clone()` + `insertChild` | `unloaded font "PP Neue Montreal Semibold"` — [BUG-033]; a node carrying a missing font cannot be re-parented at all |
+| #76 | build fresh TEXT on Inter, then bind | `setBoundVariable: fills and strokes variable bindings must be set on paints directly` — raw `setBoundVariable('fills', …)` is not the paint path |
+| #77 | same, using `fig.bindVariable(t, 'fill', …)` | its **own** guard fired: `weight did not resolve on 6 node(s): Regular/400 ×6 — rolling back` |
+
+All three were `mode: "write"` and atomic, so nothing was half-applied. #76 is worth
+noting on its own: the stdlib's `fig.bindVariable` exists precisely because raw
+`setBoundVariable` does not work for paints, and the agent found it only by failing first
+— the `run_script` description does not say which fields need the helper.
+
+#77 is the good outcome hiding in the group: the agent had written `if (bad.length) throw`
+into its own script, so a build that would have shipped six 400-weight labels rolled
+itself back instead. That is the assertion layer [TOOL-033] says `run_script` lacks, hand-
+rolled — and it worked.
+
 ## What Worked Well
 
 1. **`reauthenticate` is a one-call fix for the edit-access wall.** Third session in a row where it resolved [BUG-015] immediately. The tool is fine; only its discoverability from the error message is missing.
@@ -205,7 +383,10 @@ Cost here was small (the agent had the target page ID from the user's URL) but i
 3. **Per-variant screenshots as a [BUG-016] workaround.** Once the parent COMPONENT would not export, the agent screenshotted individual variants (`11:26`, `11:14`, `11:8`, `11:50`, `11:20`) and kept a working visual channel — 5 clean exports where session 50 had none. It also got the parent at `scale: 0.5` on a later retry.
 4. **`grep` did in one call what would have been eight.** `grep({scope:"11:58", name:"^(Label|Content)$", type:["TEXT"]})` returned all 12 TEXT nodes grouped by variant with IDs — exactly the input the following `edit` batch needed.
 5. **Self-written verification inside scripts.** Every consequential `run_script` carried its own `verify` block reading state back. That is the only reason the #66 total failure was caught in one call rather than surviving to the end of the session.
-6. **The agent wrote its findings to project memory mid-session** (#50, #51) — `figma-remote-vm-gotchas.md` covering fonts, opacity scaling, missing APIs and flaky screenshots. Session 45 showed memory encoding a *wrong* lesson (defect to the official MCP); here it encoded correct, transferable constraints.
+6. **The agent wrote its findings to project memory mid-session** (#50, #51) — `figma-remote-vm-gotchas.md` covering fonts, opacity scaling, missing APIs and flaky screenshots. Session 45 showed memory encoding a *wrong* lesson (defect to the official MCP); here it encoded correct, transferable constraints — and **rewrote it at #86** once the second half changed the conclusion, replacing the provisional note with the face-resolution mechanism and the "use text styles, not per-node fonts" rule.
+7. **Reading the tool's own source to diagnose the tool** (#78–#82). After three failed rebuilds, the agent stopped writing Figma scripts and went to `src/figma_plugin/src/helpers.js`, found `FONT_WEIGHT_STYLES` and the bare-`catch` fallback, and came back with a mechanism instead of another guess. Five cheap Bash calls replaced an unbounded retry loop — the strongest instance of [AGENT-029] across all 53 sessions.
+8. **Self-written rollback guards caught a bad build** (#77). `if (bad.length) throw … — rolling back` stopped six mis-weighted labels from shipping. Agents working through `run_script` should write these by default until [TOOL-033] is closed.
+9. **Both `AskUserQuestion` calls were well-formed and one changed the plan.** #85 offered a transport switch as the recommended option; the user declined it in favour of text styles, which was the better answer and is now the documented rule.
 
 ## Priority Improvements
 
@@ -216,12 +397,18 @@ Cost here was small (the agent had the target page ID from the user's URL) but i
 3. **Font-availability detection in the remote VM** — when `loadFontAsync` throws, check availability and `fail()` with the swap-write-rebind remedy. **~7 calls/session on any custom-font file.**
 4. **`export.ts:70-105`** — a batch that exports zero nodes must state a fix. Three lines, independent of item 1, now confirmed from four distinct input paths. **~2 calls/session.**
 5. **`export.ts:19-21`** — delete the "~4MB return cap" sentence and the `scale`/`SVG` remedies. This session is the seventh to watch an agent follow that text into a dead end, and the first to measure the true payload. **~3 calls/session.**
-6. **`script.ts` description** — add the remote-VM API gaps block (`loadAllPagesAsync`, `createNodeFromSvgAsync`, custom fonts). **~3 calls/session.**
-7. **Edit-access error text** — name `reauthenticate` in the message. **~2 calls/session.**
+6. **`styles.js` `FIELD_MAP` + `apply.ts` `variableFieldEnum`** — add `fontWeight`, delete the alias that calls it unbindable. Two lines and a doc correction; unblocks weight binding through `edit` and retires a message that teaches a false fact. **~6 calls/session.**
+7. **A `fontWeight` bind that does not resolve must not report success** — compare `node.fontWeight` to the variable's resolved value after binding; on a mismatch, apply the family-toggle re-resolution or `fail()` with it. **~7 calls/session on custom-font files.**
+8. **`script.ts` description** — add the remote-VM API gaps block (`loadAllPagesAsync`, `createNodeFromSvgAsync`, custom fonts) and name the fields that need `fig.bindVariable` rather than raw `setBoundVariable` (`fills`, `strokes`). **~4 calls/session.**
+9. **Collapse the three weight → face tables to one** (`helpers.js:122`, `apply.js:838`, `create.js:106`) and resolve faces against `listAvailableFontsAsync` instead of Inter's spellings. Closes [BUG-007]'s surviving root cause. **~3 calls/session.**
+10. **Edit-access error text** — name `reauthenticate` in the message. **~2 calls/session.**
 
 ### Agent Skill Updates
 
 1. **In a deferred-tool project, search the tool domain you are about to work in, not the one you started in.** The opening `ToolSearch` shapes the whole session; `create_styles` existed for 40 minutes before it was looked up, and by then `run_script` was the habit.
 2. **A stated fix that fails once is a wrong diagnosis** ([AGENT-029], holding): the four `textStyleId` format permutations are the same anti-pattern as the `scale` ladder. Four identical errors on four different inputs means the error message is lying about the variable — change strategy, not parameters.
 3. **On the remote transport, treat a custom font as unavailable until proven otherwise.** Write text with a system font and bind `fontFamily` last. Verified working in this session.
+4. **Put text on text styles, not per-node font properties — especially on remote.** Styles re-resolve their own faces when opened in a client that has the font; individual nodes stay stuck on the authoring font's face-name spelling. #84 measured both in one call: 12 of 12 styles correct, 5 of 8 nodes wrong.
+5. **After three failed writes, read the tool's source rather than writing a fourth.** #78–#82 turned an unbounded retry loop into a named mechanism in five Bash calls. The generalisation of [AGENT-029]: when the target will not move, stop varying the call and go find out what the call does.
+6. **Verify a binding by its resolved value, not by its presence.** `boundVariables.fontWeight` being set says nothing about whether `fontWeight` is 600. Every `run_script` write should read back the property the binding was supposed to change.
 </content>

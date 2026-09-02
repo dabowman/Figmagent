@@ -923,3 +923,270 @@ Run complete. No PRs opened.
 
 No other tracker entry has both a `.claude/plans/` file and `Auto-fixable: yes` + P0/P1 + `identified`/`planned`. No worktrees or non-draft PRs left behind (the `agent-*` dirs under `.claude/worktrees/` predate this run).
 [2026-09-01 16:42:24] run complete
+
+========================= auto-improve 2026-09-02 03:00:05 =========================
+[2026-09-02 03:00:05] Stage A — extract Figmagent sessions across all repos
+  a2201e93-585a-4c71-b050-8f09dfa87973 → 217 messages, 100 tool calls
+  0f978732-bb80-4197-b164-528e108d7396 → 475 messages, 233 tool calls
+  0fd99f95-1b29-490e-b5f7-471e1ac2c54e → 321 messages, 134 tool calls + 1 sub-agents
+  4ac78b46-0597-4c26-940e-d8d3db41a251 → 80 messages, 35 tool calls
+  e95d2d76-6d8e-4295-a5f9-a9f15ed8d1aa → 52 messages, 24 tool calls
+  2be20c1a-fc5e-4df3-9568-ca461678c34d → 152 messages, 73 tool calls
+  fa71c504-323e-4872-8072-d7e827b074b5 → 195 messages, 92 tool calls
+  38220a4e-1936-4e6a-9032-c9780fd86f18 → 68 messages, 32 tool calls
+  05ec0bc5-ee21-4573-a362-d9b5ef92284c → 148 messages, 69 tool calls
+  e713f226-3d69-4283-8ec1-e7ca73e00116 → 73 messages, 35 tool calls
+  7516416f-fb2f-45a9-beea-7e43ac45277d → 175 messages, 85 tool calls
+  8ecb5292-12a8-4c69-848d-7aec4a9db1fd → 196 messages, 86 tool calls
+
+12 extracted, 33 up-to-date. Output: /Users/davidbowman/Github/cursor-talk-to-figma-mcp/.claude/sessions-json
+Figma sessions: 56, needs analysis: 10
+  8ecb5292-12a8-4c69-848d-7aec4a9db1fd    86 calls  10 figma  (updated)
+  7516416f-fb2f-45a9-beea-7e43ac45277d    85 calls   9 figma  (new)
+  e713f226-3d69-4283-8ec1-e7ca73e00116    35 calls   6 figma  (new)
+  05ec0bc5-ee21-4573-a362-d9b5ef92284c    69 calls  10 figma  (new)
+  38220a4e-1936-4e6a-9032-c9780fd86f18    32 calls  11 figma  (new)
+  fa71c504-323e-4872-8072-d7e827b074b5    92 calls  13 figma  (new)
+  2be20c1a-fc5e-4df3-9568-ca461678c34d    73 calls  10 figma  (new)
+  e95d2d76-6d8e-4295-a5f9-a9f15ed8d1aa    24 calls   6 figma  (new)
+  4ac78b46-0597-4c26-940e-d8d3db41a251    35 calls   8 figma  (new)
+  0fd99f95-1b29-490e-b5f7-471e1ac2c54e   134 calls   4 figma  (new)
+[2026-09-02 03:00:25] Stage B — analyze sessions (cap 25)
+[2026-09-02 03:00:27]   sessions needing analysis: 10
+Analysis complete. Session 53 (`8ecb5292`) had already been analyzed at call #67; the source had since grown to **86 calls**, and the new 19-call segment turned out to contain the session's most important findings.
+
+## What the second half found
+
+The last 19 calls chased one question — *why does binding a weight variable to a TEXT node do nothing?* — and the answer is three stacked defects:
+
+**`fontWeight` IS bindable, and Figmagent's tool description says it isn't.** `apply.ts:45-46` and `:207` both tell agents *"`fontWeight` is a number, settable directly but not bindable — bind through `fontStyle`."* The session disproves this four ways: `setBoundVariable('fontWeight', <FLOAT>)` returned `failed: []` on 8/8 nodes, the binding persisted into `boundVariables`, it resolved to `w=600`, and **Figmagent's own `read(detail:"full")` reports the binding it refuses to write**. It's blocked twice (`FIELD_MAP` in `styles.js:1166`, `variableFieldEnum` in `apply.ts:21`) and explained once, wrongly.
+
+This corrects **[BUG-030]**, which accepted "not bindable" as fact and shipped that claim as agent guidance — I marked its remedy (a) superseded and left (b)/(c) standing.
+
+**On remote, the binding is inert but reports success.** Figma binds weight by running a family+weight→face lookup that only fires in a client that can enumerate the family's faces. From the headless VM it silently no-ops. Call #84 measured it: **5 of 8 nodes bound to a 600 variable read `fontWeight: 400`** — the node contradicts itself and nothing says so. Call #71 is the cleanest control: four unbind/rebind cycles, zero exceptions, no change. A one-call workaround was verified (toggle `fontFamily` to another family and back).
+
+**The weight→face table is Inter-spelled, in three places.** `600: "Semi Bold"` is Inter's spelling; PP Neue Montreal uses `Semibold`. On a miss it falls back to Inter Regular with no warning, and the `font_fallback` assertion compares `family` only, so a wrong face inside the right family never warns. This is **[BUG-007]**'s root cause still live after that entry was closed as `implemented`.
+
+## Deliverables
+
+- **`figma-mcp-session53-analysis.md`** — extended with a "Second half" section (4 new efficiency issues, 1 new error group), corrected metrics (86 calls, 65 Figma, 21 hard + 4 soft errors, ~36% waste, `run_script` at 44.6% — highest on record).
+- **`improvement-tracker.md`** — 4 new entries (**TOOL-037**, **BUG-034**, **BUG-035**, **AGENT-032**), the BUG-030 correction, BUG-033 extended with a sixth broken operation, metrics row updated.
+- **`sessions.json`** — marked analyzed at signature `86:10`; 9 Figma sessions remain unanalyzed.
+
+No fix plans generated — none of the four match the Phase 6 allowlist (sync-to-async / type-coercion / missing-batch-tool), which each entry records. TOOL-037 is the most mechanical of them (two additions and a deletion) if you want it hand-carried rather than waiting on the dispatch step.
+
+Two things worth flagging beyond the tracker: the agent's best move was abandoning Figma scripts after three failures and reading Figmagent's own `helpers.js` to find the mechanism — five cheap Bash calls in place of an unbounded retry loop. And your call at #85 to standardize on text styles is now recorded as **[AGENT-032]**, backed by the measurement that made it: 12 of 12 styles self-corrected their faces while 5 of 8 nodes stayed stuck.
+[2026-09-02 03:09:38]   sessions needing analysis: 9
+Analysis complete. Session 54 written and the tracker updated.
+
+## Session 54 — `AlertDialog` → Figma "Archer" (external `~/Github/storybook`, remote)
+
+73 tool calls / 25 min. 9 hard errors + 2 unflagged soft failures. **Error rate fell 32.3% → 17.0%** vs session 53 (same file, started two minutes later); waste ~34%. The task completed: a 2-variant COMPONENT_SET with 5 component properties, an assembled portal-scene COMPONENT, everything variable-bound, annotated and linted.
+
+**Headline: `run_script` hit 54.7% of Figma calls — highest in 54 sessions.** Unlike prior monoculture sessions, no capability gap explains it. `get_design_system` was never called, and five scripts re-implemented it — including two that dumped text-style font specs that `getStyles` already returns, `boundVariables` included. The signature symptom: call #69 invoked `figma.grepNodes(...)` inside the VM, reaching for Figmagent's `grep` semantics as if it were a Plugin API.
+
+**Five new tracker entries:**
+
+- **[AGENT-033]** — a raw `clone()` in a script parents to `figma.currentPage`, which on remote is the page the file was last left on. The clone landed on "Cover" with plausible coordinates; nothing said so until `combine_as_variants` refused it two calls later. Figmagent's own `cloneNode`/`cloneAndModify` re-parent correctly — the guard existed and the session routed around it.
+- **[BUG-037]** — the shipped [BUG-032] remedy tells agents to *"skip `textStyleId`"* and move type onto per-node font properties, which is exactly what [AGENT-032] was filed one session earlier to forbid. Call #68 proved a better route: swap the **style's** `fontName` to an available family, apply, re-bind the style's `fontFamily`. Style link kept, real family back, every node on the style fixed at once.
+- **[BUG-036]** — `combine_as_variants` pre-checks existence, type and naming with proper `fail(message, fix)`, but not page co-location, so Figma's raw error escapes with no fix.
+- **[TOOL-038]** — `setExplicitVariableModeForCollection` appears nowhere in the repo; one dark-mode look cost 6 calls.
+- **[TOOL-039]** — `edit` takes `effectStyleId` but not `effects`, so a variable-bound shadow needs a script.
+
+**Recurrences logged:** BUG-016 (16th — a 336×274 render and a 480-wide component both failed the "~4MB cap" guard; batch no-fix-text hole confirmed from a 5th input path), AGENT-025 (6th), BUG-033 (2nd), TOOL-033 (3rd, adds an `invisible_paint_binding` assertion case), TOOL-023 (2nd), AGENT-031 (4th).
+
+Two things worth flagging beyond the findings themselves:
+
+- The four sessions the manifest flagged as "updated" (46, 47, 48, 52) were false positives — their tool-call counts match their existing analyses exactly, so the sources were re-extracted with unchanged content. I reconciled their `analyzedAt` rather than re-analyzing.
+- No fix plans generated: none of the five new findings match the Phase 6 allowlist (sync-to-async / type-coercion / missing-batch-tool). `sync-issues --dry-run` shows all five queued for creation, plus 6 pre-existing DRIFT rows where the tracker is active but the issue is closed — I did not run the real sync.
+
+8 Figma sessions still need analysis.
+[2026-09-02 03:24:19]   sessions needing analysis: 8
+Analysis complete. Session 55 (`fa71c504`, Storybook `Autocomplete` → Figma "Archer", 92 calls / 79 Figma, 29 min, remote).
+
+## What the session produced
+
+4 component sets, 14 variants, ~70 nodes, 6 component properties, 18 annotations — task completed. Two notable shifts vs. the two sessions that ran hours earlier on the same file: **`run_script` fell from 54.7% → 29.1%** of Figma calls with no tooling change (`write` #30 created 8 COMPONENT roots / 32 nodes in one call), and **zero unflagged soft failures** (S53 had 4, S54 had 2).
+
+## The headline finding
+
+**[BUG-016] has an isolated discriminator for the first time in 17 sessions — and it isn't payload size.**
+
+The session accidentally ran a controlled experiment. All 18 screenshots sort perfectly on whether a live `DROP_SHADOW` was in the exported subtree: 8 failures all had one, 10 successes all didn't, zero exceptions. The decisive triple:
+
+- **#64** `screenshot({nodeId:"27:82", scale:2})` → FAIL ("~4MB cap")
+- **#68** `run_script`: `n.effects = []` on descendant `27:17`, nothing else
+- **#69** byte-identical call → **clean image, 2 seconds later**
+
+Same node, same scale, same format, one intervening property change. `format: "SVG"` also failed (4th time). I recorded the caveats honestly — the control is one-directional (no A→B→A), and "any effect" vs. "variable-bound effect colour" isn't separated yet — plus a 3-call named test that would settle it.
+
+## Six new tracker entries
+
+| ID | P | Issue |
+|---|---|---|
+| BUG-038 | P1 | A bound `opacity` variable holding `0.4` resolves to **`0.004`** on the node (measured in-VM). Node renders invisible; `edit`, write warnings, assertions and `lint` all stay silent |
+| TOOL-040 | P1 | `fig.createNode` returns the create *response*, not the node — `.id` undefined → `nodeIds: [null,null,null]`, a silent `fig.check` skip, and a `TypeError` that discarded an atomic script |
+| BUG-039 | P2 | `setProperties` failures append a property-type fix even when Figma's own message says the cause is an unavailable font |
+| TOOL-041 | P2 | `edit` cannot set `strokeAlign` or a component `description` |
+| TOOL-042 | P2 | Annotations can be written but never deleted (`labelMarkdown` is required) |
+| TOOL-043 | P2 | `lint` discarded 39 issues over a 1,620-char (5%) budget overrun instead of trimming |
+
+None match the Phase 6 auto-fix allowlist, so no fix plans were generated.
+
+## Recurrences recorded
+
+BUG-032 (2nd — same style ID; the fix shipped in `d50708b` **15 minutes after** the failing call, so this is a pre-fix reproduction and the next custom-font session is the verification target), BUG-033 (3rd — VM reports 8,927 fonts vs S53's 1,938 on the same file, so the inventory isn't stable), BUG-030/TOOL-037 (2nd), TOOL-039 (2nd, now 4 calls), TOOL-033, AGENT-026. AGENT-029 and AGENT-031 are logged as **executed correctly** — the agent stopping the `scale` ladder and changing the scene instead is the only reason BUG-016's discriminator exists.
+
+[AGENT-025] gets its first sustained reversal: of the 19 remaining write scripts, **11 were forced by a named tool gap** and only 5 are genuinely script-shaped — which reframes it as a tool-surface backlog rather than a behaviour problem.
+
+Files updated: `.claude/analysis/figma-mcp-session55-analysis.md` (new), `improvement-tracker.md`, `sessions.json`. Eleven Figma sessions remain unanalyzed (7 new, 4 re-extracted).
+[2026-09-02 03:44:02]   sessions needing analysis: 7
+Analysis complete for session 56 (`7516416f`, 2026-09-01, external `~/Github/storybook` → Figma "Archer", remote transport, 22 min, 85 calls).
+
+**Written:** `.claude/analysis/figma-mcp-session56-analysis.md`
+
+**Task:** mirror the Storybook `Combobox` into Figma — 6 components, 24 variants, ~120 nodes, 18/18 annotations. Completed.
+
+**Headline finding — [BUG-040], new:** a TEXT node whose font family is unavailable in the remote VM measures at **width 0**, and every sizing operation from there (`HUG`, `FILL`, `layoutGrow`, `primaryAxisSizingMode`) is a silent no-op. Three controls make it airtight:
+
+- **#35** — two sibling labels, same set, same characters, both `hasMissingFont: true`: `Regular` measures 298, `Semibold` measures 0.
+- **#45** — negative control on `Inter`: same construction measures 55, never 0.
+- **#50** — five donor families, one variable: `SF Pro`, `SF Pro Rounded`, `SF Compact`, `SF Compact Rounded` all → `w: 0`; `Noto Sans New Tai Lue` → `w: 228`.
+
+Two consequences worth acting on. CLAUDE.md's documented width-0 repair (`textAutoResize: HEIGHT` first) **throws** on a missing-font node rather than fixing it — only an explicit `resize()` works. And `SF Pro` is exactly the donor [BUG-033]/[BUG-035] adopted in session 55, so the swap-write-rebind recipe as written produces the collapse unless a `resize()` follows. Diagnosing this cost 19 calls and 5.5 of the session's 22 minutes.
+
+**Also new:** [TOOL-044] (`fig.prop` throws a bare `TypeError: invalid 'in' operand` on a null node — no ID, no fix), [AGENT-034] (session closed claiming full variable binding against a `lint` that found 93 issues under a 60 cap, 33 never returned, 6 `exact_match` unfixed).
+
+**Two metrics moved hard in opposite directions.** `screenshot` had its best session ever — 16.7% failure (3 of 18), all three recovered by child-node export with exactly one scale step, [AGENT-031] executed correctly for a 3rd consecutive session. But `run_script` hit **92.3% of write operations** (24 of 26) and 55.9% of Figma calls, both records, with zero `write`/`create`/`combine_as_variants`/`component_properties` calls. That erases session 55's reversal on the same file 22 minutes later — confirming the driver is task shape, not a durable behaviour change, and pointing at [TOOL-033] (assertions inside `run_script`) as the real lever.
+
+**One correction to a prior session's conclusion:** S55's "live DROP_SHADOW in the exported subtree" discriminator for [BUG-016] is partially contradicted here. All seven screenshot subjects carried the same shadow, yet four exported cleanly at scale 1.0. What sorts them is how *many* shadowed subtrees are in the export, not whether one is present.
+
+Tracker updated: 3 new entries, 6 recurrence notes ([BUG-033] 4th, [TOOL-037] 3rd — plus confirmation the same gap hits `fig.bindVariable` through the shared `FIELD_MAP`, [BUG-039] 2nd, [TOOL-043] 2nd on `read` at a 1.2% overrun which relocates the fix to `guardOutput`, [AGENT-025] 7th, [AGENT-031] executed correctly), metrics row, header at 56 sessions. [BUG-024]'s 4th occurrence is **not** a regression — the call ran three hours before `3358711` landed. No fix plans generated; none of the three new issues match the Phase 6 auto-fix allowlist.
+[2026-09-02 03:55:08]   sessions needing analysis: 6
+Analysis complete — session 57 (`e713f226`), the Storybook `Checkbox` mirror into the Archer file.
+
+## What the session did
+
+10 minutes, 35 calls (21 Figmagent), 2 hard errors, task completed: a 9-variant `Checkbox` COMPONENT_SET plus a usage scene, fully variable-bound, 5/5 annotations, both modes verified. **The cleanest run of the five sessions on this file** — 9.5% Figma error rate (vs S53's 32%), zero unflagged soft failures, ~31% waste (down 7pp from S56).
+
+## Two new confirmed bugs, both traced to source
+
+**[BUG-041] `fig.loadFont` reports success for a font it never loaded.** `loadFontWithFallback` (`helpers.js`) catches `loadFontAsync`'s throw, silently substitutes Inter, and returns `{family: "Inter"}` as success — and `stdlib.js:25` exposes it directly as `fig.loadFont`. Script #20 awaited it twice, both resolved, then died 30 lines later on `set_fontName`, discarding a ~120-line atomic build. This is the half of [BUG-033]'s proposed fix that *cannot fire*: the throw is swallowed before any caller sees it. The fallback is correct for internal callers — the fix belongs at the stdlib boundary.
+
+**[BUG-042] `lint` counts an invisible paint as an unbound fill.** `checkColorProperty` (`lint.js:399-422`) guards on SOLID and on an existing binding, never on `paint.visible`. `createNodeFromSvg` leaves a `visible: false` white fill on every wrapper frame — 6 of this session's 20 lint issues, unfixable by binding. One guard clause.
+
+## Notable evidence for existing entries
+
+- **[BUG-016] gets a free control**: `41:26` exported at scale 3 and twice at scale 2 while `42:42` failed at 2 — and this build has **zero `effects` anywhere**. A live DROP_SHADOW is not a necessary condition, which neither S55's discriminator nor S56's softened version accounts for.
+- **[BUG-038] (2nd)**: discovery cost fell 4 calls → 1 (project memory worked), but the literal-0.4 repair is now **permanent lint debt** — flagged as a `near_match` on every future run, pointing at the variable that cannot be bound.
+- **[BUG-040] corroborated independently**: the donor was `Inter` and width-0 never fired — grounds to change the recommended donor away from `SF Pro`.
+- **[AGENT-034] (2nd, verbatim)**: closed against the first `lint` run's buckets after clearing 6 fills, leaving 3 `exact_match` issues unmentioned. Same move as S56, one session later — worth promoting from tracker prose into the `figma-guidelines` completion checklist.
+- **[AGENT-026] (3rd)**: `get_design_system` absent from the opening `ToolSearch` slice for the third time on this file, paid for in two hand-written variable-listing scripts. The slices differ only slightly across sessions, which reads as a template being reused rather than judged fresh.
+
+No fix plans generated — neither new bug matches the Phase 6 allowlist (sync-to-async, type-coercion, missing-batch-tool), though both entries carry the exact file, line range and change. Five Figma sessions remain unanalyzed.
+[2026-09-02 04:04:36]   sessions needing analysis: 5
+Analysis complete for the oldest unanalyzed session.
+
+## Session 58 — Storybook `Button` → Figma "Archer" (remote, 19 min, 69 calls)
+
+Written to `.claude/analysis/figma-mcp-session58-analysis.md`; tracker, metrics table, and manifest updated.
+
+**Three new findings:**
+
+**[BUG-043] P1 — a variable-bound paint keeps its literal colour, and the VM renders the literal.** All 60 Button variants rendered black despite correct bindings. The agent ruled out mode resolution (`explicitVariableModes` was `{}` everywhere) and confirmed `resolveForConsumer` returned the right orange while the paint still held `{0,0,0}`. **Figmagent ships the same pattern and actively seeds black** at `src/figma_plugin/src/commands/apply.js:266-273` — so `write` (empty fills by default) → `edit({variables:{fillColor}})` is the ordinary path into this. Same at `styles.js:805-809`; `lint.js:522-526` is safe by accident. Fix is localized: write `resolveForConsumer(node).value` into the paint before binding.
+
+**[TOOL-045] P1 — no way to ask what fonts the remote VM can render.** The donor hunt cost 5 calls and has now recurred in all six Archer sessions. `get_design_system` already calls `listAvailableFontsAsync()` twice (`styles.js:44`, `:709`) and discards the list. The inventory isn't stable either — 1,938 families here and in session 53, 8,927 in session 55 — so a donor can't be cached.
+
+**[AGENT-035] P2 — a 1,352-char script reimplemented `grep`.** Script #18 hand-rolled the cross-page `variableId` scan that `find.ts:47` / `find.js:28-75` already do, paint-level bindings included. The agent had `grep` loaded.
+
+**Two corroborations worth more than the new entries:**
+
+- **[BUG-016] gets its cleanest discriminator yet.** Node `42:494` at `scale: 0.4` succeeded at 23:34:44 and failed at 23:36:43 — same node, same scale, identical render bounds, zero `effects` in the build. The only intervening event turned 60 black rectangles into 60 coloured buttons. Geometry and `scale` held constant, only pixel entropy changed, which points at encoded payload size and away from any fix the agent can reach by choosing a `scale`.
+- **[BUG-040] needs reframing.** The label was authored directly on `SF Pro / Semibold`; `loadFontAsync` resolved, `fontName` read back correctly, and it still measured `w: 0`. The font was not missing. The VM's font dump also shows exactly five families offering a one-word `Semibold` — precisely the five session 56 tested, four of which are broken — which explains why `SF Pro` keeps getting picked and keeps failing.
+
+Also notable: this session overlapped sessions 56 and 57, so three MCP processes wrote the same Figma file for ~10 minutes with no interference — 0 timeouts, 0 reconnections, 0 unflagged soft failures.
+
+No fix plans generated — none of the three match the Phase 6 allowlist (sync-to-async / type-coercion / missing-batch-tool), and no code was changed. Four sessions remain unanalyzed.
+[2026-09-02 04:15:53]   sessions needing analysis: 4
+Session 59 analyzed. Findings:
+
+**`.claude/analysis/figma-mcp-session59-analysis.md`** — Storybook `Avatar` mirrored into the Archer file (6-variant COMPONENT_SET, 32 calls, 12 min, remote). 7th session on this file.
+
+**The headline result is a reversal.** `run_script` fell to **19.0% of Figma calls and 25% of write operations** — both the lowest measured on this file, against session 58's 100% write-op ceiling. One `write` created 6 COMPONENT roots and 12 nodes; `combine_as_variants` and `component_properties` ran clean; `get_design_system` was in the opening ToolSearch slice and called three times with no script re-implementing it. All four surviving scripts trace to gaps already in the tracker, so the residual share now reads as a direct count of open gaps rather than agent habit — that's the strongest support [AGENT-025]'s "task shape, not preference" diagnosis has had.
+
+**Three new issues:**
+
+- **[BUG-044] (P1)** — the style-face swap this tracker *recommends* is lossy. Assigning `style.fontName` drops the style's `fontWeight` variable binding, and re-binding `fontFamily` does not restore the face; `support/label/1` went in on `PP Neue Montreal/Semibold` with three bindings and came out `Regular` with two, corrupting every component sharing it. Re-binding weight then rewrites the face literal, so `fontName` must be assigned twice. It surfaced only because the script's own `return` echoed `styleBound` — `run_script` reported `is_error: false`. I checked the concurrent sessions 54/55 and ruled them out: no other process wrote the file in that window.
+- **[TOOL-046] (P2)** — no IMAGE paint support anywhere in `write`/`edit`; `imageHash` appears nowhere in the source. Every image-bearing component ships as a placeholder disc.
+- **[TOOL-047] (P2)** — `combine_as_variants` can't name the set it creates ("Component 1" → forced rename) and reports nothing about what its auto-layout did to the variants' sizing.
+
+**Recurrences:** BUG-033 (7th) is the notable one — `edit({index})` failed with `insertChild: unloaded font`, the **first time** the missing-font defect breaks a first-class tool rather than a script. There's no park-and-restore reachable from `edit`, so a one-field reorder cost a 30-line script. That makes the `allowFontFallback` proposal concrete. Also BUG-037 (4th), TOOL-033 (11th), AGENT-026 (held for the first time), TOOL-005. No BUG-016 — both screenshots succeeded.
+
+No fix plans generated: none of the three new issues matches the Phase 6 auto-fix allowlist.
+SessionEnd hook [/Users/davidbowman/Github/archivist/.venv/bin/python3.14 -m archivist.cli capture] failed: Hook cancelled
+[2026-09-02 04:29:02]   sessions needing analysis: 3
+Analysis complete: **session 60** (`e95d2d76`, 24 calls, 12 min, remote transport, external `~/Github/storybook` → Figma file "Archer" — the 8th analysed session on that file).
+
+**Task**: give the Figma `Accordion` the interactive behaviour of the Storybook Base UI component. Half shipped — 10 prototype reactions across 8 variants, with Smart Animate durations and easing lifted from `base.tokens.json` rather than eyeballed, and Disabled variants deliberately inert to match `pointer-events: none`. The single-select prototype flow was abandoned.
+
+**Three new tracker entries**, all verified against source rather than inferred:
+
+- **[BUG-045] P1** — `get_reactions` returned `nodesWithReactions: 0` for six nodes holding 10 reactions, with `is_error: false`. Root cause is `src/figma_plugin/src/commands/document.js:67-73`, which filters out every `CHANGE_TO` action *in the read*. Every variant-swap reaction in an interactive component is `CHANGE_TO`, so for the exact class of node an agent most wants to audit, the answer is structurally always "none". The filter belongs to the FigJam-connector consumer, not the reader.
+- **[TOOL-048] P1** — nothing in the codebase calls `setReactionsAsync`; the prototyping surface reads and draws connectors but never writes. The whole deliverable ran through one 1,575-char `run_script` that is almost entirely navigation/easing boilerplate. `setReactionsAsync` is a per-node whole-array setter — it maps cleanly onto a `reactions` field on `edit`.
+- **[BUG-046] P2** — `get_reactions` appends an unconditional "You MUST … required next step" connector instruction (`tools/scan.ts:12,27`), false here on both counts: zero results, and the caller was verifying a write.
+
+**[BUG-033] recurred an 8th time, and for the first time cost a deliverable** rather than calls. Three hard failures including first-class `write({fromNodeId, parentId})` — the second first-class surface after session 59's `edit({index})`. The agent escalated via `AskUserQuestion` and the user cut the scope. One new fact recorded: `appendChild` fails regardless of the parent's layout mode, a dead hypothesis that cost a full 2,314-char script rewrite and would not have survived a correct error message.
+
+No fix plans generated — none of the three match the Phase 6 auto-fix allowlist. Manifest updated; 2 sessions remain unanalysed (`4ac78b46`, `0fd99f95`).
+[2026-09-02 04:38:14]   sessions needing analysis: 2
+Analysis complete. Session 61 written and the tracker updated.
+
+## Session 61 — Storybook `ContextMenu` → Figma "Archer"
+
+`.claude/analysis/figma-mcp-session61-analysis.md` · 35 calls (22 Figmagent, 12 Bash, 1 ToolSearch), 29 min, remote transport, 9th analysed run on this file.
+
+**This is the cleanest run on this file.** Waste ~20% (7 of 35) vs 34–38% for sessions 57–60. `run_script` fell to 22.7% of Figma calls, and all five scripts map to named tool gaps — none re-implements a loaded tool.
+
+### Two new tracker entries
+
+**[BUG-047] — the first *proven* cross-session collision in 61 sessions.** Session 61's `edit` failed with `Node not found: 63:322` on a node its own `read` had returned 11 seconds earlier. Cross-referencing the concurrent transcript resolves it: session 60 created that `probe-frame` at 03:35:47 with a **parentless** `write`, and it landed on *session 61's* page — because `figma.currentPage` on remote is shared file state across processes, and session 61 had set it 35 seconds earlier. Session 60 deleted it at 03:36:18; session 61's cleanup ran at 03:36:26. Every timestamp is in the two transcripts. This is the complementary half of [BUG-018]: `currentPage` doesn't persist *between calls*, and it isn't private to a *session* either. Prior analyses had only ever ruled a concurrent writer out.
+
+**[TOOL-049] — 67% of lint findings were unactionable.** 14 of 21 issues are COMPONENT_SET wrapper chrome (exactly 7 per set, on both sets: `cornerRadius=5`, `itemSpacing`/`counterAxisSpacing`/`padding*=40`). With [BUG-038]'s 7 opacity literals, the actionable count was **zero of 21**. This also measures the triage that [TOOL-036] flagged as unverified in session 56 — the claim was correct, which is exactly why the category is good cover for a real finding.
+
+### Notable recurrences
+
+- **[BUG-016] 21st — smallest failing export on record.** `63:75` fails at **370×225** rendered pixels while `63:288` succeeds at **448×272** in the same session. A larger render succeeding while a smaller one fails falsifies the "~4MB cap" guard text outright, and makes the prescribed `scale` remedy demonstrably unreachable. The shadow-*count* model survives cleanly: 6 shadowed subtrees fail at 0.5, 2 succeed at 0.8, 1 succeeds at 1.0.
+- **Zero font failures — first time on this file.** Sessions 53–59 lost scripts and deliverables to [BUG-033]/[BUG-040]/[BUG-044]. One 11K-char read of the project memory file carried forward the donor-face correction and the double-assign remedy, both applied first try. The tracker → memory → next-session loop paid for itself end to end.
+- **[BUG-014] reached its terminal state (9th):** the agent no longer attempts `read()` for page enumeration at all — so the defect now costs one `run_script` call and generates no error to count.
+
+One session remains unanalyzed (`0fd99f95`, 134 calls); the skill runs one at a time. No fix plans generated — neither new issue matches the Phase 6 auto-fix allowlist.
+[2026-09-02 04:51:58]   sessions needing analysis: 1
+Analysis complete. Session 62 is written, the tracker is updated, and the queue is empty.
+
+## What the session was
+
+64 minutes in `~/Github/storybook` on the "Archer" file (remote transport): scope all 596 Figma variables, create 8 `ui/*` text styles and apply them across 15 component pages, then give the repo's `Checkbox` a label. 134 tool calls, 2 errors, two clean commits.
+
+## Headline finding
+
+**`run_script` hit 80% of Figma calls (28 of 35) and 100% of write ops — both records.** But this is the first session that separates the two causes of [AGENT-025] in one transcript:
+
+- **Discovery failure** — `create_styles`/`update_styles` were never ToolSearched, so the text-style phase never had them as candidates. Both ToolSearch calls landed in the first 8 minutes; the phase that needed different tools started at 03:41 and ran 43 more minutes.
+- **Preference failure** — `update_variables` and `create_variables` *were* in context at 03:22 and still lost to a script. The incentive is visible: a 596-variable scope change is ~2.5KB as a run-length-encoded script and ~48KB as a first-class call.
+
+Fixing either alone leaves the other.
+
+## The best of the six new entries
+
+**[TOOL-050]** — the agent spent 5 scripts empirically rediscovering a recipe `create_styles` already implements. `styles.js:903-957` runs create → set font → metrics → bind variables *last*, which is exactly the order the session derived at #8. Two description defects hide it: the font-loading line reads as "name the real family" (which throws on remote), and the bindable-fields list omits `fontWeight` even though `bindVariablesToStyle` passes it straight through — so `fontWeight` binding **works on this surface today**, unlike on `edit`. That sharpens [TOOL-037]: the `create_styles` half needs only a doc change, `edit`/`fig.bindVariable` still need the three-part code fix.
+
+Also new: [TOOL-051] (`grep` has no absence criterion — 4 scripts asking "what's still unstyled"), [AGENT-036], [TOOL-052], [TOOL-053], [TOOL-054].
+
+## Two corrections worth flagging
+
+- I initially wrote in the tracker header that session 62 had no overlap with sessions 60/61. The timing data contradicts that — its window **fully contains both**. I corrected the header and added a Concurrency Exposure section. Only one write (the 596-variable re-scope at 03:30:44Z) lands inside their active write windows; the dangerous one, the document-wide park-and-swap that touches the very page session 61 had just built, missed it by 19 minutes. No interference is visible in the outcome.
+- [TOOL-050]'s central claim is a code-path reading plus the session's step-by-step empirical proof of each element — not an executed end-to-end `create_styles` call. I marked that caveat on the entry, along with one latent fragility (`bindVariablesToStyle` iterates `Object.keys` with no ordering guarantee).
+
+Corroborations recorded on [BUG-037] (3-for-3 with the park, clean failure without it), [BUG-033] (6th, new call site `loadFontOrFail`), [TOOL-029] (28/28 `stdlib: false`), [TOOL-031], and the [BUG-014] onboarding half (5th occurrence — at this point the proposed docs line should just ship).
+[2026-09-02 05:04:30]   sessions needing analysis: 0
+[2026-09-02 05:04:30] committing analysis artifacts to main (local, no push)
