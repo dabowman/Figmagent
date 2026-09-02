@@ -5,16 +5,29 @@ Date: 2026-09-01 · Scope: all 56 open issues on `dabowman/Figmagent` · Tracker
 Every recommendation below was checked against the code at `e0ab8ad`, not just read off the issue.
 Anchors (`file:line`) are verified-present unless marked otherwise.
 
-> **Status — first batch dispatched.** Five draft PRs opened, all CI-green, all based on `main`:
-> [#146](https://github.com/dabowman/Figmagent/pull/146) (BUG-027) ·
-> [#147](https://github.com/dabowman/Figmagent/pull/147) (BUG-022) ·
-> [#148](https://github.com/dabowman/Figmagent/pull/148) (BUG-032) ·
-> [#149](https://github.com/dabowman/Figmagent/pull/149) (BUG-018) ·
-> [#150](https://github.com/dabowman/Figmagent/pull/150) (INFRA-005) ·
-> [#151](https://github.com/dabowman/Figmagent/pull/151) (TOOL-025 + TOOL-027 + TOOL-035, Tier 2).
-> Each carries tests that were confirmed to fail without the fix. Steps 1, 2 and 3 in
-> **Suggested dispatch order** are done; #147, #149 and #151 still want live-Figma verification
-> before merge. Remaining: step 4 (#126, #124, #125, #106, #112 + #134) and step 5 (#98 + #116).
+> **Status — all dispatchable work opened.** Ten draft PRs, all CI-green, all based on `main`.
+> Every one carries tests confirmed to fail without its fix.
+>
+> | PR | Closes | |
+> |---|---|---|
+> | [#146](https://github.com/dabowman/Figmagent/pull/146) | #128 | BUG-027 |
+> | [#147](https://github.com/dabowman/Figmagent/pull/147) | #115 | BUG-022 |
+> | [#148](https://github.com/dabowman/Figmagent/pull/148) | #144 | BUG-032 |
+> | [#149](https://github.com/dabowman/Figmagent/pull/149) | #101 | BUG-018 |
+> | [#150](https://github.com/dabowman/Figmagent/pull/150) | #119 | INFRA-005 |
+> | [#151](https://github.com/dabowman/Figmagent/pull/151) | #111, #117, #139 | TOOL-025/027/035 |
+> | [#152](https://github.com/dabowman/Figmagent/pull/152) | #124, #125, #126 | BUG-024/025/026 |
+> | [#153](https://github.com/dabowman/Figmagent/pull/153) | #106 | TOOL-022 |
+> | [#154](https://github.com/dabowman/Figmagent/pull/154) | #112, #134 | BUG-021/030 |
+> | [#155](https://github.com/dabowman/Figmagent/pull/155) | #98, #116 | TOOL-021/026 |
+>
+> **15 of the 56 open issues** are covered. What remains is Tier 4 (needs live verification),
+> Tier 5 (needs human design), Tier 6 (the 14 prose-only agent-behavior issues, still batchable
+> into one guidance PR), and the two stale entries.
+>
+> **Nothing here is verified against live Figma.** Every PR asserts against a mocked `figma`
+> global, so call shapes are pinned but Figma's acceptance of them is not. #149 (remote import)
+> and #151 (14 new field types) are where that gap matters most.
 
 ---
 
