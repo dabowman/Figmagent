@@ -42,12 +42,22 @@ const VARIABLE_FIELDS = new Set(variableFieldEnum.options as string[]);
 // `variables`, is the single most likely mistake here, and the name differs from
 // the direct-value one. Say which name to use rather than printing the enum.
 const VARIABLE_FIELD_ALIASES: Record<string, string> = {
-  fontWeight: "fontStyle — font weight binds through fontStyle (a STRING variable holding e.g. 'Bold'); fontWeight is a direct-value field only",
+  fontWeight:
+    "fontStyle — font weight binds through fontStyle (a STRING variable holding e.g. 'Bold'); fontWeight is a direct-value field only",
   fillColor: "fill",
   fontColor: "fill",
+  fills: "fill",
   strokeColor: "stroke",
+  strokes: "stroke",
   cornerRadiusAll: "cornerRadius",
 };
+
+// Own-property lookup only: a plain object literal inherits `toString`,
+// `constructor`, `valueOf`… from Object.prototype, so a bare `ALIASES[key]`
+// would answer a key like "toString" with a native function and print it as
+// the suggested field name.
+const aliasFor = (key: string): string | undefined =>
+  Object.hasOwn(VARIABLE_FIELD_ALIASES, key) ? VARIABLE_FIELD_ALIASES[key] : undefined;
 
 // Recursive node operation schema (exported for tests)
 export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
@@ -178,10 +188,18 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
       if (op.variables && typeof op.variables === "object") {
         const unknown = Object.keys(op.variables).filter((k) => !VARIABLE_FIELDS.has(k));
         if (unknown.length > 0) {
-          const named = unknown
-            .filter((k) => VARIABLE_FIELD_ALIASES[k])
-            .map((k) => `"${k}" -> bind "${VARIABLE_FIELD_ALIASES[k]}"`);
-          const fix = named.length > 0 ? named.join("; ") : `valid bindable fields: ${[...VARIABLE_FIELDS].join(", ")}`;
+          // Every unknown key gets a fix: a redirect when one is known, and the
+          // field list once if any key is left unaccounted for. Naming only the
+          // aliased keys would leave the others with no stated fix at all.
+          const named: string[] = [];
+          let unaliased = 0;
+          for (const key of unknown) {
+            const alias = aliasFor(key);
+            if (alias) named.push(`"${key}" -> bind "${alias}"`);
+            else unaliased++;
+          }
+          if (unaliased > 0) named.push(`valid bindable fields: ${[...VARIABLE_FIELDS].join(", ")}`);
+          const fix = named.join("; ");
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             message: `variables on ${op.nodeId}: ${unknown.map((k) => `"${k}"`).join(", ")} ${unknown.length === 1 ? "is not a" : "are not"} bindable field${unknown.length === 1 ? "" : "s"}. Fix: ${fix}.`,
