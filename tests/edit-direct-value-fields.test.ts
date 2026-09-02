@@ -23,7 +23,19 @@ function makeFrame(id: string, extra: Record<string, any> = {}) {
       name: "Frame",
       visible: true,
       clipsContent: true,
-      strokeWeight: 0,
+      // Figma's strokeWeight writes all four sides. Model that, or a test for
+      // "base then per-side override" passes on a fixture that was already 0.
+      _strokeWeight: 0,
+      get strokeWeight() {
+        return this._strokeWeight;
+      },
+      set strokeWeight(v: number) {
+        this._strokeWeight = v;
+        this.strokeTopWeight = v;
+        this.strokeBottomWeight = v;
+        this.strokeLeftWeight = v;
+        this.strokeRightWeight = v;
+      },
       strokeTopWeight: 0,
       strokeBottomWeight: 0,
       strokeLeftWeight: 0,
@@ -138,6 +150,84 @@ describe("nodeOpSchema accepts the new direct-value fields", () => {
   });
 });
 
+// ─── numericParam, not z.coerce.number() ─────────────────────────────────────
+//
+// Every new numeric field goes through numericParam() (src/figmagent_mcp/utils.ts),
+// which converts only non-empty strings. z.coerce.number() is Number(value) under
+// the hood, so it would turn null / "" / [] / false into 0 and true into 1 and
+// then apply it: `edit({ strokeTopWeight: null })` would erase a border, and
+// `edit({ minWidth: [] })` would pin a frame to 0. Those are the values a
+// half-populated agent payload actually carries, so they have to stay errors.
+
+const NEVER_A_NUMBER = [null, "", "   ", false, true, [], {}, "1px"] as const;
+
+// Numeric fields where null is not a legal value.
+const STRICT_NUMERIC_FIELDS = [
+  "letterSpacing",
+  "lineHeight",
+  "strokeTopWeight",
+  "strokeBottomWeight",
+  "strokeLeftWeight",
+  "strokeRightWeight",
+] as const;
+
+// Numeric fields where null is documented as "clear the constraint".
+const NULLABLE_NUMERIC_FIELDS = ["minWidth", "maxWidth", "minHeight", "maxHeight"] as const;
+
+describe("the new numeric fields use numericParam, not z.coerce.number()", () => {
+  test("null, empty strings, booleans, arrays and objects are hard errors — never 0", () => {
+    for (const field of STRICT_NUMERIC_FIELDS) {
+      for (const bad of NEVER_A_NUMBER) {
+        const r = nodeOpSchema.safeParse({ nodeId: "1:1", [field]: bad });
+        expect(`${field}=${JSON.stringify(bad)} -> ${r.success}`).toBe(`${field}=${JSON.stringify(bad)} -> false`);
+      }
+    }
+  });
+
+  test("min/max sizing rejects the same values, but keeps null as the documented clear", () => {
+    for (const field of NULLABLE_NUMERIC_FIELDS) {
+      for (const bad of NEVER_A_NUMBER) {
+        if (bad === null) continue;
+        const r = nodeOpSchema.safeParse({ nodeId: "1:1", [field]: bad });
+        expect(`${field}=${JSON.stringify(bad)} -> ${r.success}`).toBe(`${field}=${JSON.stringify(bad)} -> false`);
+      }
+      expect(nodeOpSchema.safeParse({ nodeId: "1:1", [field]: null }).success).toBe(true);
+    }
+  });
+
+  test("the { value, unit } forms reject a non-numeric value too", () => {
+    for (const bad of NEVER_A_NUMBER) {
+      expect(nodeOpSchema.safeParse({ nodeId: "1:1", letterSpacing: { value: bad, unit: "PIXELS" } }).success).toBe(
+        false,
+      );
+      expect(nodeOpSchema.safeParse({ nodeId: "1:1", lineHeight: { value: bad, unit: "PERCENT" } }).success).toBe(false);
+    }
+  });
+
+  test("non-empty numeric strings still convert, on every new numeric field", () => {
+    for (const field of [...STRICT_NUMERIC_FIELDS, ...NULLABLE_NUMERIC_FIELDS]) {
+      const r = nodeOpSchema.safeParse({ nodeId: "1:1", [field]: "12" });
+      expect(`${field} -> ${r.success && (r.data as Record<string, unknown>)[field]}`).toBe(`${field} -> 12`);
+    }
+    expect(nodeOpSchema.parse({ nodeId: "1:1", letterSpacing: { value: "5", unit: "PERCENT" } }).letterSpacing).toEqual({
+      value: 5,
+      unit: "PERCENT",
+    });
+  });
+
+  test("range checks still run after conversion", () => {
+    expect(nodeOpSchema.safeParse({ nodeId: "1:1", strokeTopWeight: "-1" }).success).toBe(false);
+    expect(nodeOpSchema.safeParse({ nodeId: "1:1", minWidth: "-1" }).success).toBe(false);
+  });
+
+  test("lineHeight's non-numeric union members survive numericParam", () => {
+    // numericParam runs Number("AUTO") -> NaN, which z.number() rejects, so the
+    // literal branch has to be the one that matches.
+    expect(nodeOpSchema.parse({ nodeId: "1:1", lineHeight: "AUTO" }).lineHeight).toBe("AUTO");
+    expect(nodeOpSchema.parse({ nodeId: "1:1", lineHeight: { unit: "AUTO" } }).lineHeight).toEqual({ unit: "AUTO" });
+  });
+});
+
 // ─── [TOOL-035] per-side stroke weights ──────────────────────────────────────
 
 describe("[TOOL-035] per-side stroke weight", () => {
@@ -159,6 +249,11 @@ describe("[TOOL-035] per-side stroke weight", () => {
     await apply({ nodes: [{ nodeId: "1:1", strokeWeight: 2, strokeBottomWeight: 0 }] });
 
     expect(fakeNodes["1:1"].strokeWeight).toBe(2);
+    // The three sides strokeWeight wrote must survive, and the one the caller
+    // named must win — which only holds if the per-side write runs second.
+    expect(fakeNodes["1:1"].strokeTopWeight).toBe(2);
+    expect(fakeNodes["1:1"].strokeLeftWeight).toBe(2);
+    expect(fakeNodes["1:1"].strokeRightWeight).toBe(2);
     expect(fakeNodes["1:1"].strokeBottomWeight).toBe(0);
   });
 
@@ -302,6 +397,57 @@ describe("[TOOL-027] layoutPositioning", () => {
     expect(w.message).toContain("layoutPositioning");
     expect(w.message).toContain("Fix:");
     expect(child.layoutPositioning).toBe("AUTO");
+  });
+
+  test("x/y land where the caller asked, not where auto-layout left the node", async () => {
+    // The whole point of ABSOLUTE is positioning by x/y. Phase 1.5 writes them
+    // while the node is still AUTO, and an auto-layout parent recomputes its
+    // children's coordinates — so they have to be written again after the flip,
+    // in that order, or `{ layoutPositioning: "ABSOLUTE", x, y }` silently
+    // leaves the badge wherever the layout engine had it.
+    const order: string[] = [];
+    const parent = makeFrame("0:9", { layoutMode: "VERTICAL" });
+    const child = makeFrame("1:1", { parent });
+    let xv = 0;
+    let lp = "AUTO";
+    Object.defineProperty(child, "x", {
+      get: () => xv,
+      set(v) {
+        xv = v;
+        order.push(`x=${v}`);
+      },
+      enumerable: true,
+      configurable: true,
+    });
+    Object.defineProperty(child, "layoutPositioning", {
+      get: () => lp,
+      set(v) {
+        lp = v;
+        order.push(`layoutPositioning=${v}`);
+      },
+      enumerable: true,
+      configurable: true,
+    });
+    fakeNodes["1:1"] = child;
+
+    await apply({ nodes: [{ nodeId: "1:1", layoutPositioning: "ABSOLUTE", x: -8, y: -8 }] });
+
+    expect(child.x).toBe(-8);
+    expect(order.at(-1)).toBe("x=-8");
+    expect(order.indexOf("layoutPositioning=ABSOLUTE")).toBeLessThan(order.lastIndexOf("x=-8"));
+  });
+
+  test("a PAGE target warns instead of reporting a successful no-op", async () => {
+    // read/lint hand back PAGE ids constantly; PAGE has neither property, so the
+    // `in node` guards would drop the op and still report success.
+    fakeNodes["0:1"] = { id: "0:1", type: "PAGE", name: "Page 1", children: [] };
+
+    const res = await apply({ nodes: [{ nodeId: "0:1", visible: false, layoutPositioning: "ABSOLUTE" }] });
+
+    const w = res.warnings.find((x: any) => x.check === "inapplicable_property");
+    expect(w.message).toContain("visible");
+    expect(w.message).toContain("layoutPositioning");
+    expect(w.message).toContain("Fix:");
   });
 
   test("AUTO is always allowed — it is the default, not a no-op request", async () => {

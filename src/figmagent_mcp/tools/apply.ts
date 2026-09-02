@@ -126,17 +126,20 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
         .optional()
         .describe("Max lines before truncation. Requires textTruncation: ENDING. TEXT nodes only."),
       letterSpacing: z
-        .union([z.coerce.number(), z.object({ value: z.coerce.number(), unit: z.enum(["PIXELS", "PERCENT"]) })])
+        .union([
+          numericParam(z.number()),
+          z.object({ value: numericParam(z.number()), unit: z.enum(["PIXELS", "PERCENT"]) }),
+        ])
         .optional()
         .describe(
           "Letter spacing. A bare number is PIXELS (CSS letter-spacing: 0.4px → 0.4); pass { value, unit: 'PERCENT' } for percentage. TEXT nodes only.",
         ),
       lineHeight: z
         .union([
-          z.coerce.number(),
+          numericParam(z.number()),
           z.literal("AUTO"),
           z.object({ unit: z.literal("AUTO") }),
-          z.object({ value: z.coerce.number(), unit: z.enum(["PIXELS", "PERCENT"]) }),
+          z.object({ value: numericParam(z.number()), unit: z.enum(["PIXELS", "PERCENT"]) }),
         ])
         .optional()
         .describe(

@@ -602,6 +602,30 @@ async function processNode(op, styleCache, ctx, styleErrors) {
     });
   }
 
+  // visible and layoutPositioning exist on every SceneNode, so the `in node`
+  // guards below only miss on a non-scene target — a PAGE id, which `read` and
+  // `lint` hand back all the time. Without this the op reports success and
+  // changes nothing.
+  const SCENE_ONLY_PROPS = ["visible", "layoutPositioning"];
+  const unsupportedSceneProps = [];
+  for (let np = 0; np < SCENE_ONLY_PROPS.length; np++) {
+    const sceneProp = SCENE_ONLY_PROPS[np];
+    if (op[sceneProp] !== undefined && !(sceneProp in node)) unsupportedSceneProps.push(sceneProp);
+  }
+  if (unsupportedSceneProps.length > 0) {
+    warnings.push({
+      nodeId: op.nodeId,
+      check: "inapplicable_property",
+      message:
+        unsupportedSceneProps.join(", ") +
+        " ignored on " +
+        op.nodeId +
+        " — " +
+        node.type +
+        " is not a scene node. Fix: target a node on the canvas (a PAGE id cannot be hidden or repositioned).",
+    });
+  }
+
   // Phase 0: Component operations (swap variant, set exposed instance)
   if (op.swapVariantId) {
     if (node.type !== "INSTANCE")
@@ -908,6 +932,16 @@ async function processNode(op, styleCache, ctx, styleErrors) {
       });
     } else {
       node.layoutPositioning = op.layoutPositioning;
+      // x/y were written back in phase 1.5, while the node was still AUTO — and
+      // an auto-layout parent recomputes its children's coordinates, so those
+      // writes were discarded. Re-apply them now that the node owns its own
+      // position, or the badge/dot idiom this field exists for
+      // (`{ layoutPositioning: "ABSOLUTE", x, y }`) lands at whatever
+      // coordinates the layout engine happened to leave behind.
+      if (op.layoutPositioning === "ABSOLUTE") {
+        if (op.x !== undefined && "x" in node) node.x = toNumber(op.x, 0);
+        if (op.y !== undefined && "y" in node) node.y = toNumber(op.y, 0);
+      }
     }
   }
 
