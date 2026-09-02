@@ -150,80 +150,159 @@ server.tool(
   },
 );
 
+// Merge `query` and `queries` instead of letting one silently win: a caller that
+// passes both keeps both filters. Blank terms are dropped — scoreMatch's
+// `name.startsWith("")` scores every component 80, so an empty term would return
+// an arbitrary slice of the library under a blank heading — and case-insensitive
+// duplicates collapse so no term is searched, or reported, twice.
+export function normalizeQueryTerms(query?: string, queries?: string[]): string[] {
+  const raw = [...(Array.isArray(queries) ? queries : []), ...(query ? [query] : [])];
+  const seen = new Set<string>();
+  const terms: string[] = [];
+  for (const entry of raw) {
+    const term = String(entry).trim();
+    if (!term) continue;
+    const key = term.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    terms.push(term);
+  }
+  return terms;
+}
+
+// Emitted only on a hit, so the handler can tell a matched block from a miss
+// without re-scoring or string-sniffing prose that could appear in a description.
+const SET_MARKER = "[SET] (cannot import directly — use get_component_variants first)";
+const COMPONENT_MARKER = "[COMPONENT] (can import directly)";
+
+export function blockHasMatches(block: string): boolean {
+  return (
+    block.startsWith(SET_MARKER) ||
+    block.startsWith(COMPONENT_MARKER) ||
+    block.includes(`\n${SET_MARKER}`) ||
+    block.includes(`\n${COMPONENT_MARKER}`)
+  );
+}
+
+// TOOL-021 — search took one term per call: session 44 made 31 single-query calls,
+// session 49 made 18 across four clean runs. The REST component list is already
+// memoized per fileKey (componentsCache/componentSetsCache in figma_rest_api.ts),
+// so what a batch saves is the per-call round trip and its response overhead, not
+// the fetch. Scoring and formatting for ONE term lives here so the handler can loop
+// it over the single pair of lists it holds.
+export function formatSearchResults(
+  query: string,
+  components: ComponentMetadata[],
+  componentSets: ComponentMetadata[],
+  maxResults: number,
+  heading: boolean,
+  fileKey?: string,
+): string {
+  const scored = [
+    ...componentSets.map((item) => ({ item, score: scoreMatch(item, query), type: "component_set" as const })),
+    ...components.map((item) => ({ item, score: scoreMatch(item, query), type: "component" as const })),
+  ]
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, maxResults);
+
+  const prefix = heading ? `## ${query}\n` : "";
+
+  if (scored.length === 0) {
+    // Name the file searched — a wrong fileKey and a genuinely absent component
+    // look identical without it.
+    return `${prefix}No components found matching "${query}"${fileKey ? ` in file ${fileKey}` : ""}.`;
+  }
+
+  const lines = [`${prefix}Found ${scored.length} results for "${query}":\n`];
+  for (const { item, type } of scored) {
+    if (type === "component_set") {
+      lines.push(SET_MARKER);
+      lines.push(formatComponent(item));
+      lines.push(`  Node ID: ${item.node_id}`);
+    } else {
+      lines.push(COMPONENT_MARKER);
+      lines.push(formatComponent(item));
+    }
+    lines.push("  ---");
+  }
+  return lines.join("\n");
+}
+
 // --- Tool 2: search_library_components ---
 
 server.tool(
   "search_library_components",
-  "Search for a specific component in a Figma library by name. Returns matching components with their published keys. Faster than get_library_components for targeted lookups. Searches both component sets and individual component variants.",
+  "Search for components in a Figma library by name. Returns matching components with their published keys. Faster than get_library_components for targeted lookups. Searches both component sets and individual component variants. Batch-first: pass `queries` for several terms in one call rather than issuing repeated single-`query` calls — one round trip returns one labelled block per term. Passing both `query` and `queries` searches all of them; blank and duplicate terms are dropped.",
   {
     fileKey: z.string().describe("The Figma file key of the library."),
-    query: z.string().describe("Search term. Matches against component name, description, and containing frame."),
-    limit: z.coerce.number().optional().default(10).describe("Maximum results to return. Default 10."),
+    query: z
+      .string()
+      .optional()
+      .describe(
+        "Search term. Matches against component name, description, and containing frame. Combined with queries if both are given.",
+      ),
+    queries: z
+      .array(z.string())
+      .min(1)
+      .max(20)
+      .optional()
+      .describe(
+        "Batch form: search several terms in one call against the same fileKey. Returns one labelled block per term. Prefer this over repeated single-query calls.",
+      ),
+    limit: z.coerce
+      .number()
+      .optional()
+      .default(10)
+      .describe(
+        "Maximum results per query. Default 10. This is PER TERM, so a 20-term batch at the default can return 200 blocks (~40K chars) — this tool has no output budget, so lower it (2-3) when batching many terms.",
+      ),
   },
-  async ({ fileKey, query, limit }: any) => {
+  async ({ fileKey, query, queries, limit }: any) => {
+    const terms = normalizeQueryTerms(query, queries);
+    if (terms.length === 0) {
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text" as const,
+            text:
+              'Error: no search term given. Fix: pass query: "Button" for one term, ' +
+              'or queries: ["Button", "Notice"] for several.',
+          },
+        ],
+      };
+    }
+
     try {
+      // Fetched once for the whole batch (and memoized per fileKey beyond that).
       const [components, componentSets] = await Promise.all([
         getFileComponents(fileKey),
         getFileComponentSets(fileKey),
       ]);
 
       const maxResults = limit || 10;
-
-      // Score and rank all items
-      const scored = [
-        ...componentSets.map((item) => ({
-          item,
-          score: scoreMatch(item, query),
-          type: "component_set" as const,
-        })),
-        ...components.map((item) => ({
-          item,
-          score: scoreMatch(item, query),
-          type: "component" as const,
-        })),
-      ]
-        .filter((entry) => entry.score > 0)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, maxResults);
-
-      if (scored.length === 0) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `No components found matching "${query}" in file ${fileKey}.`,
-            },
-          ],
-        };
-      }
-
-      const lines = [`Found ${scored.length} results for "${query}":\n`];
-
-      for (const { item, type } of scored) {
-        if (type === "component_set") {
-          lines.push("[SET] (cannot import directly — use get_component_variants first)");
-          lines.push(formatComponent(item));
-          lines.push(`  Node ID: ${item.node_id}`);
-        } else {
-          lines.push("[COMPONENT] (can import directly)");
-          lines.push(formatComponent(item));
-        }
-        lines.push("  ---");
-      }
-
-      lines.push(
-        "\nFor [COMPONENT] results: use import_library_component directly with the key.",
-        "For [SET] results: call get_component_variants(fileKey, node_id) first to get individual variant keys.",
+      const blocks = terms.map((term) =>
+        formatSearchResults(term, components, componentSets, maxResults, terms.length > 1, fileKey),
       );
+      // The footer tells the caller what to do with [COMPONENT]/[SET] results, so
+      // it is only appended when at least one term matched something — an
+      // all-misses response carried no footer before this tool took a batch form.
+      const anyMatch = blocks.some(blockHasMatches);
+      const footer = anyMatch
+        ? `\n${[
+            "",
+            "For [COMPONENT] results: use import_library_component directly with the key.",
+            "For [SET] results: call get_component_variants(fileKey, node_id) first to get individual variant keys.",
+          ].join("\n")}`
+        : "";
 
-      return {
-        content: [{ type: "text", text: lines.join("\n") }],
-      };
+      return { content: [{ type: "text" as const, text: blocks.join("\n\n---\n\n") + footer }] };
     } catch (error) {
       return {
         content: [
           {
-            type: "text",
+            type: "text" as const,
             text: `Error searching library components: ${error instanceof Error ? error.message : String(error)}`,
           },
         ],
@@ -601,7 +680,7 @@ server.tool(
 
 server.tool(
   "get_enabled_library_variables",
-  "List library variable collections enabled for the CURRENT file (and the variables inside them), via the Figma Plugin API — no fileKey, no REST call, no Enterprise token, no source library file open. This is the variables analog of get_library_components. With no arguments it returns the enabled collections (each with a key, name, and library name). Pass collectionKey to list the variables in one collection (each with a key, name, and resolvedType). Pass query to filter variable names (case-insensitive); without collectionKey, a query surfaces matching variables across all collections in one call. Use the returned variable keys with import_library_variable to pull a variable into the current file, then bind it via edit's variables. Note: the library must already be enabled in the file (Assets panel > Libraries). For published variables in a library file you have a fileKey for, use get_library_variables (REST) instead.",
+  "List library variable collections enabled for the CURRENT file (and the variables inside them), via the Figma Plugin API — no fileKey, no REST call, no Enterprise token, no source library file open. This is the variables analog of get_library_components. With no arguments it returns the enabled collections (each with a key, name, and library name). Pass collectionKey to list the variables in one collection (each with a key, name, and resolvedType). Pass query to filter variable names (case-insensitive); without collectionKey, a query surfaces matching variables across all collections in one call. Batch-first: pass `queries` for several terms in one call rather than issuing repeated single-`query` calls — every term is matched against the same fetch, so N terms cost the same as one. Use the returned variable keys with import_library_variable to pull a variable into the current file, then bind it via edit's variables. Note: the library must already be enabled in the file (Assets panel > Libraries). For published variables in a library file you have a fileKey for, use get_library_variables (REST) instead.",
   {
     collectionKey: z
       .string()
@@ -613,14 +692,23 @@ server.tool(
       .string()
       .optional()
       .describe(
-        "Optional. Case-insensitive filter on variable name. Without collectionKey, surfaces matching variables across all enabled collections.",
+        "Optional. Case-insensitive filter on variable name. Without collectionKey, surfaces matching variables across all enabled collections. Combined with queries if both are given.",
+      ),
+    queries: z
+      .array(z.string())
+      .min(1)
+      .max(20)
+      .optional()
+      .describe(
+        "Batch form: filter on several variable-name substrings in one call. Results are grouped per term under `queries`, keyed by the term as written. Blank and duplicate terms are dropped. Use instead of repeated single-query calls.",
       ),
   },
-  async ({ collectionKey, query }: any) => {
+  async ({ collectionKey, query, queries }: any) => {
     try {
       const result = await sendCommandToFigma("get_enabled_library_variables", {
         collectionKey,
         query,
+        queries,
       });
       return {
         content: [{ type: "text", text: JSON.stringify(result) }],

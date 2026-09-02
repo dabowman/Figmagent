@@ -97,12 +97,19 @@ const NODE_ID_PARAMS = [
   "componentSetNodeIds",
 ];
 
-/** True when the schema accepts the URL form (scalar or array) and normalizes it. */
+/**
+ * True when the schema accepts the URL form and normalizes it. Covers all three
+ * shapes in use: scalar in / scalar out, array in / array out, and — since
+ * BUG-021 made grep's list criteria scalar-tolerant — scalar in / array out.
+ */
 function normalizesUrlForm(schema: z.ZodTypeAny): boolean {
-  const scalar = schema.safeParse("43-14");
-  if (scalar.success) return scalar.data === "43:14";
-  const array = schema.safeParse(["43-14"]);
-  if (array.success) return Array.isArray(array.data) && array.data[0] === "43:14";
+  for (const input of ["43-14", ["43-14"]]) {
+    const parsed = schema.safeParse(input);
+    if (!parsed.success) continue;
+    const data = parsed.data;
+    if (typeof data === "string") return data === "43:14";
+    if (Array.isArray(data)) return data[0] === "43:14";
+  }
   return false;
 }
 
@@ -169,6 +176,28 @@ describe("nested node-ID params are normalized too", () => {
     const parsed = shape.connections.parse([{ startNodeId: "1-2", endNodeId: "3-4" }]);
     expect(parsed[0].startNodeId).toBe("1:2");
     expect(parsed[0].endNodeId).toBe("3:4");
+  });
+});
+
+describe("grep's componentId keeps BUG-021's scalar tolerance while normalizing", () => {
+  // The two fixes compose in one direction only: the list coercion has to run
+  // first so the URL-form transform sees a string[].
+  const shape = (server as any)._registeredTools.grep.inputSchema.shape;
+
+  test("a bare string is both listed and converted", () => {
+    expect(shape.componentId.parse("43-14")).toEqual(["43:14"]);
+  });
+
+  test("a comma-separated string is split and every id converted", () => {
+    expect(shape.componentId.parse("43-14, 66-19")).toEqual(["43:14", "66:19"]);
+  });
+
+  test("an array is converted element-wise, colon ids untouched", () => {
+    expect(shape.componentId.parse(["43-14", "5:6"])).toEqual(["43:14", "5:6"]);
+  });
+
+  test("BUG-021's empty-value guard still fires", () => {
+    expect(shape.componentId.safeParse("").success).toBe(false);
   });
 });
 

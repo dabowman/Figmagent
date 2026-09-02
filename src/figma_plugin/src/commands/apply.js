@@ -47,6 +47,128 @@ function parentHasAutoLayout(node) {
   return hasAutoLayout(prop(node, "parent"));
 }
 
+// ─── Requested-but-unsupported property warnings ────────────────────────────
+//
+// One table instead of a copy of the same loop per property family. Each entry
+// names the props, decides whether THIS node supports them, and renders the
+// message with the fix that is true for that family — an entry per family
+// rather than per property, because the families have different remedies
+// (per-side strokes want a frame-like node; min/max sizing wants an auto-layout
+// context; visible/layoutPositioning want a scene node at all).
+// Module scope, not per-op: `apply` runs this for every node in the batch.
+const TEXT_ONLY_PROPS = [
+  "fontFamily",
+  "fontWeight",
+  "fontSize",
+  "fontColor",
+  "textAutoResize",
+  "textTruncation",
+  "maxLines",
+  "letterSpacing",
+  "lineHeight",
+  "textCase",
+  "textDecoration",
+];
+const INDIVIDUAL_STROKE_PROPS = ["strokeTopWeight", "strokeBottomWeight", "strokeLeftWeight", "strokeRightWeight"];
+const MIN_MAX_SIZE_PROPS = ["minWidth", "maxWidth", "minHeight", "maxHeight"];
+// visible and layoutPositioning exist on every SceneNode, so the `in node`
+// guards miss only on a non-scene target — a PAGE id, which `read` and `lint`
+// hand back all the time. Without this the op reports success and changes nothing.
+const SCENE_ONLY_PROPS = ["visible", "layoutPositioning"];
+
+function pluralIt(names) {
+  return names.length === 1 ? "it" : "them";
+}
+
+const UNSUPPORTED_PROP_CHECKS = [
+  {
+    props: TEXT_ONLY_PROPS,
+    supports: (node) => node.type === "TEXT",
+    message: (node, names, nodeId) =>
+      names.join(", ") +
+      " ignored on " +
+      nodeId +
+      " — it is a " +
+      node.type +
+      ", not TEXT. Fix: target a TEXT node instead (grep with type: ['TEXT'] under " +
+      nodeId +
+      " to find one).",
+  },
+  {
+    props: ["clipsContent"],
+    supports: (node, name) => name in node,
+    message: (node, _names, nodeId) =>
+      "clipsContent ignored on " +
+      nodeId +
+      " — " +
+      node.type +
+      " nodes don't clip. Fix: apply clipsContent to a FRAME or COMPONENT node.",
+  },
+  {
+    props: INDIVIDUAL_STROKE_PROPS,
+    supports: (node, name) => name in node,
+    message: (node, names, nodeId) =>
+      names.join(", ") +
+      " ignored on " +
+      nodeId +
+      " — " +
+      node.type +
+      " nodes do not expose " +
+      pluralIt(names) +
+      ". Fix: per-side stroke weights need a frame-like node — apply them to a FRAME, COMPONENT, INSTANCE or " +
+      "RECTANGLE, or use strokeWeight for a uniform border here.",
+  },
+  {
+    props: MIN_MAX_SIZE_PROPS,
+    supports: (node, name) => name in node,
+    message: (node, names, nodeId) =>
+      names.join(", ") +
+      " ignored on " +
+      nodeId +
+      " — " +
+      node.type +
+      " nodes do not expose " +
+      pluralIt(names) +
+      ". Fix: min/max sizing needs an auto-layout FRAME/COMPONENT/INSTANCE (or a direct child of one) — set " +
+      "layoutMode on the frame first, or give " +
+      nodeId +
+      " an explicit width/height.",
+  },
+  {
+    props: SCENE_ONLY_PROPS,
+    supports: (node, name) => name in node,
+    message: (node, names, nodeId) =>
+      names.join(", ") +
+      " ignored on " +
+      nodeId +
+      " — " +
+      node.type +
+      " is not a scene node. Fix: target a node on the canvas (a PAGE id cannot be hidden or repositioned).",
+  },
+];
+
+// Warn for every requested property this node type cannot take. Boundary
+// validation: runs BEFORE any mutation, one warning per property family.
+function collectUnsupportedPropWarnings(op, node) {
+  const warnings = [];
+  for (let c = 0; c < UNSUPPORTED_PROP_CHECKS.length; c++) {
+    const check = UNSUPPORTED_PROP_CHECKS[c];
+    const requested = [];
+    for (let p = 0; p < check.props.length; p++) {
+      const name = check.props[p];
+      if (op[name] !== undefined && !check.supports(node, name)) requested.push(name);
+    }
+    if (requested.length > 0) {
+      warnings.push({
+        nodeId: op.nodeId,
+        check: "inapplicable_property",
+        message: check.message(node, requested, op.nodeId),
+      });
+    }
+  }
+  return warnings;
+}
+
 // Flatten a potentially nested node list into a flat array of operations
 function flattenNodes(nodeList) {
   const flat = [];
@@ -279,6 +401,91 @@ async function loadCurrentFonts(node, canSwap) {
   }
 }
 
+// Figma models letterSpacing/lineHeight as { value, unit }; agents naturally pass
+// the CSS number ("letter-spacing: 0.4px" -> 0.4). Accept both — a bare number
+// means PIXELS.
+//
+// NOTE: this deliberately differs from coerceLetterSpacing/coerceLineHeight in
+// styles.js, which read a bare number on a text STYLE as a unitless multiplier
+// (1.5 -> 150%, 0.03 -> 3%). Node-level edits carry a concrete CSS pixel value
+// far more often than a ratio, so the units stay explicit here — and phase 2.6
+// warns when a bare lineHeight is small enough to be a multiplier, so the
+// divergence can never apply silently.
+function toLetterSpacing(value) {
+  if (value !== null && typeof value === "object") {
+    return { value: toNumber(value.value, 0), unit: value.unit || "PIXELS" };
+  }
+  return { value: toNumber(value, 0), unit: "PIXELS" };
+}
+
+function toLineHeight(value) {
+  if (value === "AUTO") return { unit: "AUTO" };
+  if (value !== null && typeof value === "object") {
+    if (value.unit === "AUTO") return { unit: "AUTO" };
+    return { value: toNumber(value.value, 0), unit: value.unit || "PIXELS" };
+  }
+  return { value: toNumber(value, 0), unit: "PIXELS" };
+}
+
+// Write one axis of min/max sizing.
+//
+// Figma validates the pair on every assignment — a min above the CURRENT max
+// (or a max below the current min) is rejected — so writing them in a fixed
+// min-then-max order fails whenever the node's existing pair sits outside the
+// requested range: { minWidth: 200, maxWidth: 400 } on a frame already capped
+// at maxWidth 100 throws on the very first write. When the op supplies both,
+// clear the pair first so neither bound can be judged against a stale
+// counterpart. Errors that escape anyway are re-raised with a stated fix
+// instead of Figma's bare message.
+function applyMinMax(node, op, minKey, maxKey) {
+  const wantsMin = op[minKey] !== undefined && minKey in node;
+  const wantsMax = op[maxKey] !== undefined && maxKey in node;
+  if (!wantsMin && !wantsMax) return;
+
+  try {
+    if (wantsMin && wantsMax) {
+      node[minKey] = null;
+      node[maxKey] = null;
+    }
+    if (wantsMax) node[maxKey] = op[maxKey] === null ? null : toNumber(op[maxKey], 0);
+    if (wantsMin) node[minKey] = op[minKey] === null ? null : toNumber(op[minKey], 0);
+  } catch (e) {
+    const reason = e && e.message ? e.message : String(e);
+    fail(
+      "Could not set " +
+        (wantsMin ? minKey : "") +
+        (wantsMin && wantsMax ? "/" : "") +
+        (wantsMax ? maxKey : "") +
+        " on " +
+        node.id +
+        ": " +
+        reason,
+      "Figma rejects a minimum above the maximum on the same axis — send " +
+        minKey +
+        " and " +
+        maxKey +
+        " together in one edit with " +
+        minKey +
+        " <= " +
+        maxKey +
+        ", or clear the existing bound first by passing null",
+    );
+  }
+}
+
+// Apply an explicitly requested width/height. Extracted so the ABSOLUTE
+// re-application below can reuse it verbatim — one resize path, not two.
+function applyExplicitSize(node, op) {
+  if (!("resize" in node)) return;
+  if (op.width !== undefined && op.height !== undefined) {
+    node.resize(toNumber(op.width, node.width), toNumber(op.height, node.height));
+  } else if (op.width !== undefined) {
+    node.resize(toNumber(op.width, node.width), node.height);
+  } else if (op.height !== undefined) {
+    node.resize(node.width, toNumber(op.height, node.height));
+  }
+}
+
 async function applyTextStyle(node, styleId, styleCache, styleErrors) {
   if (node.type !== "TEXT") {
     fail(
@@ -502,51 +709,10 @@ async function processNode(op, styleCache, ctx, styleErrors) {
     );
   }
 
-  // Text props on non-TEXT nodes are silently impossible — warn instead of absorbing.
-  if (node.type !== "TEXT") {
-    const TEXT_PROPS = [
-      "fontFamily",
-      "fontWeight",
-      "fontSize",
-      "fontColor",
-      "textAutoResize",
-      "textTruncation",
-      "maxLines",
-    ];
-    const requested = [];
-    for (let tp = 0; tp < TEXT_PROPS.length; tp++) {
-      if (op[TEXT_PROPS[tp]] !== undefined) requested.push(TEXT_PROPS[tp]);
-    }
-    if (requested.length > 0) {
-      warnings.push({
-        nodeId: op.nodeId,
-        check: "inapplicable_property",
-        message:
-          requested.join(", ") +
-          " ignored on " +
-          op.nodeId +
-          " — it is a " +
-          node.type +
-          ", not TEXT. Fix: target a TEXT node instead (grep with type: ['TEXT'] under " +
-          op.nodeId +
-          " to find one).",
-      });
-    }
-  }
-
-  // clipsContent only exists on frame-like nodes.
-  if (op.clipsContent !== undefined && !("clipsContent" in node)) {
-    warnings.push({
-      nodeId: op.nodeId,
-      check: "inapplicable_property",
-      message:
-        "clipsContent ignored on " +
-        op.nodeId +
-        " — " +
-        node.type +
-        " nodes don't clip. Fix: apply clipsContent to a FRAME or COMPONENT node.",
-    });
-  }
+  // Properties this node type cannot take are silently impossible — warn
+  // instead of absorbing them into a successful-looking no-op.
+  const unsupportedWarnings = collectUnsupportedPropWarnings(op, node);
+  for (let uw = 0; uw < unsupportedWarnings.length; uw++) warnings.push(unsupportedWarnings[uw]);
 
   // Phase 0: Component operations (swap variant, set exposed instance)
   if (op.swapVariantId) {
@@ -637,14 +803,26 @@ async function processNode(op, styleCache, ctx, styleErrors) {
   if (op.cornerRadius !== undefined && "cornerRadius" in node) node.cornerRadius = toNumber(op.cornerRadius, 0);
   if (op.opacity !== undefined && "opacity" in node) node.opacity = toNumber(op.opacity, 1);
   if (op.clipsContent !== undefined && "clipsContent" in node) node.clipsContent = !!op.clipsContent;
+  if (op.visible !== undefined && "visible" in node) node.visible = !!op.visible;
 
-  if (op.width !== undefined && op.height !== undefined && "resize" in node) {
-    node.resize(toNumber(op.width, node.width), toNumber(op.height, node.height));
-  } else if (op.width !== undefined && "resize" in node) {
-    node.resize(toNumber(op.width, node.width), node.height);
-  } else if (op.height !== undefined && "resize" in node) {
-    node.resize(node.width, toNumber(op.height, node.height));
+  // Per-side stroke weights (TOOL-035). After strokeWeight, which writes all four.
+  if (op.strokeTopWeight !== undefined && "strokeTopWeight" in node) {
+    node.strokeTopWeight = toNumber(op.strokeTopWeight, 0);
   }
+  if (op.strokeBottomWeight !== undefined && "strokeBottomWeight" in node) {
+    node.strokeBottomWeight = toNumber(op.strokeBottomWeight, 0);
+  }
+  if (op.strokeLeftWeight !== undefined && "strokeLeftWeight" in node) {
+    node.strokeLeftWeight = toNumber(op.strokeLeftWeight, 0);
+  }
+  if (op.strokeRightWeight !== undefined && "strokeRightWeight" in node) {
+    node.strokeRightWeight = toNumber(op.strokeRightWeight, 0);
+  }
+
+  applyMinMax(node, op, "minWidth", "maxWidth");
+  applyMinMax(node, op, "minHeight", "maxHeight");
+
+  applyExplicitSize(node, op);
 
   // Phase 2.5: Font properties (TEXT nodes only — load current font first, then apply new one)
   if (node.type === "TEXT" && (op.fontFamily || op.fontWeight || op.fontSize)) {
@@ -689,6 +867,74 @@ async function processNode(op, styleCache, ctx, styleErrors) {
     if (op.fontSize !== undefined) {
       node.fontSize = toNumber(op.fontSize, 14);
     }
+  }
+
+  // Phase 2.6: Text style properties (TEXT only). Separate from Phase 2.5 on
+  // purpose: that block resolves and REASSIGNS fontName, flattening a mixed-font
+  // node to Inter Regular. Setting letter spacing should not change anyone's font.
+  if (
+    node.type === "TEXT" &&
+    (op.letterSpacing !== undefined ||
+      op.lineHeight !== undefined ||
+      op.textCase !== undefined ||
+      op.textDecoration !== undefined)
+  ) {
+    // canSwap = false: an unloadable current font has to be reported with the
+    // swap remedy (BUG-032) rather than skipped — skipping would let the
+    // assignment below silently no-op. When THIS op already tried to swap the
+    // family (phase 2.5 above swallows a failed swap), that remedy would be
+    // false — it would tell the caller to send the fontFamily they just sent —
+    // so the failing family is named instead.
+    try {
+      await loadCurrentFonts(node, false);
+    } catch (fontErr) {
+      if (!op.fontFamily) throw fontErr;
+      fail(
+        "Cannot set text style properties on " +
+          node.id +
+          " — its current font could not be loaded and the replacement this op sent (" +
+          op.fontFamily +
+          ") is not available in this VM either",
+        "name a family that exists here (get_design_system lists the text styles in use, and their fonts load), " +
+          "send it as fontFamily in an edit, then re-apply letterSpacing/lineHeight/textCase/textDecoration, then " +
+          "re-bind the fontFamily variable last",
+      );
+    }
+    // A bare lineHeight number means PIXELS here, but the SAME number means a
+    // unitless multiplier to create_styles/update_styles (styles.js
+    // coerceLineHeight: < 10 becomes PERCENT, so 1.5 -> 150%). An agent that
+    // learned `lineHeight: 1.5` there gets a 1.5px line height here, with every
+    // line stacked on top of the last. Apply what was asked, but say so.
+    if (typeof op.lineHeight === "number" && op.lineHeight > 0 && op.lineHeight < 10) {
+      // Round the percentage: 1.15 * 100 is 114.99999999999999 in binary
+      // floating point, and a user-facing fix line must not read like that.
+      const asPercent = Math.round(op.lineHeight * 10000) / 100;
+      warnings.push({
+        nodeId: op.nodeId,
+        check: "ambiguous_unit",
+        message:
+          "lineHeight: " +
+          op.lineHeight +
+          " on " +
+          op.nodeId +
+          " was applied as " +
+          op.lineHeight +
+          "px — edit reads a bare number as PIXELS, while create_styles/update_styles read a number under 10 as a " +
+          "unitless multiplier. Fix: if you meant " +
+          asPercent +
+          "% (the CSS line-height: " +
+          op.lineHeight +
+          " reading), pass { value: " +
+          asPercent +
+          ", unit: 'PERCENT' }; if you really meant " +
+          op.lineHeight +
+          "px, ignore this.",
+      });
+    }
+    if (op.letterSpacing !== undefined) node.letterSpacing = toLetterSpacing(op.letterSpacing);
+    if (op.lineHeight !== undefined) node.lineHeight = toLineHeight(op.lineHeight);
+    if (op.textCase !== undefined) node.textCase = op.textCase;
+    if (op.textDecoration !== undefined) node.textDecoration = op.textDecoration;
   }
 
   // Snapshot dimensions BEFORE the width-0 TEXT recovery (below) or any sizing
@@ -786,6 +1032,41 @@ async function processNode(op, styleCache, ctx, styleErrors) {
   if (op.layoutSizingVertical !== undefined && "layoutSizingVertical" in node && !sizingContextMissing) {
     node.layoutSizingVertical = op.layoutSizingVertical;
   }
+  // TOOL-027: layoutPositioning ABSOLUTE only means anything inside an
+  // auto-layout parent — outside one, every child is already free-positioned and
+  // the assignment is a no-op. Mirror the layoutSizing* pre-check rather than
+  // letting it pass silently.
+  if (op.layoutPositioning !== undefined && "layoutPositioning" in node) {
+    if (op.layoutPositioning === "ABSOLUTE" && !parentHasAutoLayout(node)) {
+      const absParent = prop(node, "parent");
+      warnings.push({
+        nodeId: op.nodeId,
+        check: "inapplicable_property",
+        message:
+          "layoutPositioning: 'ABSOLUTE' on " +
+          op.nodeId +
+          " skipped — parent " +
+          (absParent ? absParent.id + ' ("' + absParent.name + '")' : "the parent") +
+          " has no auto-layout, so the node is already free-positioned and the setting is a no-op. " +
+          "Fix: drop layoutPositioning and set x/y directly, or give the parent layoutMode first.",
+      });
+    } else {
+      node.layoutPositioning = op.layoutPositioning;
+      // x/y were written back in phase 1.5 and width/height in phase 2, while
+      // the node was still AUTO — and an auto-layout parent owns both the
+      // coordinates and (for a FILL/STRETCH child) the size of its children, so
+      // those writes were recomputed away. Re-apply them now that the node owns
+      // its own frame, or the badge/dot idiom this field exists for
+      // (`{ layoutPositioning: "ABSOLUTE", x, y, width, height }`) keeps
+      // whatever geometry the layout engine happened to leave behind.
+      if (op.layoutPositioning === "ABSOLUTE") {
+        if (op.x !== undefined && "x" in node) node.x = toNumber(op.x, 0);
+        if (op.y !== undefined && "y" in node) node.y = toNumber(op.y, 0);
+        applyExplicitSize(node, op);
+      }
+    }
+  }
+
   if (wantsSizing && !sizingContextMissing && ctx) {
     ctx.sizingRequests.push({
       id: node.id,

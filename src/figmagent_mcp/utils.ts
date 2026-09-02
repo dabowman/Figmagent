@@ -26,6 +26,54 @@ export const logger = {
 export const numericParam = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((value) => (typeof value === "string" && value.trim() !== "" ? Number(value) : value), schema);
 
+// The array-valued sibling of `numericParam` ([BUG-021]): agents pass a single
+// value as a bare string ("COMPONENT") — the shape every scalar param takes —
+// and a plain `z.array(z.string())` answers with a raw "expected array,
+// received string" Zod dump that states no fix.
+//
+// The trailing checks are load-bearing: a list that carries no usable value is
+// rejected rather than normalized to `[]` or `[""]`. Either shape builds an id
+// set in the plugin that can never match (find.js only length-guards `type`;
+// componentId/variableId/styleId go straight into `buildIdSet`), so the call
+// would silently return zero results instead of saying what went wrong. The
+// array arm needs the same guard as the scalar arm — an array passes through
+// untouched, so `["FRAME", ""]` would otherwise keep its blank entry.
+// Both are factories, like `numericParam`, rather than shared consts: reusing one
+// schema instance across several fields makes zod-to-json-schema emit the later
+// ones as `{"$ref": "#/properties/<first>", "description": …}`, and a consumer
+// reading draft-07 `$ref` semantics discards that sibling description — which is
+// where the "accepts a bare string" guidance lives. A fresh instance per field
+// keeps every criterion's description intact in the advertised inputSchema.
+const EMPTY_LIST_MESSAGE = "empty value. Fix: pass at least one non-empty value, or omit the parameter entirely";
+
+const scalarTolerantList = (toValues: (value: string) => string[]) =>
+  z
+    .array(z.string())
+    .or(z.string().transform(toValues))
+    .pipe(
+      z
+        .array(z.string())
+        .min(1, EMPTY_LIST_MESSAGE)
+        .refine((values) => values.every((value) => value.trim() !== ""), EMPTY_LIST_MESSAGE),
+    );
+
+/** String-list parameter accepting an array, a bare string, or a comma-separated string. */
+export const stringListParam = () =>
+  scalarTolerantList((value) =>
+    value
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean),
+  );
+
+/**
+ * Same, minus the comma splitting — for parameters whose values may themselves
+ * contain a comma. Figma style IDs do (`"S:abc123,"`, `"S:abc123,4:5"`), so
+ * splitting one silently corrupts it into a criterion that can never match.
+ * Pass several ids as an array.
+ */
+export const idListParam = () => scalarTolerantList((value) => (value.trim() === "" ? [] : [value.trim()]));
+
 /** RGBA color parameter (0-1 channels) shared by the `write` and `edit` tools. */
 export const colorSchema = z
   .object({
@@ -73,6 +121,15 @@ export function normalizeNodeId(id: string): string {
  * descriptions the agent reads off the tool schema.
  */
 export const nodeIdParam = () => z.string().transform(normalizeNodeId);
+
+/**
+ * Node-ID list parameter — `stringListParam`'s scalar/array/comma tolerance
+ * ([BUG-021]) with the URL-form conversion applied to every element, for criteria
+ * like `grep`'s `componentId` that take several node ids. Needed as its own
+ * helper because the two fixes compose in one direction only: the list coercion
+ * has to run first so the transform sees a `string[]`.
+ */
+export const nodeIdListParam = () => stringListParam().transform((ids) => ids.map(normalizeNodeId));
 
 // ─── Post-Write Warnings (Phase 4.1) ────────────────────────────────────────
 

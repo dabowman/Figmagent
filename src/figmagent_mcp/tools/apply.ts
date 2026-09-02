@@ -36,6 +36,29 @@ const variableFieldEnum = z.enum([
   "paragraphIndent",
 ]);
 
+const VARIABLE_FIELDS = new Set(variableFieldEnum.options as string[]);
+
+// BUG-030 — a field that is settable directly but not bindable, passed under
+// `variables`, is the single most likely mistake here, and the name differs from
+// the direct-value one. Say which name to use rather than printing the enum.
+const VARIABLE_FIELD_ALIASES: Record<string, string> = {
+  fontWeight:
+    "fontStyle — font weight binds through fontStyle (a STRING variable holding e.g. 'Bold'); fontWeight is a direct-value field only",
+  fillColor: "fill",
+  fontColor: "fill",
+  fills: "fill",
+  strokeColor: "stroke",
+  strokes: "stroke",
+  cornerRadiusAll: "cornerRadius",
+};
+
+// Own-property lookup only: a plain object literal inherits `toString`,
+// `constructor`, `valueOf`… from Object.prototype, so a bare `ALIASES[key]`
+// would answer a key like "toString" with a native function and print it as
+// the suggested field name.
+const aliasFor = (key: string): string | undefined =>
+  Object.hasOwn(VARIABLE_FIELD_ALIASES, key) ? VARIABLE_FIELD_ALIASES[key] : undefined;
+
 // Recursive node operation schema (exported for tests)
 export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
   z
@@ -65,15 +88,47 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
       // Visual properties (direct values)
       fillColor: colorSchema.describe("Fill color (also sets font color on TEXT nodes)"),
       strokeColor: colorSchema.describe("Stroke color"),
-      strokeWeight: numericParam(z.number().positive()).optional().describe("Stroke weight"),
+      strokeWeight: numericParam(z.number().positive()).optional().describe("Stroke weight (sets all four sides)"),
+      strokeTopWeight: numericParam(z.number().min(0))
+        .optional()
+        .describe(
+          "Top-side stroke weight (frame-like nodes). Use the four per-side fields for partial borders — e.g. a bottom-only card-header rule: { strokeBottomWeight: 1, strokeTopWeight: 0, strokeLeftWeight: 0, strokeRightWeight: 0 }. 0 is allowed (unlike strokeWeight). Applied after strokeWeight, so combining them sets a base then overrides one side.",
+        ),
+      strokeBottomWeight: numericParam(z.number().min(0))
+        .optional()
+        .describe("Bottom-side stroke weight (frame-like nodes)."),
+      strokeLeftWeight: numericParam(z.number().min(0))
+        .optional()
+        .describe("Left-side stroke weight (frame-like nodes)."),
+      strokeRightWeight: numericParam(z.number().min(0))
+        .optional()
+        .describe("Right-side stroke weight (frame-like nodes)."),
       cornerRadius: numericParam(z.number().min(0)).optional().describe("Corner radius"),
       opacity: numericParam(z.number().min(0).max(1)).optional().describe("Node opacity (0-1)"),
       clipsContent: z
         .boolean()
         .optional()
         .describe("Clip content (frames only). true = overflow hidden, false = overflow visible."),
+      visible: z
+        .boolean()
+        .optional()
+        .describe(
+          "Show or hide the node. Works on instance-override sub-nodes (I<instanceId>;<nodeId>) to hide unused slots without detaching. Note that a hidden node then disappears from discovery: grep skips invisible subtrees entirely, and read skips them unless you pass filter: { visibleOnly: false } — use that (on the parent) to find it again and set visible: true.",
+        ),
       width: numericParam(z.number().positive()).optional().describe("Width (resizes the node)"),
       height: numericParam(z.number().positive()).optional().describe("Height (resizes the node)"),
+      minWidth: numericParam(z.number().min(0).nullable())
+        .optional()
+        .describe("Minimum width constraint (auto-layout frames). Pass null to clear it."),
+      maxWidth: numericParam(z.number().min(0).nullable())
+        .optional()
+        .describe("Maximum width constraint (auto-layout frames). Pass null to clear it."),
+      minHeight: numericParam(z.number().min(0).nullable())
+        .optional()
+        .describe("Minimum height constraint (auto-layout frames). Pass null to clear it."),
+      maxHeight: numericParam(z.number().min(0).nullable())
+        .optional()
+        .describe("Maximum height constraint (auto-layout frames). Pass null to clear it."),
 
       // Font properties (TEXT nodes only — loads fonts automatically)
       fontFamily: z.string().optional().describe("Font family (e.g. 'Inter', 'Space Grotesk'). TEXT nodes only."),
@@ -93,6 +148,34 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
       maxLines: numericParam(z.number().positive())
         .optional()
         .describe("Max lines before truncation. Requires textTruncation: ENDING. TEXT nodes only."),
+      letterSpacing: z
+        .union([
+          numericParam(z.number()),
+          z.object({ value: numericParam(z.number()), unit: z.enum(["PIXELS", "PERCENT"]) }),
+        ])
+        .optional()
+        .describe(
+          "Letter spacing. A bare number is PIXELS (CSS letter-spacing: 0.4px → 0.4); pass { value, unit: 'PERCENT' } for percentage. TEXT nodes only.",
+        ),
+      lineHeight: z
+        .union([
+          numericParam(z.number().min(0)),
+          z.literal("AUTO"),
+          z.object({ unit: z.literal("AUTO") }),
+          z.object({ value: numericParam(z.number().min(0)), unit: z.enum(["PIXELS", "PERCENT"]) }),
+        ])
+        .optional()
+        .describe(
+          "Line height (never negative). A bare number is PIXELS; 'AUTO' restores automatic; pass { value, unit: 'PERCENT' } for percentage. NOTE: create_styles/update_styles read a bare number under 10 as a unitless multiplier (1.5 = 150%) — here it is always pixels, and a bare number under 10 comes back with a warning naming both readings. TEXT nodes only.",
+        ),
+      textCase: z
+        .enum(["ORIGINAL", "UPPER", "LOWER", "TITLE", "SMALL_CAPS", "SMALL_CAPS_FORCED"])
+        .optional()
+        .describe("Letter casing (CSS text-transform). UPPER = uppercase. TEXT nodes only."),
+      textDecoration: z
+        .enum(["NONE", "UNDERLINE", "STRIKETHROUGH"])
+        .optional()
+        .describe("Text decoration (CSS text-decoration). TEXT nodes only."),
 
       // Layout properties
       layoutMode: z.enum(["NONE", "HORIZONTAL", "VERTICAL"]).optional().describe("Auto-layout direction"),
@@ -103,6 +186,12 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
       paddingLeft: numericParam(z.number()).optional(),
       primaryAxisAlignItems: z.enum(["MIN", "MAX", "CENTER", "SPACE_BETWEEN"]).optional(),
       counterAxisAlignItems: z.enum(["MIN", "MAX", "CENTER", "BASELINE"]).optional(),
+      layoutPositioning: z
+        .enum(["AUTO", "ABSOLUTE"])
+        .optional()
+        .describe(
+          "ABSOLUTE lifts the node out of its parent's auto-layout flow so x/y position it freely — the standard idiom for badges, notification dots, drag handles and overlays. Requires an auto-layout PARENT. Pair with clipsContent: false on the parent for children that straddle its border.",
+        ),
       layoutSizingHorizontal: z.enum(["FIXED", "HUG", "FILL"]).optional(),
       layoutSizingVertical: z.enum(["FIXED", "HUG", "FILL"]).optional(),
       itemSpacing: numericParam(z.number()).optional().describe("Spacing between children"),
@@ -112,10 +201,10 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
 
       // Design token variable bindings
       variables: z
-        .record(variableFieldEnum, z.string())
+        .record(z.string(), z.string())
         .optional()
         .describe(
-          "Map of field names to variable IDs. Binds design tokens to node properties. Fields: fill, stroke, cornerRadius, padding*, itemSpacing, width, height, opacity, visible, characters, fontSize, fontFamily, fontStyle, lineHeight, letterSpacing, paragraphSpacing, paragraphIndent.",
+          "Map of field names to variable IDs. Binds design tokens to node properties. Fields: fill, stroke, cornerRadius, padding*, itemSpacing, width, height, opacity, visible, characters, fontSize, fontFamily, fontStyle, lineHeight, letterSpacing, paragraphSpacing, paragraphIndent. NOTE: these names are NOT the direct-value field names — bind colors through `fill`/`stroke` (not `fillColor`/`strokeColor`) and font weight through `fontStyle`, a STRING variable holding e.g. 'Bold' (`fontWeight` is a number, settable directly but not bindable).",
         ),
 
       // Component operations (INSTANCE nodes only)
@@ -158,6 +247,31 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
     .superRefine((op, ctx) => {
       // Boundary validation: deleting a node and editing its children in the
       // same call is contradictory — the children go down with the node.
+      // Key validation lives here rather than in a z.record(enum, …) key schema:
+      // that form repeats the full field enum once per key, which is how a
+      // two-key call produced a 10,040-char rejection that discarded the batch.
+      if (op.variables && typeof op.variables === "object") {
+        const unknown = Object.keys(op.variables).filter((k) => !VARIABLE_FIELDS.has(k));
+        if (unknown.length > 0) {
+          // Every unknown key gets a fix: a redirect when one is known, and the
+          // field list once if any key is left unaccounted for. Naming only the
+          // aliased keys would leave the others with no stated fix at all.
+          const named: string[] = [];
+          let unaliased = 0;
+          for (const key of unknown) {
+            const alias = aliasFor(key);
+            if (alias) named.push(`"${key}" -> bind "${alias}"`);
+            else unaliased++;
+          }
+          if (unaliased > 0) named.push(`valid bindable fields: ${[...VARIABLE_FIELDS].join(", ")}`);
+          const fix = named.join("; ");
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `variables on ${op.nodeId}: ${unknown.map((k) => `"${k}"`).join(", ")} ${unknown.length === 1 ? "is not a" : "are not"} bindable field${unknown.length === 1 ? "" : "s"}. Fix: ${fix}.`,
+          });
+        }
+      }
+
       if (op.delete === true && Array.isArray(op.children) && op.children.length > 0) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -172,7 +286,7 @@ server.tool(
   "edit",
   `Edit one or more existing Figma nodes: visual properties, font properties, text content, layout, position, name, stacking order, design token variables, styles, component operations, and deletion.
 
-Handles fill color, stroke, corner radius, opacity, width, height, x/y position, rename, reorder (index), text content (characters), font family/weight/size/color, layout mode, padding, alignment, sizing, spacing, variable bindings, text style application, variant swapping (swapVariantId), exposed instances (isExposedInstance), component-property values on instances (componentProperties), and deletion (delete: true).
+Handles fill color, stroke (all sides via strokeWeight, or one side each via strokeTop/Bottom/Left/RightWeight), corner radius, opacity, visibility (visible), width, height, min/max width/height, x/y position, rename, reorder (index), text content (characters), font family/weight/size/color, letter spacing, line height, text case, text decoration, layout mode, padding, alignment, sizing, spacing, absolute positioning (layoutPositioning), content clipping (clipsContent), variable bindings, text style application, variant swapping (swapVariantId), exposed instances (isExposedInstance), component-property values on instances (componentProperties), and deletion (delete: true).
 
 For a single node:
   { nodes: [{ nodeId: "123", fillColor: { r: 1, g: 0, b: 0 } }] }
@@ -216,7 +330,7 @@ Expose a nested instance's properties at the parent component level:
 Set component-property values on an instance (toggle a BOOLEAN, pick a VARIANT, swap an INSTANCE_SWAP, set a TEXT property):
   { nodes: [{ nodeId: "instance1", componentProperties: { "Actions?": false, "Size": "Small" } }] }
 
-Execution order per node: component ops (swapVariantId/isExposedInstance/componentProperties) → layout mode → rename/move/reorder → direct values → font properties → characters → variable bindings → text style → effect style → delete last.
+Execution order per node: component ops (swapVariantId/isExposedInstance/componentProperties) → layout mode → rename/move/reorder → direct values (incl. stroke weights, min/max sizing, resize) → font properties → text style properties (letterSpacing/lineHeight/textCase/textDecoration) → layout values (padding/alignment/spacing/sizing/layoutPositioning) → characters → variable bindings → text style → effect style → delete last. layoutPositioning: 'ABSOLUTE' re-applies x/y/width/height after the flip, so send them in the same op.
 Variable bindings override direct values (set both to get a fallback + token).
 x/y move the node but do NOT change its parent. To reparent: write({ fromNodeId, parentId: newParent }) then edit with delete: true on the original.
 Width and height resize the node. Use variables.width/height to bind dimension tokens.
