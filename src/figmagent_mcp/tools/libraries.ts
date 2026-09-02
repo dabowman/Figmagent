@@ -149,80 +149,106 @@ server.tool(
   },
 );
 
+// TOOL-021 — one term per call meant one pair of REST fetches per term. Session 49
+// made 18 single-query calls in four clean runs; session 44 made 31. The saving is
+// the shared fetch, not the round-trip count, so the batch path fetches once and
+// loops over this.
+export function formatSearchResults(
+  query: string,
+  components: any[],
+  componentSets: any[],
+  maxResults: number,
+  heading: boolean,
+): string {
+  const scored = [
+    ...componentSets.map((item) => ({ item, score: scoreMatch(item, query), type: "component_set" as const })),
+    ...components.map((item) => ({ item, score: scoreMatch(item, query), type: "component" as const })),
+  ]
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, maxResults);
+
+  const prefix = heading ? `## ${query}\n` : "";
+
+  if (scored.length === 0) {
+    return `${prefix}No components found matching "${query}".`;
+  }
+
+  const lines = [`${prefix}Found ${scored.length} results for "${query}":\n`];
+  for (const { item, type } of scored) {
+    if (type === "component_set") {
+      lines.push("[SET] (cannot import directly — use get_component_variants first)");
+      lines.push(formatComponent(item));
+      lines.push(`  Node ID: ${item.node_id}`);
+    } else {
+      lines.push("[COMPONENT] (can import directly)");
+      lines.push(formatComponent(item));
+    }
+    lines.push("  ---");
+  }
+  return lines.join("\n");
+}
+
 // --- Tool 2: search_library_components ---
 
 server.tool(
   "search_library_components",
-  "Search for a specific component in a Figma library by name. Returns matching components with their published keys. Faster than get_library_components for targeted lookups. Searches both component sets and individual component variants.",
+  "Search for components in a Figma library by name. Returns matching components with their published keys. Faster than get_library_components for targeted lookups. Searches both component sets and individual component variants. Batch-first: pass `queries` for several terms in one call rather than issuing repeated single-`query` calls — the library's component list is fetched once and reused across every term.",
   {
     fileKey: z.string().describe("The Figma file key of the library."),
-    query: z.string().describe("Search term. Matches against component name, description, and containing frame."),
-    limit: z.coerce.number().optional().default(10).describe("Maximum results to return. Default 10."),
+    query: z
+      .string()
+      .optional()
+      .describe("Search term. Matches against component name, description, and containing frame. Use this OR queries."),
+    queries: z
+      .array(z.string())
+      .min(1)
+      .max(20)
+      .optional()
+      .describe(
+        "Batch form: search several terms in one call against the same fileKey. Returns one labelled block per term. Prefer this over repeated single-query calls.",
+      ),
+    limit: z.coerce.number().optional().default(10).describe("Maximum results per query. Default 10."),
   },
-  async ({ fileKey, query, limit }: any) => {
+  async ({ fileKey, query, queries, limit }: any) => {
+    const terms: string[] = queries?.length ? queries : query ? [query] : [];
+    if (terms.length === 0) {
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text" as const,
+            text:
+              "Error: no search term given. Fix: pass query: \"Button\" for one term, " +
+              'or queries: ["Button", "Notice"] for several.',
+          },
+        ],
+      };
+    }
+
     try {
+      // Fetched ONCE for the whole batch — this is where the saving is.
       const [components, componentSets] = await Promise.all([
         getFileComponents(fileKey),
         getFileComponentSets(fileKey),
       ]);
 
       const maxResults = limit || 10;
-
-      // Score and rank all items
-      const scored = [
-        ...componentSets.map((item) => ({
-          item,
-          score: scoreMatch(item, query),
-          type: "component_set" as const,
-        })),
-        ...components.map((item) => ({
-          item,
-          score: scoreMatch(item, query),
-          type: "component" as const,
-        })),
-      ]
-        .filter((entry) => entry.score > 0)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, maxResults);
-
-      if (scored.length === 0) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `No components found matching "${query}" in file ${fileKey}.`,
-            },
-          ],
-        };
-      }
-
-      const lines = [`Found ${scored.length} results for "${query}":\n`];
-
-      for (const { item, type } of scored) {
-        if (type === "component_set") {
-          lines.push("[SET] (cannot import directly — use get_component_variants first)");
-          lines.push(formatComponent(item));
-          lines.push(`  Node ID: ${item.node_id}`);
-        } else {
-          lines.push("[COMPONENT] (can import directly)");
-          lines.push(formatComponent(item));
-        }
-        lines.push("  ---");
-      }
-
-      lines.push(
-        "\nFor [COMPONENT] results: use import_library_component directly with the key.",
-        "For [SET] results: call get_component_variants(fileKey, node_id) first to get individual variant keys.",
+      const blocks = terms.map((term) =>
+        formatSearchResults(term, components, componentSets, maxResults, terms.length > 1),
       );
+      const footer = [
+        "",
+        "For [COMPONENT] results: use import_library_component directly with the key.",
+        "For [SET] results: call get_component_variants(fileKey, node_id) first to get individual variant keys.",
+      ].join("\n");
 
-      return {
-        content: [{ type: "text", text: lines.join("\n") }],
-      };
+      return { content: [{ type: "text" as const, text: blocks.join("\n\n---\n\n") + "\n" + footer }] };
     } catch (error) {
       return {
         content: [
           {
-            type: "text",
+            type: "text" as const,
             text: `Error searching library components: ${error instanceof Error ? error.message : String(error)}`,
           },
         ],
@@ -598,7 +624,7 @@ server.tool(
 
 server.tool(
   "get_enabled_library_variables",
-  "List library variable collections enabled for the CURRENT file (and the variables inside them), via the Figma Plugin API — no fileKey, no REST call, no Enterprise token, no source library file open. This is the variables analog of get_library_components. With no arguments it returns the enabled collections (each with a key, name, and library name). Pass collectionKey to list the variables in one collection (each with a key, name, and resolvedType). Pass query to filter variable names (case-insensitive); without collectionKey, a query surfaces matching variables across all collections in one call. Use the returned variable keys with import_library_variable to pull a variable into the current file, then bind it via edit's variables. Note: the library must already be enabled in the file (Assets panel > Libraries). For published variables in a library file you have a fileKey for, use get_library_variables (REST) instead.",
+  "List library variable collections enabled for the CURRENT file (and the variables inside them), via the Figma Plugin API — no fileKey, no REST call, no Enterprise token, no source library file open. This is the variables analog of get_library_components. With no arguments it returns the enabled collections (each with a key, name, and library name). Pass collectionKey to list the variables in one collection (each with a key, name, and resolvedType). Pass query to filter variable names (case-insensitive); without collectionKey, a query surfaces matching variables across all collections in one call. Batch-first: pass `queries` for several terms in one call rather than issuing repeated single-`query` calls — every term is matched against the same fetch, so N terms cost the same as one. Use the returned variable keys with import_library_variable to pull a variable into the current file, then bind it via edit's variables. Note: the library must already be enabled in the file (Assets panel > Libraries). For published variables in a library file you have a fileKey for, use get_library_variables (REST) instead.",
   {
     collectionKey: z
       .string()
@@ -612,12 +638,21 @@ server.tool(
       .describe(
         "Optional. Case-insensitive filter on variable name. Without collectionKey, surfaces matching variables across all enabled collections.",
       ),
+    queries: z
+      .array(z.string())
+      .min(1)
+      .max(20)
+      .optional()
+      .describe(
+        "Batch form: filter on several variable-name substrings in one call. Results are grouped per term under `queries`. Use instead of repeated single-query calls.",
+      ),
   },
-  async ({ collectionKey, query }: any) => {
+  async ({ collectionKey, query, queries }: any) => {
     try {
       const result = await sendCommandToFigma("get_enabled_library_variables", {
         collectionKey,
         query,
+        queries,
       });
       return {
         content: [{ type: "text", text: JSON.stringify(result) }],

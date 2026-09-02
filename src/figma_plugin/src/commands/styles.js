@@ -1240,8 +1240,24 @@ export async function describeEnabledLibraryVariables() {
 // single collection's variables; omit it for a collections overview.
 export async function getLibraryVariables(params) {
   const collectionKey = params && params.collectionKey;
+  // TOOL-026 — accept several terms in one call. Filtering happens HERE rather than
+  // server-side because without a query this command returns a collections overview
+  // with no variables at all: there would be nothing for the server to filter, short
+  // of shipping every variable in every enabled library over the wire. Doing it here
+  // keeps one round trip and one getVariablesInLibraryCollectionAsync per collection
+  // however many terms are asked for — and makes single- and multi-term matching
+  // identical by construction rather than by two implementations agreeing.
   const queryRaw = params && params.query;
-  const query = queryRaw ? String(queryRaw).toLowerCase() : null;
+  const queriesRaw = params && params.queries;
+  const termList = Array.isArray(queriesRaw) && queriesRaw.length ? queriesRaw : queryRaw ? [queryRaw] : [];
+  const terms = termList.map((t) => String(t).toLowerCase()).filter(Boolean);
+  const multiQuery = terms.length > 1;
+  // The 0- and 1-term paths below are unchanged, so today's response shape is exact.
+  const query = terms.length === 1 ? terms[0] : null;
+
+  function matchTerm(list, term) {
+    return list.filter((v) => v.name.toLowerCase().indexOf(term) !== -1);
+  }
 
   if (!figma.teamLibrary || typeof figma.teamLibrary.getAvailableLibraryVariableCollectionsAsync !== "function") {
     fail(
@@ -1280,8 +1296,18 @@ export async function getLibraryVariables(params) {
       );
     }
     let variables = vars.map((v) => ({ key: v.key, name: v.name, resolvedType: v.resolvedType }));
+    if (multiQuery) {
+      const byQuery = {};
+      for (let ti = 0; ti < terms.length; ti++) {
+        byQuery[termList[ti]] = matchTerm(variables, terms[ti]);
+      }
+      return {
+        collection: { key: match.key, name: match.name, libraryName: match.libraryName },
+        queries: byQuery,
+      };
+    }
     if (query) {
-      variables = variables.filter((v) => v.name.toLowerCase().indexOf(query) !== -1);
+      variables = matchTerm(variables, query);
     }
     return {
       collection: { key: match.key, name: match.name, libraryName: match.libraryName },
@@ -1296,16 +1322,23 @@ export async function getLibraryVariables(params) {
   const result = await Promise.all(
     collections.map(async (c) => {
       const entry = { key: c.key, name: c.name, libraryName: c.libraryName };
-      if (query) {
+      if (terms.length > 0) {
         let vars;
         try {
           vars = await figma.teamLibrary.getVariablesInLibraryCollectionAsync(c.key);
         } catch (_e) {
           vars = [];
         }
-        entry.variables = vars
-          .filter((v) => v.name.toLowerCase().indexOf(query) !== -1)
-          .map((v) => ({ key: v.key, name: v.name, resolvedType: v.resolvedType }));
+        const mapped = vars.map((v) => ({ key: v.key, name: v.name, resolvedType: v.resolvedType }));
+        if (multiQuery) {
+          const byQuery = {};
+          for (let ti = 0; ti < terms.length; ti++) {
+            byQuery[termList[ti]] = matchTerm(mapped, terms[ti]);
+          }
+          entry.queries = byQuery;
+        } else {
+          entry.variables = matchTerm(mapped, query);
+        }
       }
       return entry;
     }),
