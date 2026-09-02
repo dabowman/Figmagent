@@ -27,9 +27,27 @@ function installFigmaMock() {
     variableIds: ["v-spacing-sm"],
   };
   const varsById: Record<string, any> = {
-    "v-color-primary": { id: "v-color-primary", name: "color/primary/500", resolvedType: "COLOR", valuesByMode: { m1: { r: 0, g: 0, b: 1 } }, scopes: ["ALL_FILLS"] },
-    "v-font-base": { id: "v-font-base", name: "font/size/base", resolvedType: "FLOAT", valuesByMode: { m1: 16 }, scopes: ["FONT_SIZE"] },
-    "v-spacing-sm": { id: "v-spacing-sm", name: "spacing/sm", resolvedType: "FLOAT", valuesByMode: { m1: 8 }, scopes: ["GAP"] },
+    "v-color-primary": {
+      id: "v-color-primary",
+      name: "color/primary/500",
+      resolvedType: "COLOR",
+      valuesByMode: { m1: { r: 0, g: 0, b: 1 } },
+      scopes: ["ALL_FILLS"],
+    },
+    "v-font-base": {
+      id: "v-font-base",
+      name: "font/size/base",
+      resolvedType: "FLOAT",
+      valuesByMode: { m1: 16 },
+      scopes: ["FONT_SIZE"],
+    },
+    "v-spacing-sm": {
+      id: "v-spacing-sm",
+      name: "spacing/sm",
+      resolvedType: "FLOAT",
+      valuesByMode: { m1: 8 },
+      scopes: ["GAP"],
+    },
   };
 
   (globalThis as any).figma = {
@@ -134,5 +152,12 @@ describe("getDesignSystem: styleType + include toggles", () => {
     const r: any = await getDesignSystem({ includeStyles: false });
     expect(r.styles).toBeUndefined();
     expect(r.variables).toBeDefined();
+  });
+});
+
+describe("[TOOL-053] collectionsOnly", () => {
+  test("returns just the collection names — no variables, no styles fetched", async () => {
+    const r: any = await getDesignSystem({ collectionsOnly: true });
+    expect(r).toEqual({ collections: ["color", "spacing"] });
   });
 });

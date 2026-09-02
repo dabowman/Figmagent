@@ -16,25 +16,25 @@
 export const METADATA_ONLY_COMMANDS = ["export_session"];
 
 interface ContentBlock {
-	type?: string;
-	id?: string;
-	name?: string;
-	tool_use_id?: string;
-	is_error?: boolean;
+  type?: string;
+  id?: string;
+  name?: string;
+  tool_use_id?: string;
+  is_error?: boolean;
 }
 interface ExtractedMessage {
-	content?: ContentBlock[] | string;
+  content?: ContentBlock[] | string;
 }
 interface ExtractedSessionShape {
-	messages?: unknown;
-	subAgents?: unknown;
+  messages?: unknown;
+  subAgents?: unknown;
 }
 
 /** Shared with refresh-manifest.ts / extract-sessions.ts — one definition of "a Figmagent tool". */
 export const isFigmagentTool = (name: string): boolean => name.includes("Figmagent");
 
 const isMetadataOnly = (name: string): boolean =>
-	METADATA_ONLY_COMMANDS.some((cmd) => name.endsWith(`__${cmd}`) || name === cmd);
+  METADATA_ONLY_COMMANDS.some((cmd) => name.endsWith(`__${cmd}`) || name === cmd);
 
 /**
  * Does this message list contain a Figmagent call that actually did something?
@@ -48,33 +48,33 @@ const isMetadataOnly = (name: string): boolean =>
  * silently demoting a real session to "dev" and dropping it from the queue.
  */
 export function hasEffectiveFigmaCall(messages: unknown): boolean | undefined {
-	if (!Array.isArray(messages)) return undefined;
+  if (!Array.isArray(messages)) return undefined;
 
-	const figmaCallNames = new Map<string, string>(); // tool_use id → tool name
-	const erroredCallIds = new Set<string>();
-	let sawContentBlocks = false;
+  const figmaCallNames = new Map<string, string>(); // tool_use id → tool name
+  const erroredCallIds = new Set<string>();
+  let sawContentBlocks = false;
 
-	for (const message of messages as ExtractedMessage[]) {
-		const content = message?.content;
-		if (!Array.isArray(content)) continue;
-		sawContentBlocks = true;
-		for (const block of content) {
-			if (block?.type === "tool_use" && typeof block.name === "string" && block.id) {
-				if (isFigmagentTool(block.name)) figmaCallNames.set(block.id, block.name);
-			} else if (block?.type === "tool_result" && block.is_error && block.tool_use_id) {
-				erroredCallIds.add(block.tool_use_id);
-			}
-		}
-	}
+  for (const message of messages as ExtractedMessage[]) {
+    const content = message?.content;
+    if (!Array.isArray(content)) continue;
+    sawContentBlocks = true;
+    for (const block of content) {
+      if (block?.type === "tool_use" && typeof block.name === "string" && block.id) {
+        if (isFigmagentTool(block.name)) figmaCallNames.set(block.id, block.name);
+      } else if (block?.type === "tool_result" && block.is_error && block.tool_use_id) {
+        erroredCallIds.add(block.tool_use_id);
+      }
+    }
+  }
 
-	if (!sawContentBlocks) return undefined;
+  if (!sawContentBlocks) return undefined;
 
-	for (const [id, name] of figmaCallNames) {
-		if (erroredCallIds.has(id)) continue;
-		if (isMetadataOnly(name)) continue;
-		return true;
-	}
-	return false;
+  for (const [id, name] of figmaCallNames) {
+    if (erroredCallIds.has(id)) continue;
+    if (isMetadataOnly(name)) continue;
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -90,24 +90,22 @@ export function hasEffectiveFigmaCall(messages: unknown): boolean | undefined {
  * Any decidable `true` wins; otherwise a decidable `false` wins; otherwise
  * undefined, so the caller still falls back to the name-presence test.
  */
-export function sessionHasEffectiveFigmaCall(
-	data: ExtractedSessionShape | null | undefined,
-): boolean | undefined {
-	let sawDecidable = false;
-	const consider = (messages: unknown): boolean => {
-		const verdict = hasEffectiveFigmaCall(messages);
-		if (verdict !== undefined) sawDecidable = true;
-		return verdict === true;
-	};
+export function sessionHasEffectiveFigmaCall(data: ExtractedSessionShape | null | undefined): boolean | undefined {
+  let sawDecidable = false;
+  const consider = (messages: unknown): boolean => {
+    const verdict = hasEffectiveFigmaCall(messages);
+    if (verdict !== undefined) sawDecidable = true;
+    return verdict === true;
+  };
 
-	if (consider(data?.messages)) return true;
+  if (consider(data?.messages)) return true;
 
-	const subAgents = data?.subAgents;
-	if (subAgents && typeof subAgents === "object") {
-		for (const agent of Object.values(subAgents as Record<string, ExtractedSessionShape>)) {
-			if (consider(agent?.messages)) return true;
-		}
-	}
+  const subAgents = data?.subAgents;
+  if (subAgents && typeof subAgents === "object") {
+    for (const agent of Object.values(subAgents as Record<string, ExtractedSessionShape>)) {
+      if (consider(agent?.messages)) return true;
+    }
+  }
 
-	return sawDecidable ? false : undefined;
+  return sawDecidable ? false : undefined;
 }

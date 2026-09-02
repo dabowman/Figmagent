@@ -29,6 +29,7 @@ const variableFieldEnum = z.enum([
   "characters",
   "fontSize",
   "fontFamily",
+  "fontWeight",
   "fontStyle",
   "lineHeight",
   "letterSpacing",
@@ -38,12 +39,11 @@ const variableFieldEnum = z.enum([
 
 const VARIABLE_FIELDS = new Set(variableFieldEnum.options as string[]);
 
-// BUG-030 — a field that is settable directly but not bindable, passed under
-// `variables`, is the single most likely mistake here, and the name differs from
-// the direct-value one. Say which name to use rather than printing the enum.
+// BUG-030 — a field passed under `variables` by its direct-value name
+// (fillColor, strokes, …) is the single most likely mistake here. Say which
+// name to use rather than printing the enum. (fontWeight used to be redirected
+// to fontStyle on the false premise that it was not bindable — TOOL-037.)
 const VARIABLE_FIELD_ALIASES: Record<string, string> = {
-  fontWeight:
-    "fontStyle — font weight binds through fontStyle (a STRING variable holding e.g. 'Bold'); fontWeight is a direct-value field only",
   fillColor: "fill",
   fontColor: "fill",
   fills: "fill",
@@ -204,7 +204,7 @@ export const nodeOpSchema: z.ZodType<any> = z.lazy(() =>
         .record(z.string(), z.string())
         .optional()
         .describe(
-          "Map of field names to variable IDs. Binds design tokens to node properties. Fields: fill, stroke, cornerRadius, padding*, itemSpacing, width, height, opacity, visible, characters, fontSize, fontFamily, fontStyle, lineHeight, letterSpacing, paragraphSpacing, paragraphIndent. NOTE: these names are NOT the direct-value field names — bind colors through `fill`/`stroke` (not `fillColor`/`strokeColor`) and font weight through `fontStyle`, a STRING variable holding e.g. 'Bold' (`fontWeight` is a number, settable directly but not bindable).",
+          "Map of field names to variable IDs. Binds design tokens to node properties. Fields: fill, stroke, cornerRadius, padding*, itemSpacing, width, height, opacity, visible, characters, fontSize, fontFamily, fontWeight, fontStyle, lineHeight, letterSpacing, paragraphSpacing, paragraphIndent. NOTE: these names are NOT the direct-value field names — bind colors through `fill`/`stroke` (not `fillColor`/`strokeColor`). fontWeight binds a FLOAT variable (e.g. 600) that Figma resolves to the family's matching face; fontStyle binds a STRING face name (e.g. 'Bold').",
         ),
 
       // Component operations (INSTANCE nodes only)

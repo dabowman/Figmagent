@@ -135,7 +135,9 @@ export var FONT_WEIGHT_STYLES = {
 // a style name ("Italic"), or undefined (→ "Regular"). Fallback chain mirrors
 // create.js: requested family+style → Inter Regular. Returns the FontName
 // that was actually loaded — assign it to node.fontName before setting characters.
-export async function loadFontWithFallback(family, weightOrStyle) {
+// Resolve (family, weightOrStyle) into the FontName Figma expects; a numeric
+// weight maps through FONT_WEIGHT_STYLES.
+export function resolveFontName(family, weightOrStyle) {
   var fam = family || "Inter";
   var style = "Regular";
   if (typeof weightOrStyle === "number" || /^\d+$/.test(String(weightOrStyle))) {
@@ -143,13 +145,40 @@ export async function loadFontWithFallback(family, weightOrStyle) {
   } else if (weightOrStyle) {
     style = String(weightOrStyle);
   }
+  return { family: fam, style: style };
+}
+
+export async function loadFontWithFallback(family, weightOrStyle) {
+  var wanted = resolveFontName(family, weightOrStyle);
   try {
-    await figma.loadFontAsync({ family: fam, style: style });
-    return { family: fam, style: style };
+    await figma.loadFontAsync(wanted);
+    return wanted;
   } catch (_e) {
     await figma.loadFontAsync({ family: "Inter", style: "Regular" });
     return { family: "Inter", style: "Regular" };
   }
+}
+
+// The strict form behind fig.loadFont (BUG-041): same resolution, but a
+// fallback is a failure with a stated fix instead of a silent substitution.
+export async function loadFontStrict(family, weightOrStyle) {
+  var wanted = resolveFontName(family, weightOrStyle);
+  var loaded = await loadFontWithFallback(family, weightOrStyle);
+  if (loaded.family !== wanted.family || loaded.style !== wanted.style) {
+    fail(
+      "Font " +
+        wanted.family +
+        " " +
+        wanted.style +
+        " could not be loaded (the VM fell back to " +
+        loaded.family +
+        " " +
+        loaded.style +
+        ")",
+      "on the remote transport the headless VM has no locally-installed or licensed fonts, and face names must match Figma's spelling exactly ('Semi Bold' for Inter, 'Semibold' for many others) — author text on an available face, do the write, then re-bind the fontFamily variable last, or apply a text style whose font is available",
+    );
+  }
+  return loaded;
 }
 
 // Coerce value to number with fallback (handles string "4" → 4)

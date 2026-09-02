@@ -11,7 +11,7 @@ async function loadFontOrFail(family, style) {
   } catch (_fontErr) {
     fail(
       "Font load failed for fontFamily '" + family + "' fontStyle '" + style + "'",
-      "pass a fontFamily/fontStyle pair that exists exactly as Figma lists it (e.g. fontFamily: 'Inter', fontStyle: 'Semi Bold' — not 'SemiBold' or a weight number)",
+      "pass a fontFamily/fontStyle pair that exists exactly as Figma lists it (e.g. fontFamily: 'Inter', fontStyle: 'Semi Bold' — not 'SemiBold' or a weight number); on the remote transport a custom/licensed family is absent from the headless VM entirely — author on an available face and bind the real family via variables.fontFamily",
     );
   }
 }
@@ -303,10 +303,19 @@ export async function getLocalComponents() {
 
 // Combined design system discovery — returns styles + variables in one call
 // Supports filtering: collection (string|string[]), styleType (string|string[]),
-// namePattern (regex on variable/style names), includeVariables (bool), includeStyles (bool).
+// namePattern (regex on variable/style names), includeVariables (bool), includeStyles (bool),
+// collectionsOnly (bool — just the collection names, nothing fetched).
 // Always returns a top-level `collections` array of every variable collection name
 // (cheap — names are short) so the MCP server can list them when output is truncated.
 export async function getDesignSystem(params) {
+  // TOOL-053 — agents were passing an unmatchable namePattern to get this list.
+  if (params && params.collectionsOnly) {
+    const colls = await figma.variables.getLocalVariableCollectionsAsync();
+    const names = [];
+    for (let i = 0; i < colls.length; i++) names.push(colls[i].name);
+    return { collections: names };
+  }
+
   const includeVariables = !(params && params.includeVariables === false);
   const includeStyles = !(params && params.includeStyles === false);
 
@@ -694,8 +703,7 @@ export async function updateVariables(params) {
           // rule as lint.js isScopeCompatible), so a default-scoped STRING
           // variable still preloads — otherwise the common case (no explicit
           // scopes) would miss the preload and reproduce #52.
-          const fontScopes =
-            variable.scopes && variable.scopes.length > 0 ? variable.scopes : ["ALL_SCOPES"];
+          const fontScopes = variable.scopes && variable.scopes.length > 0 ? variable.scopes : ["ALL_SCOPES"];
           const isFontFamilyVar =
             variable.resolvedType === "STRING" &&
             (fontScopes.indexOf("FONT_FAMILY") !== -1 || fontScopes.indexOf("ALL_SCOPES") !== -1);
@@ -809,8 +817,8 @@ async function bindVariablesToStyle(style, variables) {
       paints[0] = figma.variables.setBoundVariableForPaint(paints[0], "color", variable);
       style.paints = paints;
     } else {
-      // Scalar fields on TEXT styles: fontSize, fontFamily, fontStyle,
-      // lineHeight, letterSpacing, paragraphSpacing, paragraphIndent
+      // Scalar fields on TEXT styles: fontSize, fontFamily, fontWeight,
+      // fontStyle, lineHeight, letterSpacing, paragraphSpacing, paragraphIndent
       style.setBoundVariable(field, variable);
     }
   }
@@ -1165,6 +1173,7 @@ export var FIELD_MAP = {
   characters: "characters",
   fontSize: "fontSize",
   fontFamily: "fontFamily",
+  fontWeight: "fontWeight",
   fontStyle: "fontStyle",
   lineHeight: "lineHeight",
   letterSpacing: "letterSpacing",

@@ -132,22 +132,20 @@ describe("[BUG-030] edit's variables rejection names the fix", () => {
     return r.success ? "" : r.error.issues.map((i) => i.message).join("\n");
   }
 
-  test("fontWeight is redirected to fontStyle, the actual bindable field", () => {
-    const msg = reject({ fontWeight: "VariableID:1" });
-    expect(msg).toContain("fontStyle");
-    expect(msg).toContain("STRING");
-    expect(msg).toContain("Fix:");
+  test("[TOOL-037] fontWeight is bindable — a FLOAT weight token, not a fontStyle redirect", () => {
+    const r = nodeOpSchema.safeParse({ nodeId: "1:1", variables: { fontWeight: "VariableID:1" } });
+    expect(r.success).toBe(true);
   });
 
   test("the rejection is short — the whole point of the issue", () => {
     // The reported failure was 10,040 chars: the field enum, repeated per key.
-    const msg = reject({ fontWeight: "VariableID:1", fillColor: "VariableID:2" });
+    const msg = reject({ textCase: "VariableID:1", fillColor: "VariableID:2" });
     expect(msg.length).toBeLessThan(500);
   });
 
   test("both bad keys are named in one message, not one dump each", () => {
-    const msg = reject({ fontWeight: "VariableID:1", fillColor: "VariableID:2" });
-    expect(msg).toContain("fontWeight");
+    const msg = reject({ textCase: "VariableID:1", fillColor: "VariableID:2" });
+    expect(msg).toContain("textCase");
     expect(msg).toContain("fillColor");
   });
 
@@ -190,6 +188,6 @@ describe("[BUG-030] edit's variables rejection names the fix", () => {
   });
 
   test("the failure names the node, so a batch rejection is traceable", () => {
-    expect(reject({ fontWeight: "VariableID:1" })).toContain("1:1");
+    expect(reject({ textCase: "VariableID:1" })).toContain("1:1");
   });
 });

@@ -186,6 +186,20 @@ const LINT_PROPERTIES = {
   fontFamily: { type: "string", field: "fontFamily" },
 };
 
+// A COMPONENT_SET wrapper's own layout is canvas presentation — Figma's default
+// radius on the dashed frame plus the gutter combine_as_variants puts between
+// variants — not part of any design contract, so it never has (or should have)
+// a token. 14 of 21 findings in one session were these (TOOL-049).
+const SET_CHROME_PROPS = {
+  cornerRadius: true,
+  itemSpacing: true,
+  counterAxisSpacing: true,
+  paddingTop: true,
+  paddingRight: true,
+  paddingBottom: true,
+  paddingLeft: true,
+};
+
 function isInsideInstance(node) {
   let parent = node.parent;
   while (parent) {
@@ -410,6 +424,10 @@ export function checkColorProperty(node, propName, spec, indexes, nodeContext) {
   // GRADIENT_* / IMAGE / VIDEO paints have no solid `color` (gradients carry
   // `gradientStops` instead) — skip them rather than dereferencing undefined.
   if (prop(paint, "type") !== "SOLID") return null;
+  // An invisible paint renders nothing and cannot be fixed by binding.
+  // createNodeFromSvg leaves a visible:false white SOLID on every wrapper
+  // frame it makes — 6 of 20 findings in one session were those (BUG-042).
+  if (prop(paint, "visible") === false) return null;
 
   // Check if already bound
   if (paint.boundVariables && paint.boundVariables.color) {
@@ -726,6 +744,8 @@ export async function lintDesign(params) {
       for (let pi = 0; pi < propsToLint.length; pi++) {
         const propName = propsToLint[pi];
         const spec = LINT_PROPERTIES[propName];
+        // Skip the set wrapper's own chrome; its children are linted unchanged.
+        if (node.type === "COMPONENT_SET" && SET_CHROME_PROPS[propName]) continue;
         const nodeContext = { nodeType: node.type, threshold: threshold };
         let result = null;
 

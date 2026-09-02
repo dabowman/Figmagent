@@ -219,6 +219,17 @@ describe("checkColorProperty (issue #62 — figma.mixed Symbol fills; also non-S
     expect(checkColorProperty(node, "fills", fillsSpec, vars, ctx)).toBeNull();
   });
 
+  test("[BUG-042] an invisible SOLID paint is not an unbound fill — it renders nothing", () => {
+    const hidden = {
+      type: "FRAME",
+      fills: [{ type: "SOLID", visible: false, color: { r: 1, g: 1, b: 1 }, opacity: 1 }],
+    };
+    expect(checkColorProperty(hidden, "fills", fillsSpec, vars, ctx)).toBeNull();
+    // Control: the same paint, visible, is still a finding.
+    const shown = { type: "FRAME", fills: [{ type: "SOLID", visible: true, color: { r: 1, g: 1, b: 1 }, opacity: 1 }] };
+    expect(checkColorProperty(shown, "fills", fillsSpec, vars, ctx)).not.toBeNull();
+  });
+
   test("figma.mixed fills (a Symbol) is skipped, not indexed into — the genuine #62 guard", () => {
     const node = { type: "FRAME", fills: Symbol("figma.mixed") };
     expect(() => checkColorProperty(node, "fills", fillsSpec, vars, ctx)).not.toThrow();
@@ -261,5 +272,41 @@ describe("checkColorProperty (issue #62 — figma.mixed Symbol fills; also non-S
       fills: [{ type: "SOLID", color: { r: 0.96, g: 0.96, b: 0.98 }, boundVariables: { color: { id: "x" } } }],
     };
     expect(checkColorProperty(node, "fills", fillsSpec, vars, ctx)).toBeNull();
+  });
+});
+
+describe("[TOOL-049] COMPONENT_SET wrapper chrome is not a finding", () => {
+  beforeEach(() => {
+    fakeNodes = {};
+    installFigmaMock();
+  });
+
+  afterAll(() => {
+    delete (globalThis as any).figma;
+  });
+
+  test("the set's own padding/spacing/radius are skipped; a child's spacing is still reported", async () => {
+    const child: any = { id: "4:4", name: "Size=MD", type: "COMPONENT", visible: true, parent: null, itemSpacing: 8 };
+    const set: any = {
+      id: "3:3",
+      name: "Button",
+      type: "COMPONENT_SET",
+      visible: true,
+      parent: null,
+      itemSpacing: 40,
+      counterAxisSpacing: 40,
+      paddingTop: 40,
+      topLeftRadius: 5,
+      children: [child],
+    };
+    child.parent = set;
+    fakeNodes["3:3"] = set;
+    const result: any = await lintDesign({
+      nodeId: "3:3",
+      properties: ["itemSpacing", "counterAxisSpacing", "paddingTop", "cornerRadius"],
+    });
+    expect(result.summary.totalIssues).toBe(1);
+    expect(result.issues[0].nodeId).toBe("4:4");
+    expect(result.issues[0].property).toBe("itemSpacing");
   });
 });

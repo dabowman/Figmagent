@@ -6,32 +6,33 @@ import { getTransport } from "../transport.js";
 import { setFileKey } from "../remote/filecontext.js";
 import { nodeIdParam } from "../utils.js";
 
+// BUG-046 — the connector follow-up used to be an unconditional "You MUST …
+// required next step": false on an empty result, and false for the plain
+// verification read after wiring an interactive component. Offer it only when
+// there is something to draw, and as an option. Exported so the shape is testable.
+const CONNECTOR_HINT =
+  "Optional next step: to visualise navigation reactions as FigJam connector lines, follow the `reaction_to_connector_strategy` prompt, then call `create_connections`.";
+
+export function buildReactionsResult(result: unknown) {
+  const typed = result as { nodesWithReactions?: unknown } | null;
+  const content: Array<{ type: "text"; text: string }> = [{ type: "text", text: JSON.stringify(result) }];
+  if (typed && typeof typed.nodesWithReactions === "number" && typed.nodesWithReactions > 0) {
+    content.push({ type: "text", text: CONNECTOR_HINT });
+  }
+  return { content, followUp: { type: "prompt", prompt: "reaction_to_connector_strategy" } };
+}
+
 // Get Reactions Tool
 server.tool(
   "get_reactions",
-  "Get Figma Prototyping Reactions from multiple nodes. CRITICAL: The output MUST be processed using the 'reaction_to_connector_strategy' prompt IMMEDIATELY to generate parameters for connector lines via the 'create_connections' tool.",
+  "Read prototype reactions (trigger, action, transition) from one or more nodes and their descendants. Returns every reaction, including CHANGE_TO variant swaps — the natural verification read after wiring an interactive component. To draw navigation reactions as FigJam connector lines, follow the 'reaction_to_connector_strategy' prompt and then call create_connections.",
   {
     nodeIds: z.array(nodeIdParam()).min(1).describe("Array of node IDs to get reactions from"),
   },
   async ({ nodeIds }: any) => {
     try {
       const result = await sendCommandToFigma("get_reactions", { nodeIds });
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result),
-          },
-          {
-            type: "text",
-            text: "IMPORTANT: You MUST now use the reaction data above and follow the `reaction_to_connector_strategy` prompt to prepare the parameters for the `create_connections` tool call. This is a required next step.",
-          },
-        ],
-        followUp: {
-          type: "prompt",
-          prompt: "reaction_to_connector_strategy",
-        },
-      };
+      return buildReactionsResult(result);
     } catch (error) {
       return {
         content: [

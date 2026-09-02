@@ -47,7 +47,7 @@ export const grepInputShape = {
   variableId: stringListParam()
     .optional()
     .describe(
-      "Find nodes with direct variable bindings to these variable IDs. Accepts one ID as a bare string, an array, or a comma-separated string.",
+      "Find nodes bound to these variable IDs — scalar bindings AND paint-level bindings on fills/strokes. Accepts one ID as a bare string, an array, or a comma-separated string, so one call with an array (and scope: \"DOCUMENT\") answers 'which nodes anywhere use any of these tokens' — no run_script traversal needed.",
     ),
   styleId: idListParam()
     .optional()

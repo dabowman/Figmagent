@@ -157,7 +157,14 @@ async function runBattery(
   label: string,
   send: (cmd: FigmaCommand, params: unknown) => Promise<unknown>,
 ): Promise<BatteryMetrics> {
-  const metrics: BatteryMetrics = { transport: label, calls: 0, errors: 0, wallMs: 0, nodesCreated: 0, lintIssues: null };
+  const metrics: BatteryMetrics = {
+    transport: label,
+    calls: 0,
+    errors: 0,
+    wallMs: 0,
+    nodesCreated: 0,
+    lintIssues: null,
+  };
   const started = performance.now();
   const stamp = `${label}-${Date.now().toString(36)}`;
   const call = async (cmd: FigmaCommand, params: unknown): Promise<any> => {

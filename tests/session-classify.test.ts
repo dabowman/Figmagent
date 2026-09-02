@@ -41,10 +41,7 @@ describe("hasEffectiveFigmaCall: what counts as a real Figma session", () => {
   });
 
   test("export_session plus one real call counts", () => {
-    const messages = [
-      msg(call("a", "mcp__Figmagent__export_session"), call("b", FIGMA_TOOL)),
-      msg(ok("a"), ok("b")),
-    ];
+    const messages = [msg(call("a", "mcp__Figmagent__export_session"), call("b", FIGMA_TOOL)), msg(ok("a"), ok("b"))];
     expect(hasEffectiveFigmaCall(messages)).toBe(true);
   });
 

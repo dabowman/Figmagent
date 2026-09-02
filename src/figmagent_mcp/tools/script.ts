@@ -145,9 +145,9 @@ server.tool(
   `LAST RESORT — execute a raw Figma Plugin API script in the remote VM. Use ONLY when no first-class tool (read/grep/edit/write/lint/screenshot, variables/styles/components tools) covers the operation. Remote transport only (FIGMA_TRANSPORT=remote).
 
 The script runs with top-level await and return. The fig.* stdlib is preloaded ONLY when your code references fig. or mode is "write" (see Budget) — raw figma.* scripts get the full budget instead:
-- fig.prop(node, name) — strict-guard-safe property read (the remote VM throws on properties missing from a node type; always use this for optional props)
+- fig.prop(node, name) — strict-guard-safe property read (the remote VM throws on properties missing from a node type; always use this for optional props); throws with a stated fix when node is null (a deleted id)
 - fig.setCharacters(node, text) — font-safe text replacement (handles mixed-font nodes)
-- fig.loadFont(family, weightOrStyle) — load a font; numeric weight maps to style (600 → "Semi Bold"), falls back to Inter Regular; returns the loaded FontName
+- fig.loadFont(family, weightOrStyle) — load a font; numeric weight maps to style (600 → "Semi Bold"); returns the loaded FontName. THROWS (with a stated fix) when the requested face cannot be loaded — the remote VM has no custom/licensed fonts, and face spellings must match Figma's exactly — instead of silently substituting Inter Regular
 - fig.serialize(nodeOrId, detail) — FSGN raw tree for a node; detail: "structure" | "layout" | "full"
 - fig.bindVariable(node, field, variableId) — scope-validated design-token binding (fill, stroke, cornerRadius, opacity, padding*, itemSpacing, width, height, fontSize, ...). Returns null on a successful bind; THROWS (with a stated fix) when the variable's scopes don't cover the field — a skipped bind aborts the whole atomic script rather than silently no-op'ing. ALWAYS await it: it returns a Promise and the guard throws inside it, so an un-awaited call swallows the rejection and the no-op masquerades as success.
 - fig.check(nodeIds) — post-write structural assertions (zero-width text, 100px balloons, overlaps); returns warnings[]

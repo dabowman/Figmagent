@@ -32,7 +32,7 @@ export async function createComponent(params) {
 }
 
 export async function combineAsVariants(params) {
-  const { componentIds, parentId } = params || {};
+  const { componentIds, parentId, name } = params || {};
 
   if (!componentIds || !Array.isArray(componentIds) || componentIds.length === 0) {
     throw new Error("Missing or empty componentIds array");
@@ -88,6 +88,9 @@ export async function combineAsVariants(params) {
     componentSet.layoutSizingHorizontal = "HUG";
     componentSet.layoutSizingVertical = "HUG";
   }
+
+  // Figma names the set "Component N"; every build paid a rename (TOOL-047).
+  if (name) componentSet.name = name;
 
   return {
     id: componentSet.id,

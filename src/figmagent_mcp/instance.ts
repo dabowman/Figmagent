@@ -6,7 +6,7 @@ const instructions = `Figmagent bridges AI agents with Figma via a WebSocket rel
 The core tools mirror Claude Code primitives but operate on Figma nodes, NOT files: read/grep/edit/write here take node IDs, never file paths.
 
 ## Quick Start
-1. Call any tool — the server auto-joins the active Figma file. If multiple files are open, you'll get a list to pick from (use_file selects one).
+1. Call any tool — the server auto-joins the active Figma file. If multiple files are open, you'll get a list to pick from (use_file selects one). On the remote transport there is NO auto-join: call use_file(url or fileKey) before the first command, or it fails with "No Figma file selected".
 2. Use read() with no nodeId to see pages and top-level frames, then get_selection() to find what the user is looking at.
 3. Use read(nodeId, detail="structure", depth=2) to orient before making changes.
 

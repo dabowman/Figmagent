@@ -21,6 +21,7 @@ For large design systems (88K+ chars is common), FILTER instead of raising maxOu
 - styleType: filter styles to specific type(s): "colors", "texts", "effects", "grids"
 - includeVariables/includeStyles: skip entire sections (omitted keys are absent from the response, not null)
 - includeScopes: include each variable's scopes array (e.g. ["TEXT_FILL","STROKE_COLOR"]) to verify what update_variables set
+- collectionsOnly: return just the collection names — no variables or styles fetched. The cheapest way to learn what to pass to \`collection\`.
 
 A truncated response lists the available collection names so you can pick one in a single follow-up call.
 
@@ -31,7 +32,9 @@ Library-backed files: if variables/collections come back EMPTY and the response 
       .int()
       .min(1000)
       .optional()
-      .describe("Max response size in characters. Default: 30000. For large design systems, FILTER instead of raising this."),
+      .describe(
+        "Max response size in characters. Default: 30000. For large design systems, FILTER instead of raising this.",
+      ),
     collection: z
       .union([z.string().min(1), z.array(z.string().min(1))])
       .optional()
@@ -67,6 +70,12 @@ Library-backed files: if variables/collections come back EMPTY and the response 
       .describe(
         'Include each variable\'s scopes array (e.g. ["TEXT_FILL","STROKE_COLOR"]). Default: false. Enable to verify scopes set via update_variables.',
       ),
+    collectionsOnly: z
+      .boolean()
+      .optional()
+      .describe(
+        "Return only the list of variable collection names (no variables, no styles). Cheapest way to discover what to pass to `collection`.",
+      ),
   },
   async (params: {
     maxOutputChars?: number;
@@ -76,6 +85,7 @@ Library-backed files: if variables/collections come back EMPTY and the response 
     includeVariables?: boolean;
     includeStyles?: boolean;
     includeScopes?: boolean;
+    collectionsOnly?: boolean;
   }) => {
     try {
       const filterParams: Record<string, unknown> = {};
@@ -85,6 +95,7 @@ Library-backed files: if variables/collections come back EMPTY and the response 
       if (params.includeVariables !== undefined) filterParams.includeVariables = params.includeVariables;
       if (params.includeStyles !== undefined) filterParams.includeStyles = params.includeStyles;
       if (params.includeScopes !== undefined) filterParams.includeScopes = params.includeScopes;
+      if (params.collectionsOnly !== undefined) filterParams.collectionsOnly = params.collectionsOnly;
       const result = await sendCommandToFigma("get_design_system", filterParams);
 
       // The plugin always returns a top-level `collections` array of every
@@ -108,7 +119,7 @@ Library-backed files: if variables/collections come back EMPTY and the response 
         narrowingHints: [
           "  • This file has a large design system",
           collectionsHint,
-          "  • Use `namePattern` (regex) to filter variables/styles by name, e.g. namePattern: \"^font/\"",
+          '  • Use `namePattern` (regex) to filter variables/styles by name, e.g. namePattern: "^font/"',
           "  • Use `styleType` param to filter styles to specific type(s)",
           "  • Use `includeVariables: false` or `includeStyles: false` to skip sections",
           "  • Use grep() to locate specific tokens by name or usage",
@@ -656,10 +667,15 @@ Bind variables to style properties:
 
 Notes:
 - PAINT styles accept either a 'color' object (solid color shorthand) or a 'paints' array (full Figma paint objects for gradients/images/stacks).
-- TEXT styles require valid fontFamily+fontStyle — fonts are loaded automatically. lineHeight accepts "AUTO", { value, unit }, or a number — unitless values < 10 are treated as multipliers and converted to PERCENT (1.5 → 150%), values >= 10 are PIXELS. letterSpacing: values where abs < 1 are treated as em ratios and converted to PERCENT (-0.025 → -2.5%), otherwise PIXELS. Pass { value, unit } to be explicit.
+- TEXT styles require valid fontFamily+fontStyle — fonts are loaded automatically. On the remote transport the headless VM has NO custom/licensed fonts (a design system's own family will not load): author the style on an available face (fontFamily: "Inter", fontStyle: "Regular") and bind the real family through variables.fontFamily — the binding survives even though the VM cannot render it. lineHeight accepts "AUTO", { value, unit }, or a number — unitless values < 10 are treated as multipliers and converted to PERCENT (1.5 → 150%), values >= 10 are PIXELS. letterSpacing: values where abs < 1 are treated as em ratios and converted to PERCENT (-0.025 → -2.5%), otherwise PIXELS. Pass { value, unit } to be explicit.
 - Colors use RGBA 0-1 range.
 - Duplicate style names within the same type are skipped with an error suggesting update_styles.
-- Use 'variables' to bind design token variables to style properties. TEXT: fontSize, fontFamily, fontStyle, lineHeight, letterSpacing, paragraphSpacing, paragraphIndent. PAINT: color (binds to first paint).`,
+- Use 'variables' to bind design token variables to style properties. TEXT: fontSize, fontFamily, fontWeight (FLOAT, e.g. 600 — resolves to the family's matching face), fontStyle, lineHeight, letterSpacing, paragraphSpacing, paragraphIndent. PAINT: color (binds to first paint).
+
+Fully variable-bound text style on a custom-font file (remote transport):
+  { type: "TEXT", name: "ui/label", fontFamily: "Inter", fontStyle: "Regular", fontSize: 14, lineHeight: 1.2,
+    variables: { fontFamily: "VariableID:fam", fontWeight: "VariableID:w600", fontSize: "VariableID:s14" } }
+Metrics are written first and bindings last, so lineHeight/letterSpacing keep their units — no run_script needed.`,
   {
     styles: z
       .array(
@@ -713,7 +729,7 @@ Notes:
             .record(z.string(), z.string())
             .optional()
             .describe(
-              "Map of style property → variable ID. TEXT: fontSize, fontFamily, fontStyle, lineHeight, letterSpacing, paragraphSpacing, paragraphIndent. PAINT: color (binds to first paint).",
+              "Map of style property → variable ID. TEXT: fontSize, fontFamily, fontWeight (FLOAT), fontStyle, lineHeight, letterSpacing, paragraphSpacing, paragraphIndent. PAINT: color (binds to first paint).",
             ),
         }),
       )

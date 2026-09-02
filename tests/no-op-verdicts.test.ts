@@ -14,7 +14,7 @@ import { looksLikeError } from "../src/figmagent_mcp/instance.js";
 import { buildModeMismatchResult, runScriptHandler } from "../src/figmagent_mcp/tools/script.js";
 import { resetTransportForTests } from "../src/figmagent_mcp/transport.js";
 import { resetFileKeyForTests } from "../src/figmagent_mcp/remote/filecontext.js";
-import { buildFocusResult, buildSelectionsResult } from "../src/figmagent_mcp/tools/scan.js";
+import { buildFocusResult, buildReactionsResult, buildSelectionsResult } from "../src/figmagent_mcp/tools/scan.js";
 
 // ─── [BUG-026] the flag, and why prose alone was not enough ──────────────────
 
@@ -241,5 +241,20 @@ describe("[BUG-024] a malformed result is an error, not a fake success", () => {
     const res = buildSelectionsResult({ success: true });
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toContain("Fix:");
+  });
+});
+
+describe("[BUG-046] get_reactions offers the connector step instead of ordering it", () => {
+  test("zero nodes with reactions → no follow-up text at all", () => {
+    const r = buildReactionsResult({ nodesCount: 6, nodesWithReactions: 0, nodes: [] });
+    expect(r.content).toHaveLength(1);
+    expect(JSON.stringify(r.content)).not.toContain("MUST");
+  });
+
+  test("with reactions → the connector step is optional, not required", () => {
+    const r = buildReactionsResult({ nodesCount: 1, nodesWithReactions: 1, nodes: [{ id: "1:1", reactions: [{}] }] });
+    expect(r.content).toHaveLength(2);
+    expect(r.content[1].text).toContain("Optional");
+    expect(r.content[1].text).not.toContain("MUST");
   });
 });

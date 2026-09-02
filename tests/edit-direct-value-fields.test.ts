@@ -206,7 +206,9 @@ describe("the new numeric fields use numericParam, not z.coerce.number()", () =>
       expect(nodeOpSchema.safeParse({ nodeId: "1:1", letterSpacing: { value: bad, unit: "PIXELS" } }).success).toBe(
         false,
       );
-      expect(nodeOpSchema.safeParse({ nodeId: "1:1", lineHeight: { value: bad, unit: "PERCENT" } }).success).toBe(false);
+      expect(nodeOpSchema.safeParse({ nodeId: "1:1", lineHeight: { value: bad, unit: "PERCENT" } }).success).toBe(
+        false,
+      );
     }
   });
 
@@ -215,10 +217,12 @@ describe("the new numeric fields use numericParam, not z.coerce.number()", () =>
       const r = nodeOpSchema.safeParse({ nodeId: "1:1", [field]: "12" });
       expect(`${field} -> ${r.success && (r.data as Record<string, unknown>)[field]}`).toBe(`${field} -> 12`);
     }
-    expect(nodeOpSchema.parse({ nodeId: "1:1", letterSpacing: { value: "5", unit: "PERCENT" } }).letterSpacing).toEqual({
-      value: 5,
-      unit: "PERCENT",
-    });
+    expect(nodeOpSchema.parse({ nodeId: "1:1", letterSpacing: { value: "5", unit: "PERCENT" } }).letterSpacing).toEqual(
+      {
+        value: 5,
+        unit: "PERCENT",
+      },
+    );
   });
 
   test("range checks still run after conversion", () => {

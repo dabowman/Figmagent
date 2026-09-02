@@ -6,7 +6,7 @@
 // No optional chaining (?.), nullish coalescing (??), or object spread — this
 // code runs in the remote Figma VM.
 
-import { prop, sanitizeSymbols, loadFontWithFallback, fail } from "../helpers.js";
+import { prop, sanitizeSymbols, loadFontStrict, fail } from "../helpers.js";
 import { setCharacters } from "../setcharacters.js";
 import { checkNodes } from "../assertions.js";
 import { getNodeTree } from "../commands/document.js";
@@ -15,14 +15,27 @@ import { create } from "../commands/create.js";
 
 globalThis.fig = {
   // Strict-guard-safe property read (the remote VM throws on missing props).
-  prop: prop,
+  // A null node (getNodeByIdAsync on a deleted id) used to surface as a raw
+  // `TypeError: invalid 'in' operand` naming neither node nor fix (TOOL-044).
+  prop: (node, name) => {
+    if (!node || typeof node !== "object") {
+      fail(
+        "fig.prop(" + String(node) + ", " + JSON.stringify(name) + "): node is not an object",
+        "getNodeByIdAsync returned null — the node was deleted, or belongs to a different file than the one selected; check the return value before reading properties",
+      );
+    }
+    return prop(node, name);
+  },
 
   // Font-safe text replacement — handles mixed-font nodes.
   setCharacters: setCharacters,
 
-  // Load a font; numeric weight maps to a style name (600 → "Semi Bold"),
-  // falls back to Inter Regular. Returns the FontName actually loaded.
-  loadFont: loadFontWithFallback,
+  // Load a font; numeric weight maps to a style name (600 → "Semi Bold").
+  // THROWS (with a stated fix) when the requested face cannot be loaded: the
+  // silent fallback to Inter Regular is right for edit/write's internal
+  // callers, but a script that named a family must not be told it loaded and
+  // then die 30 lines later on Figma's "call loadFontAsync first" (BUG-041).
+  loadFont: loadFontStrict,
 
   // FSGN raw tree for a node (or node id). detail: "structure"|"layout"|"full".
   serialize: (nodeOrId, detail) => {
