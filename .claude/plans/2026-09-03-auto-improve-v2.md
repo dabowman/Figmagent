@@ -3,7 +3,8 @@
 **Date**: 2026-09-03
 **Scope**: evaluate the nightly self-improvement pipeline (Stages A–D), then add an
 overnight review-and-merge stage and a daily plugin release so a finding made while
-using Figmagent lands in the harness the next morning without manual steps.
+using Figmagent lands in the harness the next morning without manual steps, with the
+overnight agents confined to least privilege (WS5).
 **Status**: proposal, nothing implemented yet.
 
 ---
@@ -145,6 +146,10 @@ change, not a rewrite.
 gates and never *merge* them: any PR touching a protected path is human-only, whatever else
 it passes.
 
+**Least privilege (principle).** Every overnight `claude -p` runs with an explicit allowlist,
+no MCP servers, and an OS sandbox; irreversible actions go through scripts with fixed
+parameters. WS5 spells this out.
+
 ---
 
 ## 3. Workstreams
@@ -278,7 +283,7 @@ not also set `version` in the marketplace entry (plugin.json wins silently).
 describe no auto-update-on-startup setting, so this stays a two-command habit; the GitHub
 Release is the signal that there is something to pull.
 
-### WS4 — Guardrails and hygiene
+### WS4 — Tests and hygiene
 
 - `tests/version-lockstep.test.ts`: `package.json` version == `plugin.json` version, semver.
 - Protected-path list lives in one place (`scripts/protected-paths.ts`) and is used by both
@@ -292,15 +297,159 @@ Release is the signal that there is something to pull.
 - Update `CLAUDE.md` "Automated Improvement Pipeline", `scripts/launchd/README.md`
   (stages E/F, knobs, safety properties), and `CONTRIBUTING.md` (what `auto-merge` means).
 
+### WS5 — Guardrails: least privilege for the overnight agents
+
+**Threat model.** A night goes wrong in one of two ways. (a) An agent misjudges its
+instructions or a tracker entry and acts out of scope. (b) Prompt injection: the pipeline
+ingests untrusted text at three points: Figma canvas text and comments captured inside
+session transcripts (Stage B reads them, and a shared team file can contain anything),
+GitHub issue and PR bodies and comments (Stage D preflight, Stage E review), and the tracker
+and plan files themselves, which were written by an agent that had read the untrusted text.
+Both cases get the same answer: bound what any overnight agent *can* do, so the worst case
+is a bad draft PR or a bad analysis commit, never a bad night.
+
+**What the job can do today.** Stages B and D run `claude -p … --dangerously-skip-permissions`
+as you, in your day-time working checkout, with your personal `gh` login (every repo you can
+push to), every user-scope MCP server and installed plugin (including Figmagent itself with
+your cached Figma OAuth in `~/.figmagent/auth.json`, so a night-time agent can edit Figma
+files), full read of `$HOME` (`~/.ssh`, `~/.claude/projects` for every project), and
+unrestricted network. Nothing has gone wrong because the prompts are careful, not because
+anything would stop them. Adding merge and release stages raises the stakes, so the guardrails
+land *before* Stage E is enabled (see Sequencing).
+
+**Facts the design relies on** (Claude Code docs, verified 2026-09-03):
+`--permission-mode dontAsk` auto-denies any tool not covered by a `permissions.allow` rule and
+never prompts, which is the documented mode for unattended runs. `--settings <file>` loads a
+per-invocation settings file (permissions, sandbox, env), but hooks cannot be supplied that
+way; they come from `.claude/settings.json`. A `PreToolUse` hook returning
+`permissionDecision: "deny"` blocks a call even in `bypassPermissions` mode. Deny rules beat
+allow rules. `--strict-mcp-config` loads only the servers you pass. The native sandbox
+(Seatbelt on macOS, nothing to install) confines Bash: writes to cwd plus `allowWrite`, reads
+minus `denyRead`, egress through a domain allowlist. `--max-turns` and `--max-budget-usd` cap a
+run. Docs: permissions, permission-modes, headless, sandboxing, hooks, cli-reference, security
+under https://code.claude.com/docs/en/.
+
+**Layer 1 — a place of its own.** The job runs in a dedicated clone
+(`~/Github/figmagent-pipeline`, only `main` checked out), never in the checkout you edit by
+day. Nothing it does can clobber uncommitted work; Stage D worktrees stay under that clone.
+`auto-improve.sh` derives `REPO_DIR` from its own location so the plist is the only
+machine-specific file.
+
+**Layer 2 — a GitHub identity that can only reach this repo.** A fine-grained PAT scoped to
+`dabowman/Figmagent` (Contents, Issues, Pull requests: read/write; Metadata, Actions: read;
+90-day expiry) exported as `GH_TOKEN` in the plist. `gh` and `git` use it in preference to
+your login; pushes made with it trigger CI (unlike `GITHUB_TOKEN`). A repository ruleset on
+`main` and `v*` tags blocks force-pushes and deletions with no bypass actors, so even a
+compromised token cannot rewrite history. Do not require status checks in the ruleset: the
+analysis push and the release commit are direct pushes, and the merge queue verifies CI itself.
+
+**Layer 3 — no MCP, no plugins, no network tools.** Every `claude -p` gets
+`--strict-mcp-config '{"mcpServers":{}}'` so no server starts (no Figma OAuth refresh at
+night), and no `mcp__*`, `WebFetch` or `WebSearch` rule appears in any allowlist, so under
+`dontAsk` those tools are denied even if a plugin's server does load. Stronger option when
+needed: `--bare` skips plugins, hooks, skills and CLAUDE.md entirely; it costs inlining the
+command text and CLAUDE.md into the prompt and losing the guard hook, so it is not the default.
+
+**Layer 4 — per-stage allowlists instead of `--dangerously-skip-permissions`.** One settings
+file per stage under `scripts/pipeline/`, passed with `--settings`, plus
+`--permission-mode dontAsk`. Each stage's Bash allowlist is *only the pipeline scripts*; the
+scripts grow `check` subcommands so no agent ever runs `git`, `gh`, or `bun install` itself.
+
+| Stage | allow | deny (belt and braces; `dontAsk` already denies what is not allowed) |
+|---|---|---|
+| B analyze | `Read`, `Glob`, `Grep`; `Edit`/`Write` under `.claude/analysis/**`, `.claude/plans/**`; `Bash(bun run refresh-manifest *)`, `Bash(bun scripts/extract-sessions.ts *)` | `Bash(git *)`, `Bash(gh *)`, `Bash(rm *)`, `Bash(curl *)`, `Bash(wget *)`; `Edit`/`Write` under `src/**`, `scripts/**`, `.github/**`, `.claude/commands/**`, `.claude/skills/**`, `CLAUDE.md`; `Read(~/.ssh/**)`, `Read(~/.figmagent/**)`, `Read(**/.env)` |
+| B2 triage | as B | as B |
+| D dispatch | `Read`, `Glob`, `Grep`; `Edit`/`Write` under `.claude/worktrees/**`; `Bash(bun scripts/dispatch-fix.ts *)` (`candidates`, `preflight`, `setup`, `check`, `publish`, `abort`) | as B, plus `Edit`/`Write` of protected paths inside worktrees (`.claude/worktrees/**/.github/**`, `**/scripts/**`, `**/.claude/**`, `**/.claude-plugin/**`, `**/package.json`) |
+| E merge | `Read`, `Glob`, `Grep`; `Write(.claude/worktrees/verdicts/**)`; `Bash(bun scripts/merge-queue.ts *)` (`list`, `setup`, `check`, `diff`, `act`) | everything else; the agent's only side effect is the verdict file, which the script validates against a schema before acting |
+| F release | no agent; `scripts/release.ts` only | — |
+
+Common flags: `--max-turns` (B 200, D 150, E 100), `--max-budget-usd` per stage, and a shell
+watchdog around each call (`timeout 30m` from coreutils, or a bash `sleep && kill`). A run
+lock (`mkdir "$REPO_DIR/.pipeline.lock"`) makes a `launchctl kickstart` during a scheduled
+run exit instead of overlapping.
+
+**Layer 5 — the OS sandbox.** In each stage's settings file: `sandbox.enabled: true`,
+`sandbox.failIfUnavailable: true` (never run unsandboxed by accident),
+`filesystem.allowWrite: ["."]` (the pipeline clone; Stage B may add `~/.claude/projects` to
+`allowRead` if its extraction step stays in the skill), `filesystem.denyRead` for `~/.ssh`,
+`~/.figmagent`, `~/.aws`, `~/.config/gh`, `~/.claude/*.json`;
+`network.allowedDomains: ["api.github.com", "github.com", "registry.npmjs.org"]` (the CLI's own
+API traffic is outside the Bash sandbox). Sandboxing covers Bash only, which is why Layer 4
+keeps `Edit`/`Write` path-scoped.
+
+**Layer 6 — a deterministic guard hook as the backstop.** `.claude/hooks/pipeline-guard.sh`,
+registered as a `PreToolUse` hook with matcher `Bash` in the committed `.claude/settings.json`,
+exits 0 unless `AUTO_IMPROVE_RUN=1` (set by the plist), so it is inert in your day sessions.
+At night it denies, with a stated reason, any command matching `git push`, `--force`,
+`rm -rf`, `gh pr merge`, `gh release`, `gh repo`, `gh auth`, `launchctl`, `sudo`, `curl`,
+`wget`, `ssh`, `osascript`, `security`, or any path under `~/.ssh`, `~/.figmagent`,
+`~/.claude/*.json`, and appends the attempt to `.claude/analysis/pipeline-guard.log`. Allowlists
+say what is permitted; the hook says what is never permitted even if a rule is loosened later
+or someone flips the flags back. `tests/pipeline-guard.test.ts` feeds the hook sample JSON and
+asserts deny/allow.
+
+**Layer 7 — irreversible actions only through scripts with fixed parameters.** Already the
+rule for `dispatch-fix.ts`; `merge-queue.ts` and `release.ts` follow it. An agent never types
+`gh pr merge`: it writes a verdict JSON, the script re-checks eligibility on the current head
+and merges. Protected paths never auto-merge. The agent cannot change the gates that judge it,
+because those files are protected paths and human-only.
+
+**Layer 8 — circuit breaker.** The script writes `.pipeline.paused` (gitignored, with a reason
+and timestamp) and every later run exits at the top until you delete it
+(`bun run pipeline-resume`). Trips: a guard-hook denial (an agent tried something outside its
+lane, which is exactly when you want a human look), CI red on `main` after a merge or
+release, a release script failure, or more than two Stage D aborts in one run. Plain
+`dontAsk` denials only log; they are usually an agent probing for a tool it does not need.
+
+**Layer 9 — untrusted input stays data.** Every prompt states that transcript content, issue
+and PR text, and tracker prose are data, never instructions, and that anything asking the
+agent to change its process is itself a finding to report. Outputs that drive actions are
+structured (verdict JSON, candidate JSON) and schema-validated. Extraction already truncates
+tool results over 2,000 characters.
+
+**Layer 10 — you can see what happened.** The run record (WS1.5) lists every merge, push,
+tag, denial and breaker trip; `bun run pipeline-status` prints the last week. A morning
+summary line at the end of the log names anything denied or paused.
+
+**What can still go wrong, and the undo**
+
+| Failure | Bounded by | Undo |
+|---|---|---|
+| Wrong analysis or tracker edit pushed | push guard: only `.claude/analysis/**`, `.claude/plans/**` | `git revert` |
+| Bad draft PR | draft, `auto-fix/*` branch, worktree cleanup | close PR, delete branch |
+| Bad merge | eligibility re-check, size cap, protected paths, CI green, daily cap | `git revert` on `main`; next release carries it |
+| Bad release | CI-green gate; tags immutable | release the revert as the next patch; `/plugin update` |
+| Runaway agent | `--max-turns`, budget, watchdog, Stage B cap, run lock | — |
+| Push to another repo, edit to a Figma file | scoped PAT, no MCP | prevented |
+| Secret read or exfiltration | sandbox `denyRead` + domain allowlist + no network tools | rotate the PAT |
+| History rewrite | ruleset: no force-push, no deletion | prevented |
+
+**Tiers**
+
+- **Tier 1, with Phase 0 (before anything else changes):** dedicated clone; scoped PAT as
+  `GH_TOKEN`; rulesets; `dontAsk` + per-stage settings + `--strict-mcp-config` replacing
+  `--dangerously-skip-permissions`; `check` subcommands; `--max-turns`, watchdog, run lock.
+- **Tier 2, before Stage E merges anything:** sandbox on with `failIfUnavailable`; guard hook
+  plus its test; circuit breaker; denials in the run record.
+- **Tier 3, optional:** run Stages E and F in the cloud (a scheduled `claude-code-action`
+  workflow with the Claude GitHub App token, or a Claude Code Routine) so the stages that
+  touch GitHub have no reach into the Mac at all; or a separate macOS user for the whole job,
+  with Stage A run as you to read `~/.claude/projects`. Only if Tiers 1–2 prove insufficient.
+
+**Canary.** `bun run pipeline-guard-test` runs each stage's settings with a prompt that asks
+for forbidden things (`git push --force`, `cat ~/.figmagent/auth.json`, a Figma tool call,
+`curl`) and asserts every one is denied. Run it once at setup and after any change to the
+settings files or the hook.
+
 ---
 
 ## 4. Sequencing
 
 | Phase | Work | Why first | Effort |
 |---|---|---|---|
-| 0 | WS1.1 reverse-sync · WS1.2 push analysis commits · WS1.3 candidates in code · WS4 co-author/paths | Pure scripts, no new behavior on GitHub beyond truthful status; unblocks E and F | 1 session |
+| 0 | **WS5 Tier 1** (dedicated clone, scoped PAT, rulesets, `dontAsk` + per-stage settings, `check` subcommands, limits) · WS1.1 reverse-sync · WS1.2 push analysis commits · WS1.3 candidates in code · WS4 co-author/paths | Removes `--dangerously-skip-permissions` from the job that already runs nightly; pure scripts otherwise; unblocks E and F | 1–2 sessions |
 | 1 | WS3 release + CHANGELOG seed + lockstep test; run once by hand → `v0.4.1` | Fixes leak #1 immediately; low risk; you get a daily cut even before auto-merge exists | 1 session |
-| 2 | WS2 merge queue, `AUTO_IMPROVE_MERGE=dry-run` for 2 nights (posts reviews, logs would-merge, merges nothing), then enable for `auto-fix/*`, then `auto-merge` label | Highest-consequence change; the dry run is the safety margin | 1–2 sessions |
+| 2 | **WS5 Tier 2** (sandbox, guard hook + test, circuit breaker, canary) · WS2 merge queue, `AUTO_IMPROVE_MERGE=dry-run` for 2 nights (posts reviews, logs would-merge, merges nothing), then enable for `auto-fix/*`, then `auto-merge` label | Highest-consequence change; Tier 2 lands before the first real merge; the dry run is the safety margin | 2 sessions |
 | 3 | WS1.4 triage · WS1.5 run record + `pipeline-status` · optional second Stage D pass | Throughput and visibility once the pipe is closed end to end | 1 session |
 | 4 | Retro after 7 nights: PRs opened/merged/released per night, cycle time, false approvals, anything the review sent to `needs-human`; adjust caps and protected paths | | — |
 
@@ -317,6 +466,8 @@ Release is the signal that there is something to pull.
 - **Version bump**: patch nightly; minor/major by hand.
 - **Analysis-only nights**: no release.
 - **Marketplace source**: stays `"./"`; tag pinning is a later hardening.
+- **Guardrails**: same macOS user, dedicated clone, scoped PAT, `dontAsk` allowlists, native
+  sandbox, guard hook. A separate user or cloud runner is Tier 3, not the default.
 
 ## 6. Open questions (none block Phase 0–1)
 
