@@ -181,7 +181,7 @@ export async function executeRawScript(options: RawScriptOptions): Promise<unkno
 }
 
 // ─── Chunked create (>50KB payloads) ─────────────────────────────────────────
-// Params dominate script size (bundles are ≤16KB). Split the tree at depth-1:
+// Params dominate script size for most domains (bundles ≤ 33KB; apply ~40KB, capped at 41KB by tests/registry.test.ts). Split the tree at depth-1:
 // chunk 1 creates the root plus as many leading children as fit; each
 // remaining child is created in its own sequential script with parentId =
 // the root ID. All chunks run inside ONE queue slot so no other command
