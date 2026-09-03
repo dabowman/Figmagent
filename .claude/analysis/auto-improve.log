@@ -1257,3 +1257,15 @@ No worktree was created and no branch was pushed, so there is nothing to clean u
 One thing worth a human's attention: all four planned entries are marked `identified`/`planned` in the tracker while their fixes are merged and their issues closed. Stage C reports this as `DRIFT` rather than correcting it, so the tracker will keep presenting shipped work as open until someone updates the statuses.
 SessionEnd hook [/Users/davidbowman/Github/archivist/.venv/bin/python3.14 -m archivist.cli capture] failed: Hook cancelled
 [2026-09-02 05:07:56] run complete
+
+========================= auto-improve 2026-09-03 03:00:05 =========================
+[2026-09-03 03:00:05] Stage A — extract Figmagent sessions across all repos
+  a2201e93-585a-4c71-b050-8f09dfa87973 → 217 messages, 100 tool calls
+  0f978732-bb80-4197-b164-528e108d7396 → 475 messages, 233 tool calls
+  0fd99f95-1b29-490e-b5f7-471e1ac2c54e → 321 messages, 134 tool calls + 1 sub-agents
+
+3 extracted, 42 up-to-date. Output: /Users/davidbowman/Github/cursor-talk-to-figma-mcp/.claude/sessions-json
+Figma sessions: 56, needs analysis: 0
+[2026-09-03 03:00:27] Stage B — analyze sessions (cap 25)
+[2026-09-03 03:00:28]   sessions needing analysis: 0
+[2026-09-03 03:00:28] committing analysis artifacts to main (local, no push)
