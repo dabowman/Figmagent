@@ -137,10 +137,12 @@ Run before considering any feature/fix done:
 
 ## Setup
 
-1. Run `bun setup` — installs dependencies and writes MCP config for both Cursor (`.cursor/mcp.json`) and Claude Code (`.mcp.json`)
+1. Run `bun setup` — installs dependencies and writes Cursor's MCP config (`.cursor/mcp.json`)
 2. `bun socket` in one terminal (WebSocket relay)
 3. In Figma: Plugins > Development > Link existing plugin > select `src/figma_plugin/manifest.json`
 4. Run plugin in Figma, click Connect — the plugin joins a channel named after the file (e.g. `my-design-file`). The MCP server auto-joins when you first issue a command.
+
+**Claude Code plugin**: the repo is its own plugin marketplace — `.claude-plugin/marketplace.json` lists the repo root (`.claude-plugin/plugin.json` + `commands/`, `skills/`, `agents/`, `.mcp.json`) as the `figmagent` plugin. Install with `/plugin marketplace add dabowman/Figmagent` (or a local path) then `/plugin install figmagent@figmagent`. The root `.mcp.json` is the *plugin's* manifest (`${CLAUDE_PLUGIN_ROOT}`), so `.claude/settings.json` disables it as a project-scope server — otherwise working in this repo would register a second, broken copy. Do not also register Figmagent via `claude mcp add`: a duplicate renames the tools to `mcp__plugin_figmagent_Figmagent__*`.
 
 Remote transport instead: with no relay running, `auto` (the default) selects remote when authed — or force it with `FIGMA_TRANSPORT=remote`. Complete the OAuth flow on first run (see README; the OAuth client registers as "Claude Code (Figmagent)" — Figma's registration endpoint allowlists client names by known-client prefix) and select a file with `use_file` (Figma URL or fileKey) or `FIGMA_FILE_KEY` — no relay or plugin needed.
 

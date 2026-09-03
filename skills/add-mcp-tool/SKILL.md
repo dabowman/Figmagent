@@ -1,3 +1,8 @@
+---
+name: add-mcp-tool
+description: Add a new tool or wire command to the Figmagent MCP server. Use when extending Figmagent itself — adding an MCP tool in src/figmagent_mcp/tools/, a plugin command handler, a registry entry, or a remote-transport domain mapping. Not for using Figma via the existing tools.
+---
+
 # Skill: Adding a New MCP Tool to Figmagent
 
 Use this skill when adding new tools or commands that let AI agents control Figma through the MCP server.

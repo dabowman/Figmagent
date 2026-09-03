@@ -7,5 +7,11 @@
   },
   "homepage": "https://github.com/dabowman/Figmagent",
   "repository": "https://github.com/dabowman/Figmagent",
-  "keywords": ["figma", "design", "mcp", "design-system", "design-tokens"]
+  "keywords": [
+    "figma",
+    "design",
+    "mcp",
+    "design-system",
+    "design-tokens"
+  ]
 }

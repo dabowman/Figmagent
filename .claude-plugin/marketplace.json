@@ -1,0 +1,15 @@
+{
+  "name": "figmagent",
+  "description": "Figmagent — AI agents that read and write Figma. Install this marketplace to get the plugin.",
+  "owner": {
+    "name": "David Bowman",
+    "url": "https://github.com/dabowman"
+  },
+  "plugins": [
+    {
+      "name": "figmagent",
+      "source": "./",
+      "description": "Bridge AI agents with Figma — MCP server (read/write canvas, design tokens, components, linting, libraries), Figma design skills, sub-agents, and /figmagent:reauth."
+    }
+  ]
+}

@@ -48,20 +48,23 @@ bun socket
 
 Figmagent ships as a Claude Code **plugin** — installing it registers the MCP server **and** the bundled Figma skills, sub-agents, and the `/figmagent:reauth` command in one step, available across all your projects (no per-project `.mcp.json`).
 
-The plugin lives in this repo (the repo root is the plugin: `.claude-plugin/plugin.json`, `commands/`, `skills/`, `agents/`, `.mcp.json`). Its `.mcp.json` runs the server via `bun ${CLAUDE_PLUGIN_ROOT}/src/figmagent_mcp/server.ts`, so dependencies must be installed in the cloned repo first:
+Install straight from GitHub — the repo is its own plugin marketplace (`.claude-plugin/marketplace.json`), and the repo root is the plugin (`.claude-plugin/plugin.json`, `commands/`, `skills/`, `agents/`, `.mcp.json`):
 
-```bash
-bun install   # or: bun setup
+```
+/plugin marketplace add dabowman/Figmagent
+/plugin install figmagent@figmagent
 ```
 
-Then add this repo as a plugin marketplace and install it (a single repo can be its own marketplace):
+Or from a local clone, if you're developing on it:
 
 ```
 /plugin marketplace add /absolute/path/to/cursor-talk-to-figma-mcp
-/plugin install figmagent
+/plugin install figmagent@figmagent
 ```
 
-Reload, and `mcp__Figmagent__*` tools, the `/figmagent:reauth` command, and the Figma skills/sub-agents are available everywhere. Update with `/plugin update figmagent` after pulling.
+Requires [Bun](https://bun.sh) on your PATH. `.mcp.json` runs the server via `bun ${CLAUDE_PLUGIN_ROOT}/src/figmagent_mcp/server.ts`; Bun resolves the dependencies on first run, so no `bun install` step is needed for plugin use (run it only when working on the repo itself).
+
+Reload, and `mcp__Figmagent__*` tools, the `/figmagent:reauth` command, and the Figma skills/sub-agents are available everywhere. Update with `/plugin marketplace update figmagent` then `/plugin update figmagent`.
 
 **Manual MCP registration (alternative, no plugin):** if you only want the MCP server (not the bundled skills/commands), register it directly — but then skills and `/figmagent:reauth` are not installed:
 
