@@ -441,16 +441,27 @@ for forbidden things (`git push --force`, `cat ~/.figmagent/auth.json`, a Figma 
 `curl`) and asserts every one is denied. Run it once at setup and after any change to the
 settings files or the hook.
 
+### WS6 — Prompt and context review
+
+The prompts decide what an agent tries to do; WS5 decides what it can do. Reviewed with one
+lens: an impossible or over-constrained task plus pressure to finish is how an agent ends up
+working around guardrails. Twelve findings and a fixed unattended contract are in
+[`2026-09-03-pipeline-prompt-review.md`](2026-09-03-pipeline-prompt-review.md). The three that
+matter most: the Stage B loop re-hands an unfinishable session to up to 25 fresh agents; the CI
+Stop hook blocks completion until checks pass and never lets the second stop through; and
+Stage D's "trivial, in-scope correction" clause lets a failing test be edited into passing.
+None has fired yet.
+
 ---
 
 ## 4. Sequencing
 
 | Phase | Work | Why first | Effort |
 |---|---|---|---|
-| 0 | **WS5 Tier 1** (dedicated clone, scoped PAT, rulesets, `dontAsk` + per-stage settings, `check` subcommands, limits) · WS1.1 reverse-sync · WS1.2 push analysis commits · WS1.3 candidates in code · WS4 co-author/paths | Removes `--dangerously-skip-permissions` from the job that already runs nightly; pure scripts otherwise; unblocks E and F | 1–2 sessions |
+| 0 | **WS5 Tier 1** (dedicated clone, scoped PAT, rulesets, `dontAsk` + per-stage settings, `check` subcommands, limits) · **WS6 findings 1–4, 9–11** (loop guard, Stop-hook guard, no discretion clause, unattended contract, `comment` subcommand, stale-plan abort) · WS1.1 reverse-sync · WS1.2 push analysis commits · WS1.3 candidates in code · WS4 co-author/paths | Removes `--dangerously-skip-permissions` and the open persistence paths from the job that already runs nightly; pure scripts otherwise; unblocks E and F | 2 sessions |
 | 1 | WS3 release + CHANGELOG seed + lockstep test; run once by hand → `v0.4.1` | Fixes leak #1 immediately; low risk; you get a daily cut even before auto-merge exists | 1 session |
-| 2 | **WS5 Tier 2** (sandbox, guard hook + test, circuit breaker, canary) · WS2 merge queue, `AUTO_IMPROVE_MERGE=dry-run` for 2 nights (posts reviews, logs would-merge, merges nothing), then enable for `auto-fix/*`, then `auto-merge` label | Highest-consequence change; Tier 2 lands before the first real merge; the dry run is the safety margin | 2 sessions |
-| 3 | WS1.4 triage · WS1.5 run record + `pipeline-status` · optional second Stage D pass | Throughput and visibility once the pipe is closed end to end | 1 session |
+| 2 | **WS5 Tier 2** (sandbox, guard hook + test, circuit breaker, canary) · **WS6 rules applied to `/merge-queue` + fixture test** · WS2 merge queue, `AUTO_IMPROVE_MERGE=dry-run` for 2 nights (posts reviews, logs would-merge, merges nothing), then enable for `auto-fix/*`, then `auto-merge` label | Highest-consequence change; Tier 2 lands before the first real merge; the dry run is the safety margin | 2 sessions |
+| 3 | WS1.4 triage · WS1.5 run record + `pipeline-status` · **WS6 findings 5, 6, 8, 12** (evidence-based status, capped findings, CLAUDE.md pipeline subsection, visible budget) · optional second Stage D pass | Throughput and visibility once the pipe is closed end to end | 1 session |
 | 4 | Retro after 7 nights: PRs opened/merged/released per night, cycle time, false approvals, anything the review sent to `needs-human`; adjust caps and protected paths | | — |
 
 ---
