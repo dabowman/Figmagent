@@ -1269,3 +1269,43 @@ Figma sessions: 56, needs analysis: 0
 [2026-09-03 03:00:27] Stage B — analyze sessions (cap 25)
 [2026-09-03 03:00:28]   sessions needing analysis: 0
 [2026-09-03 03:00:28] committing analysis artifacts to main (local, no push)
+[2026-09-03 03:00:29] Stage C — sync improvement tracker → GitHub issues
+tracker→issues: 143 unique entries · 0 create, 11 close, 0 reopen, 12 drift, 107 in-sync, 13 resolved-unfiled
+DRIFT   #90 [TOOL-006] closed but tracker active (use --reopen)
+DRIFT   #98 [TOOL-021] closed but tracker active (use --reopen)
+DRIFT   #106 [TOOL-022] closed but tracker active (use --reopen)
+DRIFT   #111 [TOOL-025] closed but tracker active (use --reopen)
+DRIFT   #112 [BUG-021] closed but tracker active (use --reopen)
+DRIFT   #115 [BUG-022] closed but tracker active (use --reopen)
+DRIFT   #117 [TOOL-027] closed but tracker active (use --reopen)
+DRIFT   #119 [INFRA-005] closed but tracker active (use --reopen)
+DRIFT   #128 [BUG-027] closed but tracker active (use --reopen)
+DRIFT   #134 [BUG-030] closed but tracker active (use --reopen)
+DRIFT   #139 [TOOL-035] closed but tracker active (use --reopen)
+DRIFT   #144 [BUG-032] closed but tracker active (use --reopen)
+CLOSE   #157 [TOOL-037] (status: implemented — `fontWeight` added to `FIELD_MAP` (`styles.js`, fixes `edit` and `fig.bindVariable` in one change) and to `apply.ts`'s `variableFieldEnum`; the false `fontStyle` redirect and the "not bindable" description text are gone. Test in `tests/criteria-and-binding-errors.test.ts`.)
+CLOSE   #173 [TOOL-044] (status: implemented — `fig.prop` fails with the argument echoed and the deleted/other-file remedy when the node is not an object (`remote_entries/stdlib.js`). Test in `tests/stdlib.test.ts`.)
+CLOSE   #175 [BUG-041] (status: implemented — `fig.loadFont` is now `loadFontStrict` (`helpers.js`): same resolution as `loadFontWithFallback`, but a fallback fails with the remote-font remedy. Internal callers keep the silent fallback. Test in `tests/stdlib.test.ts`.)
+CLOSE   #176 [BUG-042] (status: implemented — `checkColorProperty` (`lint.js`) skips a paint with `visible === false`; fills and strokes share the function. Test in `tests/minilint.test.ts`.)
+CLOSE   #179 [AGENT-035] (status: implemented — `grep`'s `variableId` description now states the array + paint-level (fills/strokes) coverage and the `scope: "DOCUMENT"` idiom.)
+CLOSE   #183 [BUG-045] (status: implemented — the `CHANGE_TO` filter is gone from `getReactions` (`document.js`); every reaction is returned. The `reaction_to_connector_strategy` prompt already drops CHANGE_TO at its Step 3, the only consumer that needs to.)
+CLOSE   #185 [BUG-046] (status: implemented — `get_reactions` is described as a read; the connector hint is appended only when `nodesWithReactions > 0` and phrased as optional (`buildReactionsResult` in `tools/scan.ts`). Test in `tests/no-op-verdicts.test.ts`.)
+CLOSE   #187 [TOOL-049] (status: implemented — `lint.js` skips a COMPONENT_SET node's own `cornerRadius`/`itemSpacing`/`counterAxisSpacing`/`padding*`; children are linted unchanged. Test in `tests/minilint.test.ts`.)
+CLOSE   #188 [TOOL-050] (status: implemented — `create_styles`/`update_styles` descriptions list `fontWeight`, carry a worked remote example (author on Inter, bind the family through `variables.fontFamily`), and `loadFontOrFail`'s fix names font absence alongside spelling. The end-to-end `create_styles` run on a custom-font file is still unverified in a session.)
+CLOSE   #192 [TOOL-053] (status: implemented — `get_design_system({ collectionsOnly: true })` returns just the collection names without fetching variables or styles. Test in `tests/design-system.test.ts`.)
+CLOSE   #195 [INFRA-006] (status: implemented — allowlist widened in the `analyze-session` skill (Phase 6: `description-only`, `lint-scope-filter`, `boundary-guard`, `assertion`, each with a dispatch gate), `dispatch-fixes` (P2 allowed for the two low-risk patterns; cap 4/run, ≤2 guards/assertions; a plan naming no test aborts) and CLAUDE.md; seven plans backfilled under `.claude/plans/2026-09-02-*.md`.)
+[2026-09-03 03:01:02] Stage D — dispatch draft fix PRs
+Dispatch run complete.
+
+**Results (5 eligible candidates → 3 preflighted → 1 PR):**
+
+- **AGENT-033** — draft PR [#199](https://github.com/dabowman/Figmagent/pull/199) opened. Adds two `Conventions:` bullets to the `run_script` description covering `figma.currentPage` persistence/sharing on remote and raw `node.clone()` parenting. Lint clean, 618 tests pass.
+- **BUG-040** — aborted, no PR. The plan's `checkMissingFontWidth` lands in `assertions.js`, which is compiled into the `apply` remote-domain bundle. That bundle was already at 39,745 bytes on `main` against a 40,000-byte assertion in `tests/registry.test.ts`; the new checker takes it to 40,484. Resolving it needs either a shorter message than the plan specifies verbatim or a raised bundle cap — a scope call for a human. Commented on issue #172.
+- **TOOL-006** — skipped. Preflight exit 3: no open GitHub issue yet (Stage C will file it).
+- **INFRA-008** — skipped. Its plan touches `CLAUDE.md` and `skills/figma-guidelines/SKILL.md`, both also named by BUG-040's plan (#172 < #197 on the tiebreak).
+- **TOOL-040** — skipped. Its plan touches `src/figmagent_mcp/tools/script.ts`, also named by AGENT-033's plan (#165 < #168).
+
+Also examined and excluded before preflight: BUG-036 and BUG-039 (`boundary-guard` at P2), TOOL-047 (`assertion` at P2), BUG-021 (`type-coercion` at P2), TOOL-021 (`missing-batch-tool`, no `Auto-fixable` field), TOOL-022 (no `Auto-fixable` field).
+
+No worktrees left behind and no non-draft PRs. Since INFRA-008 and TOOL-040 were blocked only by file collisions, they become dispatchable on the next run.
+[2026-09-03 03:06:19] run complete
