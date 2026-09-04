@@ -116,8 +116,10 @@ describe("judge: each rule denies its command and has an allow control", () => {
     denied("cat x | bash -s", "shell-wrapper");
     denied("cat x | sudo bash", "shell-wrapper");
     denied("cat x | /bin/sh", "shell-wrapper");
-    allowed("bash scripts/auto-improve.sh");
-    allowed("bash -n scripts/auto-improve.sh");
+    denied("bash scripts/auto-improve.sh", "shell-wrapper");
+    denied("bash -n scripts/auto-improve.sh", "shell-wrapper");
+    denied("source .env.sh", "shell-wrapper");
+    denied(". ./setup.sh", "shell-wrapper");
     allowed("cat x | grep sh");
     allowed("cat x | shasum");
   });
@@ -181,6 +183,53 @@ describe("judge: each rule denies its command and has an allow control", () => {
     allowed("bun scripts/x.ts --env=prod");
     allowed("cat .envrc");
     allowed("ls ~/.figmagent-backup");
+  });
+
+  test("inline interpreters hide code from the guard", () => {
+    denied("python3 -c 'import os'", "interpreter");
+    denied("node -e 'x'", "interpreter");
+    denied("bun -e 'x'", "interpreter");
+    denied("bun --eval x", "interpreter");
+    denied("perl -e 'x'", "interpreter");
+    allowed("bun scripts/merge-queue.ts check 5");
+    allowed("bun run test");
+    allowed("bun test tests/x.test.ts -t name");
+    allowed("bun scripts/x.ts --evaluate");
+  });
+
+  test("command position survives env assignments, wrappers, keywords, paths and timeouts", () => {
+    denied("env X=1 git push", "git-push");
+    denied("env X=1 rm -rf /", "rm-recursive");
+    denied("X=1 env Y=2 git push", "git-push");
+    denied("/usr/bin/git push", "git-push");
+    denied("if true; then git push; fi", "git-push");
+    denied("if git push; then echo ok; fi", "git-push");
+    denied("for x in 1; do git push; done", "git-push");
+    denied("{ git push; }", "git-push");
+    denied("x() { git push; }; x", "git-push");
+    denied("timeout 5 git push", "git-push");
+    denied("gtimeout -k 3 10s curl x", "network");
+    denied("nice -n 5 curl x", "network");
+    denied("cd x && ./bin/curl x", "network");
+    denied("/bin/rm -rf x", "rm-recursive");
+  });
+
+  test("quoting: a quoted bare word is the command; quoted free text is not", () => {
+    denied('"git" push', "git-push");
+    denied("'git' push", "git-push");
+    denied("\\git push", "git-push");
+    denied('echo "$(git push)"', "git-push");
+    denied("echo `git push`", "git-push");
+    denied('cat "$HOME/.ssh/id_rsa"', "secret-path");
+    // The shapes the stage prompts dictate: parentheticals and prose in a quoted argument.
+    allowed('bun scripts/tracker.ts set-autofixable BUG-1 "no (open question about scope)"');
+    allowed('bun scripts/tracker.ts set-autofixable BUG-1 "no (curl-style retry needed; eval of x)"');
+    allowed('bun scripts/refresh-manifest.ts --mark-failed x --reason "transcript unreadable; open in editor"');
+    allowed('bun scripts/dispatch-fix.ts abort TOOL-1 --issue 5 --reason "check failed: test (open handle)"');
+    allowed(
+      'bun scripts/dispatch-fix.ts publish X --issue 1 --title "read token from .env.local" --summary "reads ~/.figmagent/sessions/ logs"',
+    );
+    allowed("bun scripts/tracker.ts set-autofixable BUG-1 'no (sudo needed | git push)'");
   });
 
   test("every rule has a name, a regex and a reason", () => {

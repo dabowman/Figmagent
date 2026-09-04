@@ -48,13 +48,16 @@ eligibility on the PR's current head before it acts. Your only side effect is a 
   `.claude/hooks/**`, `.claude/settings.json`, `.claude-plugin/**`, `package.json`, `bun.lock`,
   the plugin manifest, `.mcp.json`). A PR touching a protected path is **human-only**: you list
   it, you never review or act on it.
-- **Cap**: the script merges at most `MERGE_CAP` (6) PRs per run and refuses the seventh. Stop
-  reviewing once `list` reports the cap is reached or you have recorded six `approve` verdicts.
+- **Cap**: the script merges at most `AUTO_IMPROVE_MERGE_CAP` (6) PRs per day — the counter
+  survives `cleanup` and expires on its own — and refuses the next one. Stop reviewing once
+  `list` reports the cap is reached or you have recorded six `approve` verdicts.
 - **Mode**: `AUTO_IMPROVE_MERGE` is `dry-run` unless set otherwise. In dry-run, `act` prints what
   it would do and posts nothing. Your process is identical in every mode.
-- `act` refuses (exit 2) an `approve` verdict that carries any `blocking` finding, and refuses
-  (exit 3, no action) any verdict on a PR that is no longer eligible. Treat both as final for
-  this PR; do not rewrite the verdict to get past them.
+- `act` refuses (exit 2) an `approve` verdict that carries any `blocking` finding, refuses
+  (exit 3, no action) any verdict on a PR that is no longer eligible or an `approve` whose
+  `check` did not pass on the PR's current head, and refuses everything (exit 2) while the
+  circuit breaker `.pipeline.paused` exists. Treat all of these as final for this PR; do not
+  rewrite the verdict or re-run steps to get past them.
 
 ## Steps
 
@@ -70,19 +73,23 @@ eligibility on the PR's current head before it acts. Your only side effect is a 
 
 2. **Set up the merge result** for the next PR:
    ```bash
-   WT=$(bun scripts/merge-queue.ts setup <N>)
+   bun scripts/merge-queue.ts setup <N>
    ```
-   `$WT` is `.claude/worktrees/merge-<N>`, `origin/main` with the PR merged in, uncommitted.
-   Exit 4 means a merge conflict: record `skipped #N: merge conflict` and move to the next PR.
+   Prints the worktree path, `.claude/worktrees/merge-<N>`: `origin/main` with the PR merged
+   in, uncommitted. Note the printed path — shell variables do not persist between commands, and
+   a command that starts with an assignment is not on your allowlist. Exit 4 means a merge
+   conflict: record `skipped #N: merge conflict` and move to the next PR.
 
 3. **Run the deterministic checks once:**
    ```bash
    bun scripts/merge-queue.ts check <N>
    ```
    Prints `lint: PASS|FAIL`, `test: PASS|FAIL`, `build:plugin: PASS|FAIL` (only when
-   `src/figma_plugin/` is touched), `scope: ok|violation …|n/a (…)`, then `check: PASS|FAIL`.
-   Any `FAIL` (exit 1) short-circuits the review: write a `request_changes` verdict whose
-   findings name the failing step (paste the reported tail into the note) and go to step 6.
+   `src/figma_plugin/` is touched), `protected: ok|FAIL (…)`, `scope: ok|violation …|n/a (…)`,
+   then `check: PASS|FAIL`. Any `FAIL` (exit 1) short-circuits the review: write a
+   `request_changes` verdict whose findings name the failing step (paste the reported tail into
+   the note) and go to step 6. `act` refuses an `approve` (exit 3) unless `check` passed on the
+   PR's current head, so a `check` you skipped or a head that moved cannot be merged.
 
 4. **Read the material:**
    ```bash
@@ -90,8 +97,9 @@ eligibility on the PR's current head before it acts. Your only side effect is a 
    ```
    Prints the PR body, the linked issue (from `Closes #n`), the plan file when the title carries
    a tracker `[ID]`, and the diff — each between `===== BEGIN … UNTRUSTED CONTENT … =====` and
-   `===== END … =====` lines. Use `Read`/`Glob`/`Grep` on `$WT` to see the merged result in
-   context (the surrounding code, the test the plan names). Read; never write there.
+   `===== END … =====` lines. Use `Read`/`Glob`/`Grep` on the worktree path from step 2 to see
+   the merged result in context (the surrounding code, the test the plan names). Read; never
+   write there.
 
 5. **Answer the fixed checklist.** Each item is either satisfied or produces a finding:
    1. **Scope** — every changed file is named by the plan's `### File:` headings (the `scope:`

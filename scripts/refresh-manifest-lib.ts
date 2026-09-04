@@ -48,9 +48,16 @@ export function selectNeedsAnalysis(sessions: Record<string, ManifestEntry>): Ne
     .sort((a, b) => a[1].sourceModified - b[1].sourceModified);
 }
 
-/** The session id `/analyze-session` would pick next, or undefined when the queue is empty. */
-export function nextToAnalyze(sessions: Record<string, ManifestEntry>): string | undefined {
-  const first = selectNeedsAnalysis(sessions)[0];
+/**
+ * The session id `/analyze-session` would pick next, or undefined when the
+ * queue is empty. `exclude` holds sessions the current run already attempted
+ * without finishing — they stay in the queue for the next run, not this one.
+ */
+export function nextToAnalyze(
+  sessions: Record<string, ManifestEntry>,
+  exclude: ReadonlySet<string> = new Set(),
+): string | undefined {
+  const first = selectNeedsAnalysis(sessions).find(([sid]) => !exclude.has(sid));
   return first ? first[0] : undefined;
 }
 

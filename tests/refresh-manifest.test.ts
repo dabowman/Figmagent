@@ -230,3 +230,15 @@ describe("refresh-manifest.ts CLI (cwd-relative, end to end)", () => {
     expect(r.err).toMatch(/run refresh-manifest first/);
   });
 });
+
+describe("nextToAnalyze — exclusions for the current run", () => {
+  test("a session this run already attempted is skipped for the run, not marked failed", () => {
+    const sessions = {
+      first: { sessionType: "figma", toolCalls: 5, figmaToolCalls: 2, durationMinutes: 1, sourceModified: 1 },
+      second: { sessionType: "figma", toolCalls: 5, figmaToolCalls: 2, durationMinutes: 1, sourceModified: 2 },
+    } as const;
+    expect(nextToAnalyze(sessions)).toBe("first");
+    expect(nextToAnalyze(sessions, new Set(["first"]))).toBe("second");
+    expect(nextToAnalyze(sessions, new Set(["first", "second"]))).toBeUndefined();
+  });
+});

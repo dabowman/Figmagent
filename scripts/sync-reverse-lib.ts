@@ -44,9 +44,18 @@ export type ReverseDecision =
 export interface ReverseOptions {
   /** `owner/repo` — cross-references from other repositories are ignored when the event names one */
   repo?: string;
+  /**
+   * The PRs GitHub itself records as having CLOSED the issue
+   * (`issue.closedByPullRequestsReferences`, merged only). A timeline
+   * cross-reference is emitted for every PR that merely mentions the issue, so
+   * when this list is given only PRs on it qualify — an empty list means no PR
+   * closed it (a manual close, or a `Closes #n` GitHub did not honour) and the
+   * entry stays DRIFT. Omitted (undefined) keeps the timeline-only reading.
+   */
+  closers?: readonly number[];
 }
 
-/** Merged PRs that reference the issue, newest merge first. */
+/** Merged PRs that reference the issue (and, when `opts.closers` is given, closed it), newest merge first. */
 export function mergedReferencingPRs(
   events: TimelineEvent[],
   opts: ReverseOptions = {},
@@ -61,11 +70,25 @@ export function mergedReferencingPRs(
     if (!mergedAt) continue;
     const from = src.repository?.full_name;
     if (opts.repo && from && from.toLowerCase() !== opts.repo.toLowerCase()) continue;
+    if (opts.closers && !opts.closers.includes(src.number)) continue;
     if (seen.has(src.number)) continue;
     seen.add(src.number);
     out.push({ pr: src.number, mergedAt });
   }
   return out.sort((a, b) => b.mergedAt.localeCompare(a.mergedAt));
+}
+
+/** Shape of `issue.closedByPullRequestsReferences.nodes` (only the fields we read). */
+export interface ClosingPrNode {
+  number?: number;
+  merged?: boolean;
+}
+
+/** PR numbers from a GraphQL `closedByPullRequestsReferences` reply that actually merged. */
+export function mergedClosers(nodes: readonly ClosingPrNode[] | undefined | null): number[] {
+  return (nodes ?? [])
+    .filter((n) => n && n.merged === true && typeof n.number === "number")
+    .map((n) => n.number as number);
 }
 
 /**
@@ -74,8 +97,9 @@ export function mergedReferencingPRs(
  *
  *  - open issue → none (nothing to reconcile)
  *  - closed as `not_planned` → drift (a deliberate won't-fix is a human's call)
- *  - closed with a merged PR cross-referencing it → reverse, naming the newest
- *    merged PR and its merge date
+ *  - closed with a merged PR cross-referencing it (and, when `opts.closers` is
+ *    given, recorded by GitHub as its closer) → reverse, naming the newest such
+ *    PR and its merge date
  *  - closed otherwise → drift
  */
 export function decideReverse(issue: IssueState, events: TimelineEvent[], opts: ReverseOptions = {}): ReverseDecision {
@@ -85,7 +109,12 @@ export function decideReverse(issue: IssueState, events: TimelineEvent[], opts: 
   }
   const merged = mergedReferencingPRs(events, opts);
   const top = merged[0];
-  if (!top) return { action: "drift", reason: "closed with no merged PR referencing it" };
+  if (!top) {
+    return {
+      action: "drift",
+      reason: opts.closers ? "closed with no merged PR closing it" : "closed with no merged PR referencing it",
+    };
+  }
   return { action: "reverse", pr: top.pr, date: top.mergedAt.slice(0, 10), mergedAt: top.mergedAt };
 }
 

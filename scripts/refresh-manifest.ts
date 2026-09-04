@@ -14,7 +14,9 @@
  *                                              # (used as the Stage B loop guard)
  *   bun scripts/refresh-manifest.ts --next     # refresh + print only the session id
  *                                              # that would be analyzed next
- *                                              # (empty line when the queue is empty)
+ *                                              # (empty line when the queue is empty);
+ *                                              # --exclude <sid,sid> skips sessions this
+ *                                              # run already attempted
  *
  * Loop bookkeeping (manifest-only edits, no rescan — the nightly Stage B loop
  * uses these so a session the analyzer cannot finish is handed out once, not
@@ -36,6 +38,7 @@ import {
   type ManifestEntry as Entry,
   markAttempt,
   markFailed,
+  nextToAnalyze,
   preserveAttemptState,
   selectNeedsAnalysis,
 } from "./refresh-manifest-lib.ts";
@@ -231,8 +234,17 @@ for (const f of files) {
 
 // Prune manifest entries whose extracted session JSON is no longer on disk, so a
 // removed session can't keep the needs-analysis count above zero indefinitely.
-for (const sid of Object.keys(manifest.sessions)) {
-  if (!seen.has(sid)) delete manifest.sessions[sid];
+// Only UNANALYZED entries are pruned: an entry with an `analysis` mapping is the
+// permanent record that its (possibly long-rotated) transcript was analyzed —
+// dropping it in a checkout that lacks the JSON (the dedicated pipeline clone;
+// .claude/sessions-json/ is gitignored) would push a gutted manifest to main and
+// make the day checkout re-analyze every one of them. And a scan that found
+// nothing at all (the directory is missing) prunes nothing: that is a missing
+// corpus, not 275 deleted sessions.
+if (files.length > 0) {
+  for (const [sid, entry] of Object.entries(manifest.sessions)) {
+    if (!seen.has(sid) && !entry.analysis) delete manifest.sessions[sid];
+  }
 }
 
 await writeFile(MANIFEST, JSON.stringify(manifest, null, 2));
@@ -243,7 +255,13 @@ const needs = selectNeedsAnalysis(manifest.sessions);
 
 if (nextOnly) {
   // Only the id, or an empty line — the Stage B loop reads this verbatim.
-  console.log(needs.length > 0 ? needs[0][0] : "");
+  const exclude = new Set(
+    (flagValue("--exclude") ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
+  console.log(nextToAnalyze(manifest.sessions, exclude) ?? "");
 } else if (countOnly) {
   console.log(needs.length);
 } else {

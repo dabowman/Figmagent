@@ -21,7 +21,9 @@
  *                             plan, files, status, issue?, namedTest? }],
  *                             skipped: [{ id, reason }] } — the ranked, capped
  *                             list Stage D may act on (rules in
- *                             dispatch-candidates-lib.ts). Needs no gh.
+ *                             dispatch-candidates-lib.ts). One `git ls-remote`
+ *                             keeps IDs already in flight (auto-fix/<ID> on
+ *                             origin) out of the capped slots. Needs no gh.
  *   preflight <ID>            Verify exactly one OPEN issue exists for [ID] and no
  *                             auto-fix/<ID> branch or PR is already in flight.
  *                             Prints JSON { issueNumber } on success.
@@ -46,9 +48,10 @@
  *                             gh issue comment. Refuses (exit 2) a body over
  *                             2,000 characters.
  *   publish <ID> --issue N --title T --summary S
- *                             Commit all changes in the worktree, push the branch,
- *                             open a DRAFT PR (base main), remove the worktree, and
- *                             comment the PR link on the issue. Prints the PR URL.
+ *                             Refuse while .pipeline.paused exists (exit 2). Commit
+ *                             all changes in the worktree, push the branch, open a
+ *                             DRAFT PR (base main), remove the worktree, and comment
+ *                             the PR link on the issue. Prints the PR URL.
  *   abort <ID> [--issue N] [--reason R]
  *                             Remove the worktree + branch and (if --issue) comment
  *                             that auto-fix failed and needs manual work.
@@ -66,6 +69,7 @@ import { parsePlan, parseTracker, planFileFor } from "./tracker-parse.ts";
 const REPO = process.env.AUTO_IMPROVE_REPO || "dabowman/Figmagent";
 const TRACKER = ".claude/analysis/improvement-tracker.md";
 const PLANS_DIR = ".claude/plans";
+const PAUSE_FILE = ".pipeline.paused";
 const ID_RE = /^[A-Z]+-\d+$/;
 const MAX_COMMENT_CHARS = 2000;
 const TAIL_LINES = 40;
@@ -119,6 +123,26 @@ async function loadPlan(id: string): Promise<PlanRef | undefined> {
   return { id, path, parsed: parsePlan(await readFile(path, "utf-8")) };
 }
 
+/**
+ * IDs with an `auto-fix/<ID>` branch on origin — one `git ls-remote`, so the
+ * cap is applied to work that can still be dispatched. Unreachable origin (or
+ * no repo, as in the CLI tests) reads as "nothing in flight"; preflight still
+ * catches an in-flight ID one call later.
+ */
+async function inFlightIds(): Promise<Set<string>> {
+  const r = await $`git ls-remote --heads origin ${"refs/heads/auto-fix/*"}`.nothrow().quiet();
+  const ids = new Set<string>();
+  if (r.exitCode !== 0) {
+    console.error("warning: git ls-remote origin failed — in-flight branches not excluded from candidates");
+    return ids;
+  }
+  for (const line of r.stdout.toString().split("\n")) {
+    const m = line.match(/\trefs\/heads\/auto-fix\/([A-Z]+-\d+)$/);
+    if (m?.[1]) ids.add(m[1]);
+  }
+  return ids;
+}
+
 async function candidates(): Promise<void> {
   const entries = parseTracker(await readFile(TRACKER, "utf-8"));
   // `ls .claude/plans/` once; match every entry against that one listing.
@@ -130,8 +154,16 @@ async function candidates(): Promise<void> {
     const path = `${PLANS_DIR}/${file}`;
     plans.push({ id: e.id, path, parsed: parsePlan(await readFile(path, "utf-8")) });
   }
-  const { candidates, skipped } = selectCandidates(entries, plans);
+  const { candidates, skipped } = selectCandidates(entries, plans, { inFlight: await inFlightIds() });
   console.log(JSON.stringify({ candidates, skipped }, null, 2));
+}
+
+function assertNotPaused(action: string): void {
+  if (!existsSync(PAUSE_FILE)) return;
+  const reason = readFileSync(PAUSE_FILE, "utf-8").trim().split("\n")[0] || "no reason recorded";
+  die(
+    `${PAUSE_FILE} exists (${reason}) — the pipeline is paused, so ${action} is refused; a human resumes it with: bun scripts/pipeline-record.ts resume`,
+  );
 }
 
 async function preflight(id: string): Promise<void> {
@@ -256,6 +288,7 @@ async function publish(id: string, f: Record<string, string>): Promise<void> {
   if (!issue || !/^\d+$/.test(issue)) die("publish requires --issue <number>");
   if (!title) die("publish requires --title <text>");
   if (!summary) die("publish requires --summary <text>");
+  assertNotPaused(`publishing ${id}`);
 
   const wt = worktreePath(id);
   const branch = branchName(id);

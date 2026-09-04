@@ -26,7 +26,9 @@ import {
   autoFixable,
   decisionDates,
   entryText,
+  isResolutionStatus,
   parseTracker,
+  priorityToken,
   statusToken,
   type TrackerEntry,
   updateEntryField,
@@ -74,7 +76,7 @@ export function untriagedEntries(entries: TrackerEntry[], limit?: number): Track
     .map((e, i) => ({ e, i }))
     .filter(({ e }) => isUntriaged(e))
     .sort((a, b) => {
-      const pr = (PRIORITY_RANK[a.e.priority] ?? 9) - (PRIORITY_RANK[b.e.priority] ?? 9);
+      const pr = (PRIORITY_RANK[priorityToken(a.e)] ?? 9) - (PRIORITY_RANK[priorityToken(b.e)] ?? 9);
       return pr !== 0 ? pr : a.i - b.i;
     })
     .map(({ e }) => e);
@@ -82,14 +84,14 @@ export function untriagedEntries(entries: TrackerEntry[], limit?: number): Track
 }
 
 export function formatUntriagedLine(e: TrackerEntry): string {
-  return `${e.id}  ${e.priority || "P?"}  ${statusToken(e.activeStatus) || "?"}  ${e.cleanTitle}`;
+  return `${e.id}  ${priorityToken(e) || "P?"}  ${statusToken(e.activeStatus) || "?"}  ${e.cleanTitle}`;
 }
 
 export function untriagedJson(e: TrackerEntry): Record<string, unknown> {
   const af = autoFixable(e);
   return {
     id: e.id,
-    priority: e.priority || null,
+    priority: priorityToken(e) || null,
     status: e.activeStatus ?? null,
     title: e.cleanTitle,
     issue: e.issueRef ?? null,
@@ -98,9 +100,20 @@ export function untriagedJson(e: TrackerEntry): Record<string, unknown> {
   };
 }
 
-/** `yes (<pattern>)` or `no (<reason>)` — the only shapes the Stage D gate can read. */
+/** `yes (<pattern>)` or `no (<reason>)` — the only shapes the Stage D gate can read; the reason may itself contain parentheses. */
 export function isValidAutoFixableValue(value: string): boolean {
-  return /^(yes|no)\s*\([^()]*\S[^()]*\)\s*$/i.test(value.trim());
+  return /^(yes|no)\s*\(\s*\S[\s\S]*\)\s*$/i.test(value.trim());
+}
+
+/**
+ * A resolution status (`implemented` / `verified` / `resolved`) closes the
+ * GitHub issue in Stage C, so it must cite what resolved it — `PR #N` or a
+ * commit sha — the same evidence rule the analyzer and the triage prompt follow.
+ */
+export function statusProblem(value: string): string | undefined {
+  if (!isResolutionStatus(value)) return undefined;
+  if (/\bPR #\d+\b|\b[0-9a-f]{7,40}\b/i.test(value)) return undefined;
+  return `Status "${value}" closes the issue in Stage C, so it must cite the fix: "${statusToken(value)} — PR #N (YYYY-MM-DD)" or a commit sha`;
 }
 
 // ---- CLI --------------------------------------------------------------------
@@ -183,7 +196,7 @@ async function main(): Promise<void> {
       break;
     }
     case "set-status":
-      await setField("Status", valueArg);
+      await setField("Status", valueArg, statusProblem);
       break;
     case "set-autofixable":
       await setField("Auto-fixable", valueArg, (v) =>

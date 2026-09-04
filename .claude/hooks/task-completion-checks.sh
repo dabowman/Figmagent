@@ -17,7 +17,9 @@
 #
 # No `set -e`: every failure path is handled explicitly below.
 set -uo pipefail
-cd "$CLAUDE_PROJECT_DIR" || exit 2
+# CLAUDE_PROJECT_DIR is set by Claude Code for hooks; by hand (/tidy-up, a shell)
+# it is unset and `set -u` would abort before any check ran — fall back to cwd.
+cd "${CLAUDE_PROJECT_DIR:-.}" || exit 2
 
 # Hook input arrives as JSON on stdin. Only read stdin when it is not a terminal
 # (running by hand from a shell must not block), and give up after 5s of silence.

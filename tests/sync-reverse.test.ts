@@ -6,6 +6,7 @@ import { describe, expect, test } from "bun:test";
 import {
   decideReverse,
   implementedStatus,
+  mergedClosers,
   mergedReferencingPRs,
   parseTimelineJson,
   type TimelineEvent,
@@ -64,6 +65,29 @@ describe("decideReverse", () => {
   test("closed as not_planned is a human decision, never reversed even with a merged PR", () => {
     const d = decideReverse({ state: "closed", state_reason: "not_planned" }, [xref(203, "2026-09-02T00:00:00Z")]);
     expect(d).toEqual({ action: "drift", reason: "closed as not_planned" });
+  });
+
+  test("with GitHub's closer list, only a PR that actually closed the issue counts (a mere mention does not)", () => {
+    const events = [
+      xref(149, "2026-09-02T00:15:25Z"),
+      xref(146, "2026-09-02T00:33:46Z"),
+      xref(152, "2026-09-02T02:42:06Z"),
+    ];
+    // GraphQL closedByPullRequestsReferences says #146 closed it; #152 merged later and only mentions it.
+    const d = decideReverse({ state: "closed", state_reason: "completed" }, events, { closers: [146] });
+    expect(d).toEqual({ action: "reverse", pr: 146, date: "2026-09-02", mergedAt: "2026-09-02T00:33:46Z" });
+    // No closer on record (a manual close, or a `Closes #n` GitHub did not honour) → drift, never a wrong PR.
+    expect(decideReverse({ state: "closed", state_reason: "completed" }, events, { closers: [] })).toEqual({
+      action: "drift",
+      reason: "closed with no merged PR closing it",
+    });
+  });
+
+  test("mergedClosers keeps only merged PR numbers from the GraphQL nodes", () => {
+    expect(mergedClosers([{ number: 146, merged: true }, { number: 198, merged: false }, {}, null as never])).toEqual([
+      146,
+    ]);
+    expect(mergedClosers(undefined)).toEqual([]);
   });
 
   test("an open issue needs nothing", () => {

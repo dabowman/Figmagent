@@ -62,6 +62,13 @@ export interface Skipped {
 export interface SelectOptions {
   max?: number; // default 4
   maxGuards?: number; // default 2
+  /**
+   * IDs whose `auto-fix/<ID>` branch already exists on origin (an open draft PR,
+   * or a closed one whose branch was kept). They are skipped BEFORE the caps:
+   * otherwise the same four in-flight IDs fill the slots every night until a
+   * human merges them, and Stage D opens nothing.
+   */
+  inFlight?: ReadonlySet<string>;
 }
 
 const PRIORITY_RANK: Record<string, number> = { P0: 0, P1: 1, P2: 2 };
@@ -85,6 +92,12 @@ export function eligibility(entry: TrackerEntry, plan: PlanRef | undefined): Can
     return { id: entry.id, reason: `pattern ${pattern} is not on the dispatch allowlist` };
   }
   if (plan.parsed.partial) return { id: entry.id, reason: "plan is marked Partial" };
+  // No `### File:` section means nothing for verify-plan to check, nothing for the
+  // same-file rule to see, and every changed file is a scope violation in the
+  // merge queue — a prose plan is a plan revision, not a dispatch.
+  if (plan.parsed.files.length === 0) {
+    return { id: entry.id, reason: `plan ${plan.path} names no \`### File:\` section — nothing to apply verbatim` };
+  }
 
   const priority = (entry.priority || plan.parsed.priority || "").toUpperCase().split(/[\s—(]/)[0] ?? "";
   const rank = priorityRank(priority);
@@ -120,7 +133,9 @@ export function selectCandidates(
     if (autoFixable(entry).verdict !== "yes") continue;
     const r = eligibility(entry, planById.get(entry.id));
     if ("reason" in r) skipped.push(r);
-    else eligible.push(r);
+    else if (opts.inFlight?.has(r.id)) {
+      skipped.push({ id: r.id, reason: `in flight: auto-fix/${r.id} already exists on origin` });
+    } else eligible.push(r);
   }
 
   eligible.sort((a, b) => {

@@ -1,6 +1,6 @@
 ---
 description: Nightly triage (Stage B2 of auto-improve) — classify untriaged improvement-tracker entries against the current auto-fix allowlist and write fix plans for the ones that qualify
-allowed-tools: Bash(bun scripts/tracker.ts *), Read, Edit, Write, Glob, Grep
+allowed-tools: Bash(bun scripts/tracker.ts *), Read, Write(.claude/plans/**), Glob, Grep
 ---
 
 # Triage Tracker Entries (Stage B2 of auto-improve)
@@ -16,8 +16,8 @@ this command does not restate them.
 ## Unattended run
 
 No human is reading this session and none can answer a question. Your tools are exactly the ones
-in `allowed-tools` above: `bun scripts/tracker.ts <subcommand>`, file reads, and writing plan files
-under `.claude/plans/`. **A denied tool call means the action is outside this stage's scope** — it
+in `allowed-tools` above: `bun scripts/tracker.ts <subcommand>`, file reads, and writing new plan files
+under `.claude/plans/` (no `Edit` at all: the tracker and the analysis docs are read-only here). **A denied tool call means the action is outside this stage's scope** — it
 is never a signal to find another way. Two endings besides "entries triaged" are complete,
 successful runs: **zero untriaged entries** (`untriaged` printed an empty list) and a final line
 beginning **`BLOCKED:`** with the reason (the inputs are not what this prompt expects, or the stage

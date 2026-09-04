@@ -7,6 +7,8 @@
  * anything worth releasing" gate — without ever cutting one.
  */
 
+import { isAnalysisOnly } from "./protected-paths.ts";
+
 export type BumpKind = "patch" | "minor" | "major";
 
 const SEMVER_RE = /^(\d+)\.(\d+)\.(\d+)$/;
@@ -130,7 +132,7 @@ const TYPE_MAP: Record<string, ChangeType> = {
 const PREFIX_RE = /^([a-z]+)(?:\(([^)]*)\))?!?:\s*(.*)$/s;
 const MERGE_RE = /^Merge pull request #(\d+) from \S+/;
 const PR_SUFFIX_RE = /\s*\(#(\d+)\)\s*$/;
-const CLOSES_RE = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)/gi;
+const CLOSES_RE = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+#(\d+)/gi;
 const BRACKET_ID_RE = /\[([A-Z]+-\d+)\]/g;
 const RELEASE_COMMIT_RE = /^chore(?:\(release\))?:\s*(?:v?\d+\.\d+\.\d+\b|bump version\b)/i;
 
@@ -324,18 +326,13 @@ function splitSections(text: string): { preamble: string; sections: string[] } {
 // Release gate
 // ---------------------------------------------------------------------------
 
-const NON_RELEASE_DIRS = [".claude/analysis/", ".claude/plans/"];
-const NON_RELEASE_FILES = new Set(["CHANGELOG.md"]);
-
-/** Paths the nightly analysis stages write: changing only these is not a release. */
+/** Paths the nightly analysis stages write: changing only these is not a release (one rule, in protected-paths.ts). */
 export function isAnalysisOnlyPath(path: string): boolean {
-  const p = path.trim().replace(/^\.\//, "");
-  if (NON_RELEASE_FILES.has(p)) return true;
-  return NON_RELEASE_DIRS.some((dir) => p.startsWith(dir));
+  return isAnalysisOnly([path]);
 }
 
 /** False for an empty list or when every path is analysis-only (analysis-only nights do not release). */
 export function releaseWorthy(changedPaths: string[]): boolean {
   if (changedPaths.length === 0) return false;
-  return changedPaths.some((p) => !isAnalysisOnlyPath(p));
+  return !isAnalysisOnly(changedPaths);
 }

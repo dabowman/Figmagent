@@ -93,20 +93,27 @@ fi
 
 # ---- run lock: a `launchctl kickstart` during a scheduled run exits instead
 # of overlapping (two runs would race on the manifest, worktrees and pushes).
-# mkdir is atomic; a lock older than 6h is a crashed run and is removed.
+# mkdir is atomic. A lock whose recorded pid is no longer alive is a crashed
+# run and is removed — a run has no fixed length (a backlog night can pass
+# 6h), so liveness, not age, decides.
 if ! mkdir "$LOCK" 2>/dev/null; then
-  if [ -n "$(find "$LOCK" -maxdepth 0 -mmin +360 2>/dev/null)" ]; then
-    log "WARNING: stale run lock older than 6h ($LOCK) — removing it"
-    rm -f "$LOCK/pid"; rmdir "$LOCK" 2>/dev/null
-    mkdir "$LOCK" 2>/dev/null || { log "cannot take the run lock — exiting"; exit 1; }
-  else
-    log "another run holds $LOCK (pid $(cat "$LOCK/pid" 2>/dev/null || echo '?')) — exiting"
+  HOLDER="$(cat "$LOCK/pid" 2>/dev/null || true)"
+  if [ -n "$HOLDER" ] && kill -0 "$HOLDER" 2>/dev/null; then
+    log "another run holds $LOCK (pid $HOLDER) — exiting"
     exit 0
   fi
+  log "WARNING: stale run lock ($LOCK, pid ${HOLDER:-?} not running) — removing it"
+  rm -f "$LOCK/pid"; rmdir "$LOCK" 2>/dev/null
+  mkdir "$LOCK" 2>/dev/null || { log "cannot take the run lock — exiting"; exit 1; }
 fi
 echo $$ > "$LOCK/pid"
 RUN_TMP="$(mktemp -d "${TMPDIR:-/tmp}/auto-improve.XXXXXX")"
-cleanup() { rm -f "$LOCK/pid"; rmdir "$LOCK" 2>/dev/null; rm -rf "$RUN_TMP"; }
+# Only the run that took the lock releases it (a later run that replaced a
+# stale lock must not have its lock removed by the crashed run's trap).
+cleanup() {
+  if [ "$(cat "$LOCK/pid" 2>/dev/null)" = "$$" ]; then rm -f "$LOCK/pid"; rmdir "$LOCK" 2>/dev/null; fi
+  rm -rf "$RUN_TMP"
+}
 trap cleanup EXIT
 
 RUN_ID="$(date +%Y%m%dT%H%M%S)"
@@ -131,8 +138,9 @@ trip_breaker() {
   local reason="$1"
   log "BREAKER TRIPPED: $reason"
   if [ ! -e "$PAUSED" ]; then
+    local sq="'"
     printf '{ "at": "%s", "reason": "%s", "run": "%s" }\n' \
-      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${reason//\"/\'}" "$RUN_ID" > "$PAUSED"
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${reason//\"/$sq}" "$RUN_ID" > "$PAUSED"
   fi
   if [ "$BREAKER_RECORDED" -eq 0 ]; then record breaker paused=1 "reason=$reason"; BREAKER_RECORDED=1; fi
 }
@@ -179,18 +187,24 @@ fill_contract() {
 
 # run_with_watchdog <seconds> <cmd...>: coreutils timeout when available
 # (gtimeout from Homebrew coreutils on macOS), else a sleep && kill sibling.
+# Returns 124 when the watchdog fired, like timeout(1). The fallback runs the
+# command in its own process group (perl setpgrp — perl ships with macOS) and
+# signals the GROUP, so a grandchild (a `gh api` or `bun run test` the agent's
+# Bash call spawned) cannot outlive the stop while holding the `| tee` pipe open.
 run_with_watchdog() {
   local secs="$1"; shift
   local t
   for t in gtimeout timeout; do
     if command -v "$t" >/dev/null 2>&1; then "$t" -k 30 "$secs" "$@"; return $?; fi
   done
-  "$@" &
+  perl -e 'setpgrp(0, 0); exec @ARGV or die "exec failed: $!\n"' -- "$@" &
   local pid=$!
-  ( sleep "$secs"; kill -TERM "$pid" 2>/dev/null; sleep 30; kill -KILL "$pid" 2>/dev/null ) &
+  local fired="$RUN_TMP/watchdog.$pid"
+  ( sleep "$secs"; touch "$fired"; kill -TERM -- "-$pid" 2>/dev/null; sleep 30; kill -KILL -- "-$pid" 2>/dev/null ) &
   local wd=$!
   wait "$pid"; local rc=$?
   kill "$wd" 2>/dev/null; wait "$wd" 2>/dev/null
+  if [ -e "$fired" ]; then rm -f "$fired"; return 124; fi
   return "$rc"
 }
 
@@ -218,9 +232,13 @@ run_stage() {
   STAGE_N=$((STAGE_N + 1))
   STAGE_OUT="$RUN_TMP/$stage.$STAGE_N.out"
   start="$(date +%s)"
+  # --setting-sources project: only the repo's .claude/settings.json (the guard
+  # hook) is loaded under the stage file — never ~/.claude/settings.json or
+  # settings.local.json, whose allow rules and hooks would widen the stage.
   run_with_watchdog "$STAGE_TIMEOUT" "$CLAUDE" -p "$cmd" \
       --permission-mode dontAsk \
       --settings "$settings" \
+      --setting-sources project \
       --mcp-config '{"mcpServers":{}}' --strict-mcp-config \
       --max-turns "$max_turns" \
       --append-system-prompt "$contract" \
@@ -235,8 +253,10 @@ run_stage() {
 count_plans() { ls .claude/plans/*.md 2>/dev/null | wc -l | tr -d ' '; }
 # nth <keyword> <text>: the number before <keyword> in a Stage C summary line, or 0
 nth() { local v; v="$(printf '%s' "$2" | grep -Eo "[0-9]+ $1" | head -n1 | grep -Eo '^[0-9]+')"; echo "${v:-0}"; }
-# bullets <regex> <file>: count bullet lines of an end-of-turn summary matching <regex>
-bullets() { local v; v="$(grep -Eci "^[[:space:]]*[-*].*(^|[^a-z])($1)([^a-z]|$)" "$2" 2>/dev/null)"; echo "${v:-0}"; }
+# bullets <regex> <file>: count end-of-turn bullets that BEGIN with <regex>
+# (`- aborted TOOL-1: …`, `- merged #12`) — the shapes the prompts dictate. A
+# word deeper in the line (`- skipped X: nothing aborted`) is not a match.
+bullets() { local v; v="$(grep -Eci "^[[:space:]]*[-*][[:space:]]*($1)([^a-z]|$)" "$2" 2>/dev/null)"; echo "${v:-0}"; }
 
 # ---- Stage A: extract (all repos) + refresh manifest ------------------------
 log "Stage A — extract Figmagent sessions across all repos"
@@ -249,11 +269,37 @@ record extract "extracted=${EXTRACTED:-0}" "queued=${QUEUED:-0}"
 # ---- Stage B: analyze each unanalyzed figma session -------------------------
 log "Stage B — analyze sessions (cap $MAX_ANALYZE, $MAX_TURNS_ANALYZE turns each)"
 PLANS_BEFORE="$(count_plans)"
-PREV=""; ANALYZED=0; FAILED=0; RUNS=0
+PREV=""; PREV_ATTEMPTS=0; PREV_RC=0; ANALYZED=0; FAILED=0; DEFERRED=0; RUNS=0; SKIP=""
+MAX_ATTEMPTS="${AUTO_IMPROVE_MAX_ATTEMPTS:-2}"   # unfinished attempts (across nights) before a session is marked failed
 mark_failed() {
-  "$BUN" scripts/refresh-manifest.ts --mark-failed "$1" --reason "analyze-session ran but did not mark the session analyzed"
+  "$BUN" scripts/refresh-manifest.ts --mark-failed "$1" --reason "$2"
   record analyze failed=1 "session=$1"
   FAILED=$((FAILED + 1))
+}
+# unfinished <sid>: the analyzer ran on this session and the manifest still
+# offers it first, so the skill did not mark it analyzed (unreadable transcript,
+# turn cap, watchdog, crash). Never hand it to another fresh agent tonight —
+# that used to happen up to MAX_ANALYZE times, each attempt bumping the analysis
+# filename and possibly appending tracker entries. A first unfinished attempt is
+# deferred to the next night (a watchdog kill or a turn cap on a long transcript
+# is not proof the session is unanalyzable); the MAX_ATTEMPTS-th is marked
+# failed with the cause, until a human clears it.
+unfinished() {
+  local sid="$1" attempts="$2" rc="$3" cause
+  case "$rc" in
+    124) cause="watchdog killed the analysis after ${STAGE_TIMEOUT}s" ;;
+    0) cause="analyze-session ran but did not mark the session analyzed" ;;
+    *) cause="analyze-session exited $rc (turn cap or crash) without marking the session analyzed" ;;
+  esac
+  if [ "$attempts" -ge "$MAX_ATTEMPTS" ]; then
+    log "  $sid is still queued after attempt $attempts — marking it failed: $cause"
+    mark_failed "$sid" "$cause (attempt $attempts of $MAX_ATTEMPTS)"
+  else
+    log "  $sid is still queued after attempt $attempts — deferred to the next run ($cause)"
+    record analyze deferred=1 "session=$sid"
+    DEFERRED=$((DEFERRED + 1))
+  fi
+  SKIP="${SKIP:+$SKIP,}$sid"
 }
 for ((n = 1; n <= MAX_ANALYZE; n++)); do
   NEEDS="$("$BUN" scripts/refresh-manifest.ts --count 2>/dev/null | tail -n1)"
@@ -263,39 +309,33 @@ for ((n = 1; n <= MAX_ANALYZE; n++)); do
   # would mask an empty value as "0" and pass this guard.
   [[ "$NEEDS" =~ ^[0-9]+$ ]] || { log "  manifest count unreadable — stopping Stage B"; break; }
   [ "$NEEDS" -eq 0 ] && break
-  NEXT="$("$BUN" scripts/refresh-manifest.ts --next 2>/dev/null | tail -n1)"
-  [ -n "$NEXT" ] || { log "  --next returned nothing while the count is $NEEDS — stopping Stage B"; break; }
-  # Persistence guard (prompt review, finding 1): the analyzer ran on this very
-  # session last iteration and the manifest still offers it first, so the skill
-  # did not mark it analyzed (unreadable transcript, turn cap, crash). Take it
-  # out of the queue with the reason instead of handing it to another fresh
-  # agent — that used to happen up to MAX_ANALYZE times, each attempt bumping
-  # the analysis filename and possibly appending tracker entries.
-  if [ "$NEXT" = "$PREV" ]; then
-    log "  $NEXT is still queued after an analysis run — marking it failed and moving on"
-    mark_failed "$NEXT"; PREV=""
+  NEXT="$("$BUN" scripts/refresh-manifest.ts --next ${SKIP:+--exclude "$SKIP"} 2>/dev/null | tail -n1)"
+  if [ "$NEXT" = "$PREV" ] && [ -n "$PREV" ]; then
+    unfinished "$PREV" "$PREV_ATTEMPTS" "$PREV_RC"; PREV=""
     continue
   fi
   # The previous pick moved off the head of the queue: that run succeeded.
-  [ -n "$PREV" ] && { ANALYZED=$((ANALYZED + 1)); record analyze analyzed=1 "session=$PREV"; }
-  "$BUN" scripts/refresh-manifest.ts --mark-attempt "$NEXT" >/dev/null
-  log "  analyzing $NEXT"
+  [ -n "$PREV" ] && { ANALYZED=$((ANALYZED + 1)); record analyze analyzed=1 "session=$PREV"; PREV=""; }
+  [ -n "$NEXT" ] || { log "  nothing left to analyze this run (deferred: ${SKIP:-none}) — stopping Stage B"; break; }
+  PREV_ATTEMPTS="$("$BUN" scripts/refresh-manifest.ts --mark-attempt "$NEXT" 2>/dev/null | grep -Eo 'analysisAttempts=[0-9]+' | grep -Eo '[0-9]+$')"
+  PREV_ATTEMPTS="${PREV_ATTEMPTS:-1}"
+  log "  analyzing $NEXT (attempt $PREV_ATTEMPTS)"
   # Each call is a fresh, small-context session (the skill analyzes one at a
   # time and marks it done in the manifest).
-  run_stage analyze "/analyze-session" || log "  /analyze-session exited non-zero (continuing)"
+  run_stage analyze "/analyze-session"; PREV_RC=$?
+  [ "$PREV_RC" -eq 0 ] || log "  /analyze-session exited $PREV_RC (continuing)"
   RUNS=$((RUNS + 1)); PREV="$NEXT"
   breaker_tripped && { log "  breaker tripped — stopping Stage B"; break; }
 done
 # Settle the last run's outcome with one more look at the queue.
 if [ -n "$PREV" ]; then
-  if [ "$("$BUN" scripts/refresh-manifest.ts --next 2>/dev/null | tail -n1)" = "$PREV" ]; then
-    log "  $PREV is still queued after the final analysis run — marking it failed"
-    mark_failed "$PREV"
+  if [ "$("$BUN" scripts/refresh-manifest.ts --next ${SKIP:+--exclude "$SKIP"} 2>/dev/null | tail -n1)" = "$PREV" ]; then
+    unfinished "$PREV" "$PREV_ATTEMPTS" "$PREV_RC"
   else
     ANALYZED=$((ANALYZED + 1)); record analyze analyzed=1 "session=$PREV"
   fi
 fi
-log "Stage B done: $RUNS run(s), $ANALYZED analyzed, $FAILED failed"
+log "Stage B done: $RUNS run(s), $ANALYZED analyzed, $DEFERRED deferred, $FAILED failed"
 
 # ---- Stage B2: triage untriaged tracker entries against the allowlist ------
 if [ "$DO_TRIAGE" != "1" ]; then
@@ -304,13 +344,23 @@ elif breaker_tripped; then
   log "Stage B2 — skipped (breaker tripped)"
 else
   log "Stage B2 — triage tracker entries (up to $MAX_TRIAGE calls, $MAX_TURNS_TRIAGE turns each)"
+  # untriaged_batch: the IDs the next call would be handed (its own `--limit 6`).
+  untriaged_batch() { "$BUN" scripts/tracker.ts untriaged --limit 6 2>/dev/null | awk '{print $1}' | paste -sd ' ' -; }
   for ((t = 1; t <= MAX_TRIAGE; t++)); do
+    BATCH="$(untriaged_batch)"
+    [ -n "$BATCH" ] || { log "  no untriaged entries"; break; }
     run_stage triage "/triage-tracker" || log "  /triage-tracker exited non-zero (continuing)"
     # Each call handles one batch; stop early when it reports there is nothing
     # left (a BLOCKED: line or a "nothing to triage" summary — both are
     # successful runs under the contract).
     if grep -Eqi '^BLOCKED:|nothing (left |more )?to triage|no untriaged entries' "$STAGE_OUT" 2>/dev/null; then
       log "  triage reports nothing more to do"; break
+    fi
+    # Persistence guard (same rule as Stage B): a call that wrote no verdict
+    # leaves the identical batch at the head of the list — handing it to
+    # another fresh agent would repeat the same turns up to MAX_TRIAGE times.
+    if [ "$(untriaged_batch)" = "$BATCH" ]; then
+      log "  triage made no progress on: $BATCH — stopping Stage B2"; break
     fi
     breaker_tripped && { log "  breaker tripped — stopping Stage B2"; break; }
   done
@@ -350,8 +400,10 @@ push_main() {
     return 1
   fi
   if [ -z "$(git rev-list origin/main..HEAD 2>/dev/null)" ]; then log "  nothing to push"; return 0; fi
+  # The analysis-only rule lives in scripts/protected-paths.ts (shared with
+  # release.ts); the CLI prints every path that is NOT analysis-only.
   local outside
-  outside="$(git diff --name-only origin/main..HEAD | grep -Ev '^(\.claude/analysis/|\.claude/plans/|CHANGELOG\.md$)' || true)"
+  outside="$(git diff --name-only origin/main..HEAD | "$BUN" scripts/protected-paths.ts --analysis-only)"
   if [ -n "$outside" ]; then
     log "  PUSH GUARD: commits ahead of origin/main touch paths outside .claude/analysis/, .claude/plans/, CHANGELOG.md — NOT pushing:"
     echo "$outside" | sed 's/^/    /'
@@ -382,13 +434,20 @@ commit_artifacts() {
 commit_artifacts "auto-improve: session analyses $(date +%F)"
 
 # ---- Stage C: sync tracker → GitHub issues ----------------------------------
-log "Stage C — sync improvement tracker → GitHub issues"
-"$BUN" scripts/sync-tracker-issues.ts 2>&1 | tee "$RUN_TMP/sync.out"
-SUMMARY="$(grep -E '[0-9]+ create, [0-9]+ close' "$RUN_TMP/sync.out" | tail -n1)"
+if breaker_tripped; then
+  # Creating and closing issues from a tracker an untrusted session just edited
+  # is irreversible enough to wait for the human the breaker asks for.
+  log "Stage C — skipped (breaker tripped)"
+  SUMMARY=""
+else
+  log "Stage C — sync improvement tracker → GitHub issues"
+  "$BUN" scripts/sync-tracker-issues.ts 2>&1 | tee "$RUN_TMP/sync.out"
+  SUMMARY="$(grep -E '[0-9]+ create, [0-9]+ close' "$RUN_TMP/sync.out" | tail -n1)"
+fi
 record sync "created=$(nth create "$SUMMARY")" "closed=$(nth close "$SUMMARY")" \
-  "reopened=$(nth reopen "$SUMMARY")" "drift=$(nth drift "$SUMMARY")" \
+  "reopened=$(nth reopen "$SUMMARY")" "reversed=$(nth reverse "$SUMMARY")" "drift=$(nth drift "$SUMMARY")" \
   "in_sync=$(nth in-sync "$SUMMARY")" "resolved_unfiled=$(nth resolved-unfiled "$SUMMARY")" \
-  "dangling=$(nth DANGLING "$SUMMARY")" "sync_deferred=$(nth DEFERRED "$SUMMARY")"
+  "dangling=$(nth DANGLING "$SUMMARY")" "sync_deferred=$(nth DEFERRED "$SUMMARY")" "sync_failed=$(nth FAILED "$SUMMARY")"
 
 # ---- Stage D: open draft PRs for safe auto-fixable issues -------------------
 if [ "$DO_DISPATCH" != "1" ]; then
@@ -423,14 +482,18 @@ elif breaker_tripped; then
   log "Stage E — skipped (breaker tripped)"
 else
   log "Stage E — review-and-merge (AUTO_IMPROVE_MERGE=$MERGE_MODE, $MAX_TURNS_MERGE turns)"
-  # merge-queue.ts honors AUTO_IMPROVE_MERGE itself: dry-run posts reviews and
-  # logs would-merge without merging; only 1 merges. The agent never merges.
+  # merge-queue.ts honors AUTO_IMPROVE_MERGE itself: dry-run runs the checks and
+  # the review and logs the gh calls `act` would make, posting and merging
+  # nothing; only 1 posts reviews/labels and merges. The agent never merges.
   run_stage merge "/merge-queue" || log "  /merge-queue exited non-zero (continuing)"
-  E_MERGED="$(grep -Ei '^[[:space:]]*[-*].*(^|[^a-z])merged([^a-z]|$)' "$STAGE_OUT" 2>/dev/null | grep -Evic 'would|not merged|no prs merged' || true)"
-  E_REVIEWED="$(bullets 'request(ed)? changes|sent back|needs-human' "$STAGE_OUT")"
+  # End-of-turn bullets (merge-queue.md): `merged #N` / `would merge #N` /
+  # `requested changes #N` / `escalated #N` / `skipped #N` / `human-only #N`.
+  E_MERGED="$(bullets 'merged #' "$STAGE_OUT")"
+  E_REVIEWED="$(bullets 'requested changes|escalated' "$STAGE_OUT")"
   E_HUMAN="$(bullets 'human-only' "$STAGE_OUT")"
-  record merge "merged=${E_MERGED:-0}" "reviewed=$E_REVIEWED" "human_only=$E_HUMAN" "mode=$MERGE_MODE"
-  log "  Stage E: ${E_MERGED:-0} merged, $E_REVIEWED sent back, $E_HUMAN human-only"
+  E_SKIPPED="$(bullets 'skipped' "$STAGE_OUT")"
+  record merge "merged=${E_MERGED:-0}" "reviewed=$E_REVIEWED" "human_only=$E_HUMAN" "skipped=$E_SKIPPED" "mode=$MERGE_MODE"
+  log "  Stage E: ${E_MERGED:-0} merged, $E_REVIEWED sent back, $E_HUMAN human-only, $E_SKIPPED skipped"
   "$BUN" scripts/merge-queue.ts cleanup 2>&1 || log "  merge-queue cleanup exited non-zero (continuing)"
 fi
 
@@ -443,9 +506,12 @@ elif breaker_tripped; then
   log "Stage F — skipped (breaker tripped)"
 else
   log "Stage F — release"
-  # release.ts gates itself (CI green on main, something outside the analysis
-  # paths since the last tag) and prints `released vX.Y.Z` or
-  # `nothing to release: <reason>`; non-zero means it failed part-way.
+  # release.ts gates itself (fast-forwards local main to origin/main so
+  # tonight's merges are in, CI green on that head, something outside the
+  # analysis paths since the last tag) and prints `released vX.Y.Z` or
+  # `nothing to release: <reason>`; non-zero means it failed part-way. The
+  # run's own tracked log and run record are dirty here by construction;
+  # release.ts ignores analysis-only paths in its clean-tree check.
   "$BUN" scripts/release.ts >"$RUN_TMP/release.out" 2>&1
   F_RC=$?
   exec >>"$LOG" 2>&1   # release.ts commits and pushes; reopen the log in case the tree was rewritten

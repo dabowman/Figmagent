@@ -1,6 +1,6 @@
 ---
 description: Open draft PRs for safe, auto-fixable Figmagent improvement issues that already have a fix plan
-allowed-tools: Bash(bun scripts/dispatch-fix.ts *), Read, Edit, Write, Glob, Grep
+allowed-tools: Bash(bun scripts/dispatch-fix.ts *), Read, Edit(.claude/worktrees/**), Write(.claude/worktrees/**), Glob, Grep
 ---
 
 # Dispatch Fix PRs (Stage D of auto-improve)
@@ -13,7 +13,7 @@ issue is always better than opening a bad PR.**
 
 No human is reading this session and none can answer a question. Your tools are exactly the
 ones in `allowed-tools` above: `bun scripts/dispatch-fix.ts <subcommand>` plus file reads, and
-edits under the worktree the script gives you. **A denied tool call means the action is outside
+edits under `.claude/worktrees/` — the worktree the script gives you; nothing in the main checkout. **A denied tool call means the action is outside
 this stage's scope** — it is never a signal to find another way. Two endings besides "PRs opened"
 are complete, successful runs: **no candidates** (`candidates` printed an empty list) and a final
 line beginning **`BLOCKED:`** with the reason (the inputs are not what this prompt expects, or the

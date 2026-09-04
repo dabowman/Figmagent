@@ -17,9 +17,11 @@ scope, never a signal to find another way; and a run that ends with one line beg
 and the reason (an unreadable transcript, inputs that are not what this skill expects) is a
 **successful** run — as is a session with no new findings. The contract states the turn budget.
 When it runs low, stop cleanly: write the `## Outcome` block (Phase 7) with `partial` and what
-remains, and leave the manifest untouched so the orchestrator hands the session to the next run.
-Never rush the tracker — an entry written from a half-read transcript becomes a GitHub issue by
-morning, while a `partial` outcome costs one more run.
+remains, and leave the manifest untouched; the orchestrator then defers the session to the next
+night rather than handing it to another agent, and marks it `analysisFailed` after a second
+unfinished attempt (a person retries with `--clear-failed`). Never rush the tracker — an entry
+written from a half-read transcript becomes a GitHub issue by morning, while a `partial` outcome
+costs one more night.
 
 ---
 
@@ -490,7 +492,7 @@ These are the last two things the run does, in this order.
    - `analyzed` — every phase completed; the tracker and the plans are consistent.
    - `partial` — the turn budget ran low or the transcript could only be read in part. The reason line says which phases are done and what remains. Anything already written to the tracker must be complete and evidenced: finish or remove a half-written entry before stopping.
    - `failed` — the session could not be analyzed at all (unreadable or empty transcript, inputs not what this skill expects). The reason says why. End the turn with one line beginning `BLOCKED:` and that reason.
-2. **Update the session manifest only when the Outcome is `analyzed`** (`.claude/analysis/sessions.json`): set the entry's `analysis` to the analysis filename and `analyzedAt` to the current time — read the manifest, update the entry, write it back. This marks the session complete so the next `/analyze-session` invocation skips it. For `partial` and `failed`, leave the manifest untouched: the orchestrator hands the session to the next run and marks it `analysisFailed` (with the Outcome reason) when the same session comes up twice.
+2. **Update the session manifest only when the Outcome is `analyzed`** (`.claude/analysis/sessions.json`): set the entry's `analysis` to the analysis filename and `analyzedAt` to the current time — read the manifest, update the entry, write it back. This marks the session complete so the next `/analyze-session` invocation skips it. For `partial` and `failed`, leave the manifest untouched: the session is then still first in the queue, and the orchestrator — which does not read the Outcome block — defers it to the next night rather than handing it to another agent the same night; after its second unfinished attempt it is marked `analysisFailed` with the cause (watchdog, turn cap, or "ran but did not mark"), and a person retries it with `bun scripts/refresh-manifest.ts --clear-failed <sid>` after reading the Outcome reason in the doc.
 
 ---
 

@@ -26,9 +26,10 @@
  *
  * The summary line always reports create/close/reopen/reverse/drift/in-sync/
  * resolved-unfiled, and appends DANGLING (tracker points at an issue number that
- * is not on the repo) and DEFERRED (entry needs an issue but --limit was hit,
- * so it is NOT on GitHub) only when non-zero — those two mean findings are
- * missing from GitHub and should stand out in the nightly log.
+ * is not on the repo), DEFERRED (entry needs an issue but --limit was hit, so it
+ * is NOT on GitHub) and FAILED (a gh create/close/reopen exited non-zero, so the
+ * action did NOT happen) only when non-zero — those mean findings are missing
+ * from GitHub and should stand out in the nightly log.
  *
  * "Resolved" derivation: the same ID can appear under both "## Active Issues"
  * and "## Resolved Issues". The ACTIVE occurrence's Status is authoritative — if
@@ -66,8 +67,8 @@
 
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { $ } from "bun";
-import { decideReverse, implementedStatus, parseTimelineJson } from "./sync-reverse-lib.ts";
-import { parseTrackerFull, type TrackerEntry, updateEntryField } from "./tracker-parse.ts";
+import { decideReverse, implementedStatus, mergedClosers, parseTimelineJson } from "./sync-reverse-lib.ts";
+import { parseTrackerFull, priorityToken, type TrackerEntry, updateEntryField } from "./tracker-parse.ts";
 
 const TRACKER = ".claude/analysis/improvement-tracker.md";
 const ANALYSIS_DIR = ".claude/analysis";
@@ -215,15 +216,35 @@ for (const e of existingIssues) {
 // fallback for pre-existing issues the sync didn't create.
 const resolveNum = (t: TrackerIssue): number | undefined => numberByPrefix.get(t.id) ?? t.issueRef;
 
-// The issue timeline names the PR that closed it (a `cross-referenced` event
-// whose source PR has `merged_at`). Fetched only for the closed-but-active
-// cases, a handful per night. A fetch failure reads as an empty timeline, so
-// the entry falls back to DRIFT — never to a wrong REVERSE.
+// The issue timeline carries a `cross-referenced` event (with `merged_at`) for
+// EVERY PR that mentions the issue, closing or not — so the PR that actually
+// closed it comes from GitHub's own record, `closedByPullRequestsReferences`,
+// and only a PR on that list may flip the entry. Both are fetched only for the
+// closed-but-active cases, a handful per night. Any fetch failure reads as
+// "no closer", so the entry falls back to DRIFT — never to a wrong REVERSE.
 const fetchTimeline = async (num: number) => {
   const json = await $`gh api --paginate --slurp ${`repos/${REPO}/issues/${num}/timeline?per_page=100`}`
     .nothrow()
     .text();
   return parseTimelineJson(json);
+};
+const [REPO_OWNER, REPO_NAME] = REPO.split("/") as [string, string];
+const CLOSERS_QUERY =
+  "query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { issue(number: $number) { closedByPullRequestsReferences(first: 20, includeClosedPrs: true) { nodes { number merged } } } } }";
+const fetchClosers = async (num: number): Promise<number[]> => {
+  const r =
+    await $`gh api graphql -f query=${CLOSERS_QUERY} -F owner=${REPO_OWNER} -F name=${REPO_NAME} -F number=${num}`
+      .nothrow()
+      .quiet();
+  if (r.exitCode !== 0) return [];
+  try {
+    const data = JSON.parse(r.stdout.toString()) as {
+      data?: { repository?: { issue?: { closedByPullRequestsReferences?: { nodes?: unknown[] } } } };
+    };
+    return mergedClosers(data.data?.repository?.issue?.closedByPullRequestsReferences?.nodes as never);
+  } catch {
+    return [];
+  }
 };
 
 // ---- ensure labels exist ----------------------------------------------------
@@ -241,7 +262,7 @@ const prioColor: Record<string, string> = {
 const toCreate = trackerIssues.filter((t) => !t.resolved && resolveNum(t) === undefined);
 if (!dryRun && toCreate.length > 0) {
   await ensureLabel(LABEL, "1d76db", "Figmagent self-improvement issue (auto-synced from tracker)");
-  for (const p of new Set(toCreate.map((t) => t.priority).filter(Boolean))) {
+  for (const p of new Set(toCreate.map((t) => priorityToken(t)).filter(Boolean))) {
     await ensureLabel(`priority:${p}`, prioColor[p] || "ededed", `Priority ${p}`);
   }
   for (const c of new Set(toCreate.map((t) => t.category).filter(Boolean))) {
@@ -262,6 +283,7 @@ let inSync = 0; // matched an issue in the state the tracker wants
 let unfiled = 0; // resolved and never filed — deliberate, no noise
 let dangling = 0; // tracker refs an issue number that isn't on the repo
 let deferred = 0; // needed an issue but hit --limit; NOT on GitHub yet
+let failed = 0; // a gh create/close/reopen that exited non-zero; NOT applied on GitHub
 const actions: string[] = [];
 let trackerText = raw;
 
@@ -277,16 +299,24 @@ for (const t of trackerIssues) {
     } else if (!wantOpen && state === "open") {
       actions.push(`CLOSE   #${num} [${t.id}] (${t.resolvedReason || "resolved"})`);
       if (!dryRun) {
-        await $`gh issue close ${num} --repo ${REPO} --comment ${`Resolved in tracker (${t.resolvedReason || "resolved"}). Closed by auto-improve sync.`}`
-          .nothrow()
-          .quiet();
+        const r =
+          await $`gh issue close ${num} --repo ${REPO} --comment ${`Resolved in tracker (${t.resolvedReason || "resolved"}). Closed by auto-improve sync.`}`
+            .nothrow()
+            .quiet();
+        if (r.exitCode !== 0) {
+          actions.push(
+            `FAILED  close #${num} [${t.id}]: ${r.stderr.toString().trim().split("\n")[0] || `exit ${r.exitCode}`}`,
+          );
+          failed++;
+          continue;
+        }
       }
       closed++;
     } else if (wantOpen && state === "closed") {
       const decision = decideReverse(
         { state, state_reason: stateReasonByNumber.get(num) ?? null },
         await fetchTimeline(num),
-        { repo: REPO },
+        { repo: REPO, closers: await fetchClosers(num) },
       );
       if (decision.action === "reverse") {
         const status = implementedStatus(decision.pr, decision.date);
@@ -304,7 +334,16 @@ for (const t of trackerIssues) {
         }
       } else if (reopen) {
         actions.push(`REOPEN  #${num} [${t.id}]`);
-        if (!dryRun) await $`gh issue reopen ${num} --repo ${REPO}`.nothrow().quiet();
+        if (!dryRun) {
+          const r = await $`gh issue reopen ${num} --repo ${REPO}`.nothrow().quiet();
+          if (r.exitCode !== 0) {
+            actions.push(
+              `FAILED  reopen #${num} [${t.id}]: ${r.stderr.toString().trim().split("\n")[0] || `exit ${r.exitCode}`}`,
+            );
+            failed++;
+            continue;
+          }
+        }
         reopened++;
       } else {
         actions.push(`DRIFT   #${num} [${t.id}] closed but tracker active (use --reopen)`);
@@ -329,10 +368,17 @@ for (const t of trackerIssues) {
   }
   actions.push(`CREATE  [${t.id}] (${t.priority || "—"}) ${t.cleanTitle}`);
   if (!dryRun) {
-    const labels = [LABEL, t.priority && `priority:${t.priority}`, t.category].filter(Boolean).join(",");
-    await $`gh issue create --repo ${REPO} --title ${t.fullTitle} --body ${issueBody(t)} --label ${labels}`
+    const prio = priorityToken(t);
+    const labels = [LABEL, prio && `priority:${prio}`, t.category].filter(Boolean).join(",");
+    const r = await $`gh issue create --repo ${REPO} --title ${t.fullTitle} --body ${issueBody(t)} --label ${labels}`
       .nothrow()
       .quiet();
+    if (r.exitCode !== 0) {
+      // Counted separately: a summary that says "N create" must mean N issues exist.
+      actions.push(`FAILED  create [${t.id}]: ${r.stderr.toString().trim().split("\n")[0] || `exit ${r.exitCode}`}`);
+      failed++;
+      continue;
+    }
   }
   created++;
 }
@@ -347,7 +393,8 @@ console.log(
     `${created} create, ${closed} close, ${reopened} reopen, ${reversed} reverse, ${drift} drift, ` +
     `${inSync} in-sync, ${unfiled} resolved-unfiled` +
     `${dangling ? `, ${dangling} DANGLING` : ""}` +
-    `${deferred ? `, ${deferred} DEFERRED` : ""}`,
+    `${deferred ? `, ${deferred} DEFERRED` : ""}` +
+    `${failed ? `, ${failed} FAILED` : ""}`,
 );
 if (actions.length) console.log(actions.join("\n"));
 if (reversed > 0) {

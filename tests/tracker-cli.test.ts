@@ -132,6 +132,9 @@ describe("isUntriaged / untriagedEntries", () => {
   test("isValidAutoFixableValue accepts only yes (...) / no (...)", () => {
     expect(isValidAutoFixableValue("yes (boundary-guard)")).toBe(true);
     expect(isValidAutoFixableValue("no (mixed: design work — allowlist: seven patterns)")).toBe(true);
+    // A reason may itself contain parentheses — the shapes the triage prompt dictates.
+    expect(isValidAutoFixableValue("no (mixed: edit({variableModes}) is a new field — allowlist: …)")).toBe(true);
+    expect(isValidAutoFixableValue("yes (type-coercion — Zod .or(...transform) on the array criteria)")).toBe(true);
     expect(isValidAutoFixableValue("yes")).toBe(false);
     expect(isValidAutoFixableValue("no ()")).toBe(false);
     expect(isValidAutoFixableValue("maybe (x)")).toBe(false);
@@ -205,6 +208,17 @@ describe("tracker.ts CLI", () => {
     );
     expect(run(["set-status", "TOOL-006", "--tracker", t]).code).toBe(2); // missing value
     expect(run(["set-status", "ZZZ-1", "planned", "--tracker", t]).code).toBe(2); // unknown id
+  });
+
+  test("set-status: a resolution status must cite the PR or commit that resolved it (Stage C closes the issue on it)", () => {
+    const t = fixtureFile();
+    const bare = run(["set-status", "TOOL-006", "verified", "--tracker", t]);
+    expect(bare.code).toBe(2);
+    expect(bare.err).toContain("must cite the fix");
+    expect(readFileSync(t, "utf-8")).toBe(FIXTURE);
+    expect(run(["set-status", "TOOL-006", "implemented — PR #40 (2026-09-03)", "--tracker", t]).code).toBe(0);
+    expect(run(["set-status", "TOOL-006", "verified in 8dee519a", "--tracker", t]).code).toBe(0);
+    expect(run(["set-status", "TOOL-006", "planned", "--tracker", t]).code).toBe(0);
   });
 
   test("set-autofixable inserts after Status when absent, replaces when present, validates the shape", () => {

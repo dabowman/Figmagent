@@ -233,6 +233,11 @@ export function decisionDates(entry: Pick<TrackerEntry, "body">): string[] {
   return out;
 }
 
+/** The first token of the Priority line, upper-cased — `P1 (raised from P2 — …)` → `P1`; `""` when absent. */
+export function priorityToken(entry: Pick<TrackerEntry, "priority">): string {
+  return (firstPatternToken(entry.priority) ?? "").toUpperCase();
+}
+
 /** The first word of the Status line, lowercased — `implemented — PR #3` → `implemented`. */
 export function statusToken(status: string | undefined): string {
   return (

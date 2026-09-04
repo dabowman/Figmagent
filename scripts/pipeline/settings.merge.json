@@ -27,6 +27,8 @@
       "Write(.claude/skills/**)",
       "Edit(CLAUDE.md)",
       "Write(CLAUDE.md)",
+      "Edit(.claude/settings.json)",
+      "Write(.claude/settings.json)",
       "Read(~/.ssh/**)",
       "Read(~/.figmagent/**)",
       "Read(~/.aws/**)",
@@ -49,7 +51,11 @@
       "Edit(.claude/worktrees/**/bun.lock)",
       "Write(.claude/worktrees/**/bun.lock)",
       "Edit(.claude/worktrees/**/src/figma_plugin/manifest.json)",
-      "Write(.claude/worktrees/**/src/figma_plugin/manifest.json)"
+      "Write(.claude/worktrees/**/src/figma_plugin/manifest.json)",
+      "Edit(.claude/worktrees/**/.mcp.json)",
+      "Write(.claude/worktrees/**/.mcp.json)",
+      "Edit(.claude/worktrees/**/CLAUDE.md)",
+      "Write(.claude/worktrees/**/CLAUDE.md)"
     ]
   },
   "sandbox": {
@@ -58,7 +64,7 @@
     "autoAllowBashIfSandboxed": false,
     "filesystem": {
       "allowWrite": [".", "~/.bun/install/cache"],
-      "denyRead": ["~/.ssh", "~/.figmagent", "~/.aws", "~/.config/gh", "~/.claude/*.json"]
+      "denyRead": ["~/.ssh", "~/.figmagent", "~/.aws", "~/.claude/*.json"]
     },
     "network": {
       "allowedDomains": ["api.github.com", "github.com", "registry.npmjs.org"]

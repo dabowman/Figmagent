@@ -32,6 +32,8 @@
       "Write(.claude/skills/**)",
       "Edit(CLAUDE.md)",
       "Write(CLAUDE.md)",
+      "Edit(.claude/settings.json)",
+      "Write(.claude/settings.json)",
       "Read(~/.ssh/**)",
       "Read(~/.figmagent/**)",
       "Read(~/.aws/**)",

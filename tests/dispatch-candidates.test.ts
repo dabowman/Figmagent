@@ -40,7 +40,10 @@ function plan(
   parsed: ReturnType<typeof parsePlan>;
 } {
   const header = pattern === undefined ? "" : `**Pattern**: \`${pattern}\`\n`;
-  const text = `# Fix: [${id}]\n\n${header}**Priority**: P1\n${extra}\n## Changes\n\n${files
+  // A plan must name at least one `### File:` to be dispatchable; tests that do
+  // not care which file get a placeholder (pass files explicitly to test scope).
+  const named = files.length > 0 ? files : [`src/${id.toLowerCase()}.ts`];
+  const text = `# Fix: [${id}]\n\n${header}**Priority**: P1\n${extra}\n## Changes\n\n${named
     .map((f) => `### File: \`${f}\`\n- Line 1: \`a\` → \`b\`\n`)
     .join("\n")}\n## Verification\n- [ ] Run \`bun run test\` — \`tests/${id.toLowerCase()}.test.ts\`\n`;
   return { id, path: `.claude/plans/2026-09-02-${id}.md`, parsed: parsePlan(text) };
@@ -112,6 +115,20 @@ describe("eligibility — per-entry rules", () => {
     });
     // tracker says type-coercion, plan says description-only → description-only
     expect(eligibility(e, plan("T-1", "description-only", []))).toMatchObject({ pattern: "description-only" });
+  });
+
+  test("a plan with no `### File:` section is skipped — nothing to apply verbatim or scope", () => {
+    const e = tracker([{ id: "T-1", status: "planned", priority: "P1", fixable: "yes (boundary-guard)" }])[0];
+    const prose = {
+      id: "T-1",
+      path: ".claude/plans/2026-09-02-T-1.md",
+      parsed: parsePlan(
+        "# Fix: [T-1]\n\n**Pattern**: `boundary-guard`\n**Priority**: P1\n\n- `src/a.js`: add a guard\n",
+      ),
+    };
+    expect(eligibility(e as TrackerEntry, prose)).toMatchObject({
+      reason: "plan .claude/plans/2026-09-02-T-1.md names no `### File:` section — nothing to apply verbatim",
+    });
   });
 
   test("Partial plans are skipped", () => {
@@ -216,6 +233,17 @@ describe("selectCandidates — ordering, caps, collisions", () => {
       candidates: [],
       skipped: [{ id: "S-1", reason: "no plan file in .claude/plans/" }],
     });
+  });
+
+  test("IDs already in flight on origin are skipped before the caps, so the slots go to new work", () => {
+    const entries = tracker([
+      { id: "I-1", status: "planned", priority: "P0", issue: 1, fixable: "yes (type-coercion)" },
+      { id: "I-2", status: "planned", priority: "P1", issue: 2, fixable: "yes (type-coercion)" },
+    ]);
+    const plans = [plan("I-1", "type-coercion", ["a"]), plan("I-2", "type-coercion", ["b"])];
+    const { candidates, skipped } = selectCandidates(entries, plans, { max: 1, inFlight: new Set(["I-1"]) });
+    expect(candidates.map((c) => c.id)).toEqual(["I-2"]);
+    expect(skipped).toEqual([{ id: "I-1", reason: "in flight: auto-fix/I-1 already exists on origin" }]);
   });
 
   test("caps are configurable", () => {

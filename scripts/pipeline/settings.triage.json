@@ -16,6 +16,8 @@
       "Bash(bun scripts/tracker.ts *)"
     ],
     "deny": [
+      "Edit(.claude/analysis/improvement-tracker.md)",
+      "Write(.claude/analysis/improvement-tracker.md)",
       "Bash(git *)",
       "Bash(gh *)",
       "Bash(rm *)",
@@ -33,6 +35,8 @@
       "Write(.claude/skills/**)",
       "Edit(CLAUDE.md)",
       "Write(CLAUDE.md)",
+      "Edit(.claude/settings.json)",
+      "Write(.claude/settings.json)",
       "Read(~/.ssh/**)",
       "Read(~/.figmagent/**)",
       "Read(~/.aws/**)",

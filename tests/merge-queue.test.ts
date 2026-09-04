@@ -18,6 +18,7 @@ import {
   trackerIdFromTitle,
 } from "../scripts/merge-eligibility.ts";
 import {
+  approveBlocker,
   buildMergeArgs,
   buildMergeComment,
   buildReviewBody,
@@ -91,6 +92,17 @@ describe("protected paths", () => {
       "scripts/pipeline/nested/deeper.json",
       "scripts/pipeline-record.ts",
       "scripts/refresh-manifest.ts",
+      // the gates live in the lib modules and the parsers, not only the entry points
+      "scripts/dispatch-candidates-lib.ts",
+      "scripts/release-lib.ts",
+      "scripts/tracker-parse.ts",
+      "scripts/tracker.ts",
+      "scripts/sync-reverse-lib.ts",
+      "scripts/refresh-manifest-lib.ts",
+      "scripts/extract-sessions.ts",
+      "scripts/launchd/com.figmagent.auto-improve.plist",
+      // instructions loaded into every stage
+      "CLAUDE.md",
       ".claude/commands/merge-queue.md",
       ".claude/skills/analyze-session/SKILL.md",
       ".claude/skills/analyze-session/references/x.md",
@@ -112,13 +124,10 @@ describe("protected paths", () => {
       "src/figma_plugin/src/commands/apply.js",
       "src/figma_plugin/code.js",
       "tests/registry.test.ts",
-      "scripts/extract-sessions.ts",
-      "scripts/session-classify.ts",
       ".claude/analysis/improvement-tracker.md",
       ".claude/plans/2026-09-02-AGENT-033.md",
       ".claude/skills/other-skill/SKILL.md",
       ".claude/settings.local.json",
-      "CLAUDE.md",
       "CONTRIBUTING.md",
       "CHANGELOG.md",
       "skills/figma-guidelines/SKILL.md",
@@ -516,6 +525,24 @@ describe("gh argument builders", () => {
       "--body",
       "Adds the two bullets the plan names.\n\nCloses #165",
     ]);
+  });
+
+  test("buildMergeArgs pins the merge to the reviewed head when one is given", () => {
+    const args = buildMergeArgs(pr(), "s", "r", "abc1234def5678");
+    expect(args.slice(args.indexOf("--match-head-commit"), args.indexOf("--match-head-commit") + 2)).toEqual([
+      "--match-head-commit",
+      "abc1234def5678",
+    ]);
+    expect(planActions(pr({ draft: false }), verdict, "r", "abc1234def5678")[0]).toContain("--match-head-commit");
+  });
+
+  test("approveBlocker: an approve acts only on a head that was set up and checked", () => {
+    const side = { number: 199, headSha: "aaa", baseSha: "bbb", checkedSha: "aaa" };
+    expect(approveBlocker(side, "aaa")).toBeUndefined();
+    expect(approveBlocker(undefined, "aaa")).toContain("no worktree was set up");
+    expect(approveBlocker({ ...side, checkedSha: undefined }, "aaa")).toContain("check has not passed");
+    expect(approveBlocker({ ...side, checkedSha: "bbb" }, "aaa")).toContain("check has not passed");
+    expect(approveBlocker(side, "ccc")).toContain("head moved since setup");
   });
 
   test("buildMergeArgs never carries --merge/--rebase/--admin/--auto", () => {

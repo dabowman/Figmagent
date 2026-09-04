@@ -10,7 +10,9 @@
  * misreads its instructions, a PR body contains injected text, or the model is
  * updated. Encoding them here makes them non-negotiable. The agent never types
  * `gh pr merge`: it writes a verdict JSON, and `act` re-checks eligibility on the
- * PR's CURRENT head before doing anything.
+ * PR's CURRENT head before doing anything — and refuses an `approve` unless that
+ * head is the one `setup` fetched and `check` passed on (the merge itself carries
+ * `--match-head-commit`, so a push that lands in between is never merged).
  *
  * The repo is ALWAYS process.env.AUTO_IMPROVE_REPO (default dabowman/Figmagent) —
  * the same source Stages C and D use — so the pipeline can never split across
@@ -28,22 +30,27 @@
  *                             Exit 4 on a merge conflict (worktree removed).
  *   check <N>                 In that worktree: bun install (if node_modules missing),
  *                             bun run lint, bun run test, bun run build:plugin when
- *                             src/figma_plugin/ is touched; plus a plan-scope assertion
- *                             when a .claude/plans/*<ID>*.md exists for the PR's [ID].
- *                             Compact PASS/FAIL per step, last 40 lines on failure,
- *                             exit 1 on any failure.
+ *                             src/figma_plugin/ is touched; a protected-path assertion
+ *                             on the merged result (renames included); plus a
+ *                             plan-scope assertion when a .claude/plans/*<ID>*.md
+ *                             exists for the PR's [ID]. Compact PASS/FAIL per step,
+ *                             last 40 lines on failure, exit 1 on any failure. A
+ *                             pass is recorded in the sidecar for `act`.
  *   diff <N>                  Print the PR body, the linked issue body, the plan file
  *                             (if any) and the diff, each in a delimited block whose
  *                             header states it is untrusted content.
- *   act <N> --verdict <file>  Validate the verdict JSON (exit 2 on any schema error,
- *                             or on "approve" with a blocking finding), refetch the PR
- *                             and re-run eligibility (exit 3 if no longer eligible),
+ *   act <N> --verdict <file>  Refuse while .pipeline.paused exists (exit 2). Validate
+ *                             the verdict JSON (exit 2 on any schema error, or on
+ *                             "approve" with a blocking finding), refetch the PR and
+ *                             re-run eligibility (exit 3 if no longer eligible, or if
+ *                             an "approve" has no passing `check` on the current head),
  *                             then approve → ready + squash-merge + comment;
  *                             request_changes → review + needs-human label;
  *                             escalate → comment + needs-human label. Prints one JSON
  *                             result line { pr, action, merged, sha? }.
- *   cleanup                   Remove every .claude/worktrees/merge-* worktree, prune,
- *                             and reset the run state.
+ *   cleanup                   Remove every .claude/worktrees/merge-* worktree and
+ *                             prune. The run state (the day's merge counter) is kept;
+ *                             it expires on its own after 20h.
  *
  * Exit codes: 0 ok · 1 check/gh failure · 2 usage/schema · 3 no longer eligible · 4 merge conflict.
  */
@@ -61,6 +68,8 @@ import {
   type PullRequest,
   trackerIdFromTitle,
 } from "./merge-eligibility.ts";
+import { protectedPathsIn } from "./protected-paths.ts";
+import { parsePlan, planFileFor } from "./tracker-parse.ts";
 
 export const REPO = process.env.AUTO_IMPROVE_REPO || "dabowman/Figmagent";
 export const MODES = ["0", "dry-run", "1"] as const;
@@ -73,6 +82,7 @@ export const VERDICTS_DIR = `${WORKTREES_DIR}/verdicts`;
 export const RUN_STATE_FILE = `${WORKTREES_DIR}/merge-queue-run.json`;
 export const PLANS_DIR = ".claude/plans";
 export const TRACKER = ".claude/analysis/improvement-tracker.md";
+export const PAUSE_FILE = ".pipeline.paused";
 /** A run state older than this is a previous night's — start counting again. */
 export const RUN_STATE_MAX_AGE_MS = 20 * 60 * 60 * 1000;
 const TAIL_LINES = 40;
@@ -84,7 +94,7 @@ export const USAGE = `Usage: bun scripts/merge-queue.ts <subcommand>
   check <N>                 lint / test / build:plugin (when plugin touched) + plan-scope assertion
   diff <N>                  PR body, linked issue, plan file, diff — each labeled untrusted
   act <N> --verdict <file>  validate the verdict, re-check eligibility, then merge / review / escalate
-  cleanup                   remove every merge-* worktree and reset the run state
+  cleanup                   remove every merge-* worktree (the day's merge counter is kept)
 
 Env: AUTO_IMPROVE_REPO (default dabowman/Figmagent) · AUTO_IMPROVE_MERGE = 0 | dry-run (default) | 1
      AUTO_IMPROVE_MERGE_CAP (default ${MERGE_CAP})
@@ -231,11 +241,17 @@ export function buildSquashBody(summary: string, closingRefs: readonly string[])
   return parts.join("\n\n");
 }
 
-/** Arguments for `gh` (without the leading `gh`) that squash-merge the PR. */
+/**
+ * Arguments for `gh` (without the leading `gh`) that squash-merge the PR. With
+ * `matchHead`, GitHub refuses the merge unless the head is still that commit —
+ * the one `check` passed on — so a push between `act`'s refetch and the merge
+ * can never land unreviewed.
+ */
 export function buildMergeArgs(
   pr: Pick<PullRequest, "number" | "title" | "body">,
   summary: string,
   repo = REPO,
+  matchHead?: string,
 ): string[] {
   return [
     "pr",
@@ -245,6 +261,7 @@ export function buildMergeArgs(
     repo,
     "--squash",
     "--delete-branch",
+    ...(matchHead ? ["--match-head-commit", matchHead] : []),
     "--subject",
     buildSquashSubject(pr),
     "--body",
@@ -298,13 +315,13 @@ export function buildMergeComment(verdict: Verdict): string {
 }
 
 /** Every gh invocation `act` would make for this verdict, in order — what dry-run prints. */
-export function planActions(pr: PullRequest, verdict: Verdict, repo = REPO): string[][] {
+export function planActions(pr: PullRequest, verdict: Verdict, repo = REPO, matchHead?: string): string[][] {
   const n = pr.number;
   switch (verdict.verdict) {
     case "approve": {
       const out: string[][] = [];
       if (pr.draft) out.push(buildReadyArgs(n, repo));
-      out.push(buildMergeArgs(pr, verdict.summary, repo));
+      out.push(buildMergeArgs(pr, verdict.summary, repo, matchHead));
       out.push(buildCommentArgs(n, buildMergeComment(verdict), repo));
       return out;
     }
@@ -315,19 +332,9 @@ export function planActions(pr: PullRequest, verdict: Verdict, repo = REPO): str
   }
 }
 
-/** Paths named by a plan's `### File:` headings (backticked path preferred, else first token). */
+/** Paths named by a plan's `### File:` headings — the same reading Stage D applies the plan with. */
 export function parsePlanFiles(planText: string): string[] {
-  const out = new Set<string>();
-  for (const line of planText.split("\n")) {
-    const m = line.match(/^###\s+File:\s*(.+)$/);
-    if (!m) continue;
-    const rest = (m[1] as string).trim();
-    const ticked = rest.match(/`([^`]+)`/);
-    const candidate = ticked ? (ticked[1] as string) : (rest.split(/\s+/)[0] ?? "");
-    const path = candidate.replace(/^\.\//, "").replace(/[,:;]+$/, "");
-    if (path) out.add(path);
-  }
-  return [...out];
+  return parsePlan(planText).files.map((p) => p.replace(/^\.\//, ""));
 }
 
 export function scopeCheck(
@@ -370,6 +377,26 @@ export function tail(text: string, lines = TAIL_LINES): string {
 export interface RunState {
   started: string;
   merged: Array<{ pr: number; sha?: string; at: string }>;
+}
+
+/** What `setup` records and `check` confirms; `act` merges only a head both agree on. */
+export interface Sidecar {
+  number: number;
+  headSha: string;
+  baseSha: string;
+  fetchedAt?: string;
+  /** Set by `check` when every step passed — on this head. */
+  checkedSha?: string;
+}
+
+/** Why an `approve` may not act on this head, or undefined when it may. */
+export function approveBlocker(side: Sidecar | undefined, currentHeadSha: string): string | undefined {
+  if (!side) return "no worktree was set up for this PR — run setup, check and review it first";
+  if (side.headSha !== currentHeadSha) {
+    return `head moved since setup (${side.headSha.slice(0, 7)} → ${currentHeadSha.slice(0, 7)}) — run setup, check and review it again`;
+  }
+  if (side.checkedSha !== side.headSha) return "check has not passed on this head — run check first";
+  return undefined;
 }
 
 export function freshRunState(now: Date): RunState {
@@ -545,10 +572,17 @@ function loadTrackerPriorities(): Map<string, Priority> {
 
 function findPlanFile(id: string | undefined): string | undefined {
   if (!id || !existsSync(PLANS_DIR)) return undefined;
-  const matches = readdirSync(PLANS_DIR)
-    .filter((f) => f.endsWith(".md") && f.includes(id))
-    .sort();
-  return matches.length > 0 ? `${PLANS_DIR}/${matches[0]}` : undefined;
+  // Same pick as Stage D (newest date prefix, ID-bounded): the plan the PR was built from.
+  const file = planFileFor(id, readdirSync(PLANS_DIR));
+  return file ? `${PLANS_DIR}/${file}` : undefined;
+}
+
+function assertNotPaused(action: string): void {
+  if (!existsSync(PAUSE_FILE)) return;
+  const reason = readFileSync(PAUSE_FILE, "utf-8").trim().split("\n")[0] || "no reason recorded";
+  die(
+    `${PAUSE_FILE} exists (${reason}) — the pipeline is paused, so ${action} is refused; a human resumes it with: bun scripts/pipeline-record.ts resume`,
+  );
 }
 
 async function evaluateCurrent(
@@ -657,12 +691,20 @@ async function setup(n: number): Promise<void> {
   console.log(wt);
 }
 
-function readSidecar(n: number): { number: number; headSha: string; baseSha: string } {
-  const wt = worktreePath(n);
-  if (!existsSync(wt) || !existsSync(sidecarPath(n))) {
-    die(`No worktree for PR #${n} at ${wt} — run: bun scripts/merge-queue.ts setup ${n}`);
+function loadSidecar(n: number): Sidecar | undefined {
+  if (!existsSync(sidecarPath(n))) return undefined;
+  try {
+    return JSON.parse(readFileSync(sidecarPath(n), "utf-8")) as Sidecar;
+  } catch {
+    return undefined;
   }
-  return JSON.parse(readFileSync(sidecarPath(n), "utf-8"));
+}
+
+function readSidecar(n: number): Sidecar {
+  const wt = worktreePath(n);
+  const side = existsSync(wt) ? loadSidecar(n) : undefined;
+  if (!side) die(`No worktree for PR #${n} at ${wt} — run: bun scripts/merge-queue.ts setup ${n}`);
+  return side as Sidecar;
 }
 
 function runStep(wt: string, args: string[]): { ok: boolean; output: string } {
@@ -674,7 +716,9 @@ function runStep(wt: string, args: string[]): { ok: boolean; output: string } {
 async function check(n: number): Promise<void> {
   const side = readSidecar(n);
   const wt = worktreePath(n);
-  const changed = (await $`git -C ${wt} diff --cached --name-only`.text()).split("\n").filter(Boolean);
+  // --no-renames: a renamed protected file must show up under its OLD path too,
+  // or renaming `scripts/x.ts` away would slip past the protected-path check.
+  const changed = (await $`git -C ${wt} diff --cached --name-only --no-renames`.text()).split("\n").filter(Boolean);
   let failed = false;
 
   const report = (label: string, r: { ok: boolean; output: string }): void => {
@@ -696,6 +740,14 @@ async function check(n: number): Promise<void> {
   for (const step of checksToRun(changed)) {
     report(step, runStep(wt, ["bun", "run", step]));
   }
+
+  // Protected-path assertion on the merged result itself (GitHub's file list
+  // names only the new path of a rename).
+  const protectedHits = protectedPathsIn(changed);
+  if (protectedHits.length > 0) {
+    failed = true;
+    console.log(`protected: FAIL (${protectedHits.join(", ")} — human-only, never auto-merged)`);
+  } else console.log("protected: ok");
 
   // Plan-scope assertion: a pipeline PR may touch only the files its plan names.
   let id: string | undefined;
@@ -723,6 +775,8 @@ async function check(n: number): Promise<void> {
 
   console.log(`check: ${failed ? "FAIL" : "PASS"}`);
   if (failed) process.exit(1);
+  // Record the pass on this exact head; `act` merges nothing else.
+  writeFileSync(sidecarPath(n), `${JSON.stringify(Object.assign({}, side, { checkedSha: side.headSha }), null, 2)}\n`);
 }
 
 async function diff(n: number): Promise<void> {
@@ -780,6 +834,7 @@ async function ensureLabel(label: string): Promise<void> {
 
 async function act(n: number, f: Record<string, string>): Promise<void> {
   const verdict = readVerdictFile(f.verdict, n);
+  assertNotPaused(`acting on PR #${n}`);
   const mode = resolveMode();
   const cap = resolveCap();
   const now = new Date();
@@ -799,8 +854,13 @@ async function act(n: number, f: Record<string, string>): Promise<void> {
       3,
     );
   }
+  // An approve merges only the head that was set up, checked and reviewed.
+  if (verdict.verdict === "approve") {
+    const blocker = approveBlocker(loadSidecar(n), pr.headSha);
+    if (blocker) die(`PR #${n}: approve refused — ${blocker}; no action taken`, 3);
+  }
 
-  const actions = planActions(pr, verdict, REPO);
+  const actions = planActions(pr, verdict, REPO, pr.headSha);
   if (mode === "dry-run") {
     console.error(`dry-run: PR #${n} is eligible; would run:`);
     for (const a of actions) console.error(`  gh ${a.map((x) => (/\s/.test(x) ? JSON.stringify(x) : x)).join(" ")}`);
@@ -812,23 +872,27 @@ async function act(n: number, f: Record<string, string>): Promise<void> {
   switch (verdict.verdict) {
     case "approve": {
       if (pr.draft) await $`gh ${buildReadyArgs(n, REPO)}`.quiet();
-      await $`gh ${buildMergeArgs(pr, verdict.summary, REPO)}`.quiet();
-      const merged = await gh<{ mergeCommit?: { oid?: string } }>([
-        "pr",
-        "view",
-        String(n),
-        "--repo",
-        REPO,
-        "--json",
-        "mergeCommit",
-      ]);
-      const sha = merged.mergeCommit?.oid;
+      await $`gh ${buildMergeArgs(pr, verdict.summary, REPO, pr.headSha)}`.quiet();
+      // Count the merge before anything else that can fail: the cap must see it.
       const state = loadRunState(now);
-      state.merged.push({ pr: n, sha, at: new Date().toISOString() });
+      const entry: { pr: number; sha?: string; at: string } = { pr: n, at: new Date().toISOString() };
+      state.merged.push(entry);
       saveRunState(state);
-      await $`gh ${buildCommentArgs(n, buildMergeComment(verdict), REPO)}`.nothrow().quiet();
       result.merged = true;
-      result.sha = sha;
+      const merged = await $`gh pr view ${String(n)} --repo ${REPO} --json mergeCommit`.nothrow().quiet();
+      if (merged.exitCode === 0) {
+        try {
+          const sha = (JSON.parse(merged.stdout.toString()) as { mergeCommit?: { oid?: string } }).mergeCommit?.oid;
+          if (sha) {
+            entry.sha = sha;
+            saveRunState(state);
+            result.sha = sha;
+          }
+        } catch {
+          // the merge happened; the sha is a nicety
+        }
+      }
+      await $`gh ${buildCommentArgs(n, buildMergeComment(verdict), REPO)}`.nothrow().quiet();
       break;
     }
     case "request_changes": {
@@ -872,7 +936,9 @@ async function cleanup(): Promise<void> {
       }
     }
   }
-  rmSync(RUN_STATE_FILE, { force: true });
+  // The run state (today's merge counter) is deliberately left alone: cleanup is
+  // on the agent's allowlist, and a counter the capped party can reset is no cap.
+  // It expires by itself (RUN_STATE_MAX_AGE_MS).
   console.log(JSON.stringify({ removedWorktrees: paths.length, removedFiles: sidecars }));
 }
 

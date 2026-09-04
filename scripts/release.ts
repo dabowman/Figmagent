@@ -9,10 +9,14 @@
  * plain git + gh with fixed parameters (see .claude/plans/2026-09-03-auto-improve-v2.md, WS3).
  *
  * Steps, each logged:
- *   1. Preconditions: on main, clean tree, no .pipeline.paused. A real run
- *      refuses (exit 2); --dry-run only reports and carries on.
- *   2. git fetch --tags origin; the last tag is the highest v* by version
- *      order. With no tag yet, the 0.4.0 bump commit (18b4a72) is the baseline.
+ *   1. Preconditions: on main, clean tree (analysis-only paths excepted — the
+ *      nightly run's own log and run record are dirty while it runs), no
+ *      .pipeline.paused. A real run refuses (exit 2); --dry-run only reports
+ *      and carries on.
+ *   2. git fetch --tags origin main and fast-forward local main to origin/main
+ *      so the night's merges are released (a diverged or unpushed local main
+ *      refuses); the last tag is the highest v* by version order. With no tag
+ *      yet, the 0.4.0 bump commit (18b4a72) is the baseline.
  *   3. Commits since then (first-parent, plus PR merges nested inside those)
  *      and the changed paths. Analysis-only changes → "nothing to release",
  *      exit 0 — unless --force.
@@ -22,7 +26,8 @@
  *      --no-push report that the gate was skipped; a real run refuses.
  *   5. Bump package.json and .claude-plugin/plugin.json in lockstep (in-place
  *      string replace, no re-serialising), prepend the CHANGELOG section,
- *      commit `chore(release): vX.Y.Z`, tag vX.Y.Z, push main + tag, and
+ *      commit `chore(release): vX.Y.Z`, tag vX.Y.Z, push main + tag atomically
+ *      (a rejected push rolls the local commit and tag back), and
  *      `gh release create` with the section as notes.
  *   6. Print `released vX.Y.Z` — or, in --dry-run, `would release vX.Y.Z` and
  *      the rendered section, having written nothing.
@@ -44,6 +49,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { $ } from "bun";
+import { isAnalysisOnly } from "./protected-paths.ts";
 import {
   type BumpKind,
   bumpVersion,
@@ -141,10 +147,19 @@ async function preconditions(): Promise<string[]> {
   const branch = (await git(["branch", "--show-current"])).trim();
   if (branch !== "main")
     problems.push(`not on main (on ${branch ? `"${branch}"` : "a detached HEAD"}) — git switch main`);
-  const status = (await git(["status", "--porcelain"])).trim();
-  if (status) {
-    const n = status.split("\n").length;
-    problems.push(`working tree is not clean (${n} path${n === 1 ? "" : "s"}) — commit, stash or discard first`);
+  // Analysis-only paths are exempt: the nightly run appends to its tracked
+  // log and run record while it runs, and the release commit never adds them.
+  const dirty = (await git(["status", "--porcelain"]))
+    .split("\n")
+    .filter((l) => l.trim())
+    .map((l) => l.slice(3).trim())
+    .flatMap((p) => p.split(" -> "))
+    .filter((p) => !isAnalysisOnly([p]));
+  if (dirty.length > 0) {
+    const n = dirty.length;
+    problems.push(
+      `working tree is not clean (${n} path${n === 1 ? "" : "s"}: ${dirty.slice(0, 3).join(", ")}${n > 3 ? ", …" : ""}) — commit, stash or discard first`,
+    );
   }
   if (existsSync(PAUSE_FILE)) {
     const reason = readFileSync(PAUSE_FILE, "utf-8").trim().split("\n")[0] || "no reason recorded";
@@ -153,18 +168,45 @@ async function preconditions(): Promise<string[]> {
   return problems;
 }
 
-async function fetchTags(o: Options): Promise<void> {
+/**
+ * Fetch tags and main, then put local main exactly at origin/main: behind →
+ * fast-forward (tonight's squash merges are what the release is for); ahead or
+ * diverged → refuse, because the release push would carry commits the analysis
+ * push guard never saw, and a non-fast-forward push would fail after the bump.
+ */
+async function syncWithOrigin(o: Options): Promise<void> {
   if (o.noPush) {
-    log("fetch skipped (--no-push): using local tags");
+    log("fetch skipped (--no-push): using local main and tags");
     return;
   }
   try {
-    await git(["fetch", "--tags", "--quiet", "origin"]);
-    log("fetched tags from origin");
+    await git(["fetch", "--tags", "--quiet", "origin", "main"]);
+    log("fetched tags and main from origin");
   } catch (e) {
     if (!o.dryRun) throw e;
-    log(`fetch failed, using local tags (${(e as Error).message.split("\n")[0]})`);
+    log(`fetch failed, using local main and tags (${(e as Error).message.split("\n")[0]})`);
+    return;
   }
+  const head = (await git(["rev-parse", "HEAD"])).trim();
+  const remote = (await git(["rev-parse", "origin/main"])).trim();
+  if (head === remote) {
+    log(`local main is at origin/main (${remote.slice(0, 7)})`);
+    return;
+  }
+  if (await gitOk(["merge-base", "--is-ancestor", "HEAD", "origin/main"])) {
+    if (o.dryRun) {
+      log(
+        `note: local main is behind origin/main (${head.slice(0, 7)} → ${remote.slice(0, 7)}); a real run fast-forwards first`,
+      );
+      return;
+    }
+    await git(["merge", "--ff-only", "--quiet", "origin/main"]);
+    log(`fast-forwarded main to origin/main (${remote.slice(0, 7)})`);
+    return;
+  }
+  const problem = `local main is ${(await gitOk(["merge-base", "--is-ancestor", "origin/main", "HEAD"])) ? "ahead of" : "diverged from"} origin/main (${head.slice(0, 7)} vs ${remote.slice(0, 7)}) — push or reset it first; only what origin/main has is released`;
+  if (!o.dryRun) die(`refusing to release: ${problem}`);
+  log(`note: ${problem} (a real run would refuse)`);
 }
 
 async function baseline(): Promise<string> {
@@ -303,7 +345,18 @@ async function cut(next: string, current: string, section: string, o: Options): 
     log("push and GitHub Release skipped (--no-push)");
     return;
   }
-  await git(["push", "origin", "main", tag]);
+  try {
+    // --atomic: main and the tag land together or not at all — never a tag on
+    // origin pointing at a commit main does not have.
+    await git(["push", "--atomic", "origin", "main", tag]);
+  } catch (e) {
+    // Roll the local commit and tag back so the next run does not carry a
+    // release commit the analysis push guard would refuse.
+    await $`git tag -d ${tag}`.nothrow().quiet();
+    await $`git reset -q --soft HEAD~1`.nothrow().quiet();
+    await $`git checkout -q HEAD -- ${VERSION_FILES} ${CHANGELOG}`.nothrow().quiet();
+    throw new Error(`${(e as Error).message}\nrolled back the local ${tag} commit and tag; nothing was published`);
+  }
   log(`pushed main and ${tag} to origin`);
   const notes = join(mkdtempSync(join(tmpdir(), "figmagent-release-")), `${tag}.md`);
   writeFileSync(notes, section);
@@ -329,8 +382,8 @@ async function main(): Promise<void> {
     log("on main, clean tree, pipeline not paused");
   }
 
-  // 2. Last tag.
-  await fetchTags(o);
+  // 2. origin/main and the last tag.
+  await syncWithOrigin(o);
   const base = await baseline();
 
   // 3. What changed.
