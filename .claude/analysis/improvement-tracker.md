@@ -2117,7 +2117,7 @@ Sessions analyzed: 64 (session 64 is the **12th** run on the "Archer" file and r
 - **Status**: planned
 - **Priority**: P1
 - **Category**: missing-tool
-- **Auto-fixable**: yes (additive fields in the FSGN serializer)
+- **Auto-fixable**: no (serializer change — allowlist: sync-to-async, type-coercion, description-only, lint-scope-filter, boundary-guard, assertion)
 - **First seen**: Session 64 (2026-09-03, external storybook/"Archer", remote transport)
 - **Sessions affected**: 64
 - **Estimated savings**: ~5 diagnostic scripts/session on any variant-heavy or auto-layout-heavy file
