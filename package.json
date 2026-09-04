@@ -16,6 +16,14 @@
     "extract-sessions": "bun scripts/extract-sessions.ts",
     "refresh-manifest": "bun scripts/refresh-manifest.ts",
     "sync-issues": "bun scripts/sync-tracker-issues.ts",
+    "pipeline-status": "bun scripts/pipeline-record.ts status",
+    "pipeline-resume": "bun scripts/pipeline-record.ts resume",
+    "pipeline-record": "bun scripts/pipeline-record.ts",
+    "pipeline-canary": "bun scripts/pipeline/canary.ts",
+    "tracker": "bun scripts/tracker.ts",
+    "dispatch-fix": "bun scripts/dispatch-fix.ts",
+    "merge-queue": "bun scripts/merge-queue.ts",
+    "release": "bun scripts/release.ts",
     "auto-improve": "bash scripts/auto-improve.sh"
   },
   "devDependencies": { 

@@ -1,0 +1,67 @@
+{
+  "permissions": {
+    "defaultMode": "dontAsk",
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Edit(.claude/analysis/**)",
+      "Write(.claude/analysis/**)",
+      "Edit(.claude/plans/**)",
+      "Write(.claude/plans/**)",
+      "Bash(bun run refresh-manifest *)",
+      "Bash(bun run refresh-manifest)",
+      "Bash(bun scripts/refresh-manifest.ts *)",
+      "Bash(bun scripts/extract-sessions.ts *)",
+      "Bash(bun scripts/tracker.ts *)"
+    ],
+    "deny": [
+      "Edit(.claude/analysis/improvement-tracker.md)",
+      "Write(.claude/analysis/improvement-tracker.md)",
+      "Bash(git *)",
+      "Bash(gh *)",
+      "Bash(rm *)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Edit(src/**)",
+      "Write(src/**)",
+      "Edit(scripts/**)",
+      "Write(scripts/**)",
+      "Edit(.github/**)",
+      "Write(.github/**)",
+      "Edit(.claude/commands/**)",
+      "Write(.claude/commands/**)",
+      "Edit(.claude/skills/**)",
+      "Write(.claude/skills/**)",
+      "Edit(CLAUDE.md)",
+      "Write(CLAUDE.md)",
+      "Edit(.claude/settings.json)",
+      "Write(.claude/settings.json)",
+      "Read(~/.ssh/**)",
+      "Read(~/.figmagent/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.config/gh/**)",
+      "Read(~/.claude/.credentials.json)",
+      "Read(**/.env)",
+      "WebFetch",
+      "WebSearch",
+      "Agent"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "autoAllowBashIfSandboxed": false,
+    "filesystem": {
+      "allowWrite": ["."],
+      "denyRead": ["~/.ssh", "~/.figmagent", "~/.aws", "~/.config/gh", "~/.claude/*.json"]
+    },
+    "network": {
+      "allowedDomains": ["api.github.com", "github.com", "registry.npmjs.org"]
+    }
+  },
+  "env": {
+    "BASH_DEFAULT_TIMEOUT_MS": "600000",
+    "BASH_MAX_TIMEOUT_MS": "1200000"
+  }
+}

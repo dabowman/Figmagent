@@ -2042,6 +2042,33 @@ Sessions analyzed: 64 (session 64 is the **12th** run on the "Archer" file and r
 - **First seen**: cohort synthesis of sessions 53–62 (2026-09-02)
 - **Description**: see the decision recorded on the issue. the remote-VM gotchas live in the `figma-guidelines` skill (`skills/figma-guidelines/SKILL.md`) — loaded per Figma task in every repo via the plugin, zero cost otherwise. Not the MCP server instructions (token cost on every session) and not tool descriptions alone (point-of-use only).
 
+### [INFRA-009] Overnight review-and-merge stage (merge queue)
+- **Status**: implemented — this branch (2026-09-03)
+- **Priority**: P1
+- **Category**: infrastructure
+- **First seen**: plan 2026-09-03
+- **Description**: Stage D stops at a draft PR, so every fix waited for a person to mark it ready, review it and merge it — #199 sat unreviewed for a day and 21 of the last 24 merges landed in one manual burst. A merge queue (`scripts/merge-queue.ts` + `/merge-queue`) applies deterministic eligibility (base `main`, a pipeline head or the `auto-merge` label, CI green, a size cap, no protected path), takes a structured verdict from a review agent, and squash-merges under a daily cap.
+- **Auto-fixable**: no (pipeline design work; not on the allowlist)
+- **Decision (2026-09-03)**: implemented per `.claude/plans/2026-09-03-auto-improve-v2.md` (WS2, WS5 Layer 7) — protected paths are human-only and `AUTO_IMPROVE_MERGE` defaults to `dry-run` until two clean nights.
+
+### [INFRA-010] Nightly plugin release with version bump and CHANGELOG
+- **Status**: implemented — this branch (2026-09-03)
+- **Priority**: P1
+- **Category**: infrastructure
+- **First seen**: plan 2026-09-03
+- **Description**: Claude Code pins a plugin to `plugin.json`'s `version`, so merged fixes stayed invisible to `/plugin update` until someone bumped the version by hand (`0.4.0` since 2026-09-02 while later PRs landed). `scripts/release.ts` cuts a patch release when `main` moved outside the analysis paths since the last tag: a lockstep bump of `package.json` and `.claude-plugin/plugin.json`, a CHANGELOG section, a `vX.Y.Z` tag and a GitHub Release.
+- **Auto-fixable**: no (pipeline design work; not on the allowlist)
+- **Decision (2026-09-03)**: implemented per `.claude/plans/2026-09-03-auto-improve-v2.md` (WS3) — patch nightly, minor/major by hand, analysis-only nights produce no release.
+
+### [INFRA-011] Nightly triage of untriaged tracker entries
+- **Status**: implemented — this branch (2026-09-03)
+- **Priority**: P1
+- **Category**: infrastructure
+- **First seen**: plan 2026-09-03
+- **Description**: The analyzer classifies `Auto-fixable` only at analysis time, so 36 active entries carried no `Auto-fixable` line and older `no (...)` verdicts named the retired three-pattern allowlist — none was ever re-examined, and Stage D's candidate pool was 5 of 78 active entries. `/triage-tracker` (Stage B2) takes up to six untriaged entries a night from `bun scripts/tracker.ts untriaged`, applies the analyze-session Phase 5–6 rules, and writes the verdict, a plan file and `planned` through `scripts/tracker.ts`.
+- **Auto-fixable**: no (pipeline design work; not on the allowlist)
+- **Decision (2026-09-03)**: implemented per `.claude/plans/2026-09-03-auto-improve-v2.md` (WS1.4) — every future allowlist widening re-opens the question for old entries automatically.
+
 
 ### [BUG-050] `edit` and `fig.bindVariable` silently no-op on a TEXT node that carries a `textStyleId`
 
@@ -2090,7 +2117,7 @@ Sessions analyzed: 64 (session 64 is the **12th** run on the "Archer" file and r
 - **Status**: planned
 - **Priority**: P1
 - **Category**: missing-tool
-- **Auto-fixable**: yes (additive fields in the FSGN serializer)
+- **Auto-fixable**: no (serializer change — allowlist: sync-to-async, type-coercion, description-only, lint-scope-filter, boundary-guard, assertion)
 - **First seen**: Session 64 (2026-09-03, external storybook/"Archer", remote transport)
 - **Sessions affected**: 64
 - **Estimated savings**: ~5 diagnostic scripts/session on any variant-heavy or auto-layout-heavy file

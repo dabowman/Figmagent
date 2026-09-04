@@ -5,10 +5,14 @@
   <key>Label</key>
   <string>com.figmagent.auto-improve</string>
 
+  <!-- The job runs in a DEDICATED clone (only `main` checked out), never in the
+       checkout you edit by day — nothing it does can clobber uncommitted work.
+       This is the only machine-specific path in the pipeline: auto-improve.sh
+       derives the repo from its own location. -->
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>/Users/davidbowman/Github/cursor-talk-to-figma-mcp/scripts/auto-improve.sh</string>
+    <string>/Users/davidbowman/Github/figmagent-pipeline/scripts/auto-improve.sh</string>
   </array>
 
   <!-- Run nightly at 03:00. If the Mac is asleep/off at 03:00, launchd runs it
@@ -23,7 +27,25 @@
   <dict>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/Users/davidbowman/.bun/bin:/Users/davidbowman/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-    <!-- Optional tunables (uncomment to override auto-improve.sh defaults):
+
+    <!-- GitHub identity for the night: a FINE-GRAINED personal access token
+         scoped to dabowman/Figmagent only (Contents, Issues, Pull requests:
+         read/write; Metadata, Actions: read; 90-day expiry). `gh` and `git`
+         prefer GH_TOKEN over your interactive login, and pushes made with it
+         still trigger CI. NEVER commit a real token to this file: keep this
+         placeholder in the repo and paste the value only into the copy under
+         ~/Library/LaunchAgents/.
+    <key>GH_TOKEN</key><string>github_pat_REPLACE_ME</string>
+    -->
+
+    <!-- AUTO_IMPROVE_RUN=1 (which arms the PreToolUse guard hook) is exported by
+         auto-improve.sh itself for the duration of the run — do not set it here,
+         or every Claude Code session on this Mac would run under the guard. -->
+
+    <!-- Optional knobs (uncomment to override auto-improve.sh defaults; the full
+         list is in scripts/launchd/README.md):
+    <key>AUTO_IMPROVE_MERGE</key><string>dry-run</string>
+    <key>AUTO_IMPROVE_RELEASE</key><string>1</string>
     <key>AUTO_IMPROVE_DISPATCH</key><string>1</string>
     <key>AUTO_IMPROVE_MAX_ANALYZE</key><string>25</string>
     -->
@@ -38,8 +60,8 @@
   <!-- launchd's own capture of stdout/stderr (the script also writes its own
        detailed log to .claude/analysis/auto-improve.log). -->
   <key>StandardOutPath</key>
-  <string>/Users/davidbowman/Github/cursor-talk-to-figma-mcp/.claude/analysis/auto-improve.launchd.log</string>
+  <string>/Users/davidbowman/Github/figmagent-pipeline/.claude/analysis/auto-improve.launchd.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/davidbowman/Github/cursor-talk-to-figma-mcp/.claude/analysis/auto-improve.launchd.log</string>
+  <string>/Users/davidbowman/Github/figmagent-pipeline/.claude/analysis/auto-improve.launchd.log</string>
 </dict>
 </plist>

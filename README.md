@@ -64,7 +64,7 @@ Or from a local clone, if you're developing on it:
 
 Requires [Bun](https://bun.sh) on your PATH. `.mcp.json` runs the server via `bun ${CLAUDE_PLUGIN_ROOT}/src/figmagent_mcp/server.ts`; Bun resolves the dependencies on first run, so no `bun install` step is needed for plugin use (run it only when working on the repo itself).
 
-Reload, and `mcp__Figmagent__*` tools, the `/figmagent:reauth` command, and the Figma skills/sub-agents are available everywhere. Update with `/plugin marketplace update figmagent` then `/plugin update figmagent`.
+Reload, and `mcp__Figmagent__*` tools, the `/figmagent:reauth` command, and the Figma skills/sub-agents are available everywhere. Update with `/plugin marketplace update figmagent` then `/plugin update figmagent`. Releases are cut nightly by the auto-improve pipeline (see [`CHANGELOG.md`](CHANGELOG.md) and [GitHub Releases](https://github.com/dabowman/Figmagent/releases)); a new version must be released before `/plugin update` picks up merged changes, because Claude Code pins a plugin to its `plugin.json` version and keeps the cached copy until that number changes.
 
 **Manual MCP registration (alternative, no plugin):** if you only want the MCP server (not the bundled skills/commands), register it directly — but then skills and `/figmagent:reauth` are not installed:
 
@@ -239,6 +239,16 @@ bun run lint             # Lint with Biome
 bun run lint:fix         # Auto-fix lint + format
 bun run check            # Lint + format check
 ```
+
+### Releases
+
+```bash
+bun run release --dry-run   # preview the next version and its CHANGELOG section; writes nothing
+bun run release             # patch release — what the nightly pipeline runs
+bun run release --minor     # or --major, by hand, to mark a milestone
+```
+
+A release bumps `package.json` and `.claude-plugin/plugin.json` in lockstep, prepends a section to [`CHANGELOG.md`](CHANGELOG.md), commits `chore(release): vX.Y.Z`, tags `vX.Y.Z`, pushes `main` and the tag, and creates a GitHub Release with that section as notes. The gate: a clean `main` checkout with no `.pipeline.paused` file, a green CI run for `HEAD` (checked with `gh`), and at least one change outside `.claude/analysis/`, `.claude/plans/` and `CHANGELOG.md` since the last `v*` tag — analysis-only nights do not release. `--force` skips that last check (never the CI one); `--no-push` keeps everything local for testing on a clone; `AUTO_IMPROVE_RELEASE=0` disables the nightly cut.
 
 ### Architecture
 
