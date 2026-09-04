@@ -18,3 +18,10 @@ src/figma_plugin/code.js
 
 # launchd stdout/stderr capture (machine-specific; the pipeline writes its own log)
 .claude/analysis/auto-improve.launchd.log
+
+# Auto-improve pipeline state (machine-local): the run lock, the circuit
+# breaker (delete it — or `bun scripts/pipeline-record.ts resume` — to resume),
+# and the guard hook's denial log. The run record (pipeline-runs.jsonl) IS tracked.
+.pipeline.lock
+.pipeline.paused
+.claude/analysis/pipeline-guard.log

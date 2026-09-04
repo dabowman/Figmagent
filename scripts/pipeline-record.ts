@@ -6,8 +6,8 @@
  * Usage:
  *   bun scripts/pipeline-record.ts event --run <RUN_ID> --stage <stage> [key=value ...]
  *       appends {run, stage, ts, ...kv}; numeric-looking values become numbers
- *   bun scripts/pipeline-record.ts status [--runs N]
- *       one row per run for the last N runs (default 7): sessions
+ *   bun scripts/pipeline-record.ts status [--runs N] [--run <RUN_ID>]
+ *       one row per run for the last N runs (default 7), or just <RUN_ID>: sessions
  *       extracted/analyzed/failed, entries created/closed/drift, plans written,
  *       PRs opened/aborted/deferred, merged/reviewed/human-only, release tag,
  *       guard denials, paused
@@ -60,7 +60,9 @@ if (cmd === "event") {
   } catch {
     // no record yet
   }
-  console.log(formatStatus(summarizeRuns(parseEvents(text)), Number.isFinite(runs) && runs > 0 ? runs : 7));
+  const only = flag("--run");
+  const summaries = summarizeRuns(parseEvents(text)).filter((s) => !only || s.run === only);
+  console.log(formatStatus(summaries, Number.isFinite(runs) && runs > 0 ? runs : 7));
 } else if (cmd === "resume") {
   let previous = "";
   try {

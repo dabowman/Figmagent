@@ -156,9 +156,10 @@ eligibility on the PR's current head before it acts. Your only side effect is a 
 
 ## End of turn
 
-One line per PR from `list`, in queue order, and nothing else:
+A markdown bullet list, one bullet per PR from `list`, in queue order, and nothing else (the
+orchestrator counts these lines for the run record):
 
-- `merged #N`
+- `merged #N` (in dry-run mode write `would merge #N` instead, since nothing was merged)
 - `requested changes #N: <reason>`
 - `escalated #N: <reason>`
 - `skipped #N: <reason>` (merge conflict, no longer eligible, schema rejected, cap, turn budget)

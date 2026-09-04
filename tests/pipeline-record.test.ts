@@ -153,6 +153,14 @@ describe("pipeline-record.ts CLI", () => {
     const status = run(root, "status", "--runs", "1");
     expect(status.code).toBe(0);
     expect(status.out).toMatch(/20260904T030000\s+.*\s+2\/0\/0\s+.*v0\.4\.1/);
+
+    // --run picks one run by id regardless of order (the morning summary uses it).
+    run(root, "event", "--run", "20260905T030000", "--stage", "extract", "extracted=9");
+    const one = run(root, "status", "--run", "20260904T030000");
+    expect(one.out.split("\n").filter(Boolean)).toHaveLength(2);
+    expect(one.out).toMatch(/20260904T030000/);
+    expect(one.out).not.toMatch(/20260905T030000/);
+    expect(run(root, "status", "--run", "nope").out.trim()).toBe("no pipeline runs recorded");
   });
 
   test("event without --run/--stage is a usage error", () => {

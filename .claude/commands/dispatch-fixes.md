@@ -159,7 +159,8 @@ Two subcommands write to an issue; use one or the other per candidate, never bot
 
 ## End of turn
 
-State the work is complete with a one-line result per candidate (PR opened #N /
-skipped: reason / aborted: reason), followed by one line per `skipped` entry from
-`candidates`. If there was nothing to do, the line is `no candidates`; if the stage could not
+State the work is complete as a markdown bullet list, one bullet per candidate (the
+orchestrator counts these lines for the run record): `- PR opened <PR URL from publish>` /
+`- skipped <ID>: reason` / `- aborted <ID>: reason`, followed by one bullet per `skipped` entry
+from `candidates` (`- deferred <ID>: reason`). If there was nothing to do, the line is `no candidates`; if the stage could not
 run, the last line is `BLOCKED: <reason>`. No PRs left in non-draft state; no leftover worktrees.

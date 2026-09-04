@@ -5,7 +5,8 @@
 overnight review-and-merge stage and a daily plugin release so a finding made while
 using Figmagent lands in the harness the next morning without manual steps, with the
 overnight agents confined to least privilege (WS5).
-**Status**: proposal, nothing implemented yet.
+**Status**: implemented on branch `claude/auto-improve-release-process-5ts90l` (2026-09-03), see
+section 7 for what remains manual on the Mac before the first guarded night.
 
 ---
 
@@ -344,7 +345,7 @@ compromised token cannot rewrite history. Do not require status checks in the ru
 analysis push and the release commit are direct pushes, and the merge queue verifies CI itself.
 
 **Layer 3 — no MCP, no plugins, no network tools.** Every `claude -p` gets
-`--strict-mcp-config '{"mcpServers":{}}'` so no server starts (no Figma OAuth refresh at
+`--mcp-config '{"mcpServers":{}}' --strict-mcp-config` so no server starts (no Figma OAuth refresh at
 night), and no `mcp__*`, `WebFetch` or `WebSearch` rule appears in any allowlist, so under
 `dontAsk` those tools are denied even if a plugin's server does load. Stronger option when
 needed: `--bare` skips plugins, hooks, skills and CLAUDE.md entirely; it costs inlining the
@@ -488,3 +489,40 @@ None has fired yet.
   notification from the release step)? The two `/plugin` commands are interactive, so the
   pull into the harness itself stays manual.
 - Any additional paths that should be human-only?
+
+---
+
+## 7. Rollout checklist (manual, on the Mac)
+
+The code, prompts, tests and docs are on the branch. These steps need you, in this order:
+
+1. **Merge the branch** (CI green) so `main` carries the new orchestrator; the old plist still
+   points at the day-time checkout, so do the next two before the next 03:00.
+2. **Dedicated clone**: `git clone https://github.com/dabowman/Figmagent ~/Github/figmagent-pipeline`
+   and `bun install --frozen-lockfile` there. The pipeline never runs in the checkout you edit.
+3. **Scoped token**: create a fine-grained PAT for `dabowman/Figmagent` only (Contents, Issues,
+   Pull requests: read/write; Metadata, Actions: read; 90-day expiry) and put it in the plist's
+   `GH_TOKEN` (never commit it). Add a ruleset on `main` and `v*` tags: block force-push and
+   deletion, no bypass actors, no required status checks.
+4. **Install the plist** from the dedicated clone (`scripts/launchd/README.md`), then
+   `launchctl kickstart -k gui/$(id -u)/com.figmagent.auto-improve` once and read
+   `.claude/analysis/auto-improve.log`. `AUTO_IMPROVE_MERGE` defaults to `dry-run`, so Stage E
+   posts nothing on the first nights.
+5. **Canary**: `bun run pipeline-canary` in the dedicated clone, once, and after any change to
+   `scripts/pipeline/` or the guard. Check the sandbox is available (`/sandbox` in Claude Code);
+   `failIfUnavailable` is on, so an unsupported sandbox stops the stages rather than running them
+   unsandboxed.
+6. **First release by hand**: on `main`, `bun run release --dry-run`, then `bun run release`
+   to cut `v0.4.1`. From then on `/plugin marketplace update figmagent && /plugin update figmagent`
+   sees each nightly cut.
+7. **After two clean dry-run nights** (read `bun run pipeline-status` and the `merge` events in
+   `.claude/analysis/pipeline-runs.jsonl`), set `AUTO_IMPROVE_MERGE=1` in the plist. The queue
+   merges `auto-fix/*` and `claude/issue-*` heads; label a PR of yours `auto-merge` to include it,
+   `hold` to keep it out.
+8. **Pause / resume**: `.pipeline.paused` stops every run; `bun run pipeline-resume` clears it.
+   Guard denials land in `.claude/analysis/pipeline-guard.log` and trip the breaker.
+
+Not done in this change, by design: `--max-budget-usd` on the stage invocations (subscription
+billing makes it moot; one line in `run_stage` if wanted), CI polling for in-flight PR checks (a
+pending PR waits a night), a review comment on human-only PRs (the queue lists them and touches
+nothing), and reading `~/.figmagent/sessions/` for non-Claude-Code clients (WS1.6).
