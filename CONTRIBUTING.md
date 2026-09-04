@@ -90,6 +90,30 @@ The project has a skill file at `skills/add-mcp-tool/` (bundled in the Figmagent
 - Update CLAUDE.md if you change tool behavior or add patterns that agents need to know about
 - Test plugin changes in Figma before submitting
 
+## Automated merges
+
+An overnight merge queue (`scripts/merge-queue.ts`, driven by the `/merge-queue` command as
+Stage E of the auto-improve pipeline) reviews and squash-merges small, green PRs against `main`
+without a human in the loop. What it means for your PR:
+
+- **`auto-merge` label opts a human PR in.** Add it when you want the queue to review and merge
+  your PR overnight; it gets a full adversarial review, must be green on CI at its head SHA,
+  mergeable, at most 400 changed lines and 10 files, and not a draft.
+- **`hold` or `needs-human` excludes a PR.** Either label takes it out of the queue until removed;
+  the queue itself adds `needs-human` when it requests changes or escalates.
+- **Protected paths are never auto-merged.** A PR touching `.github/**`, the pipeline scripts
+  (`scripts/auto-improve.sh`, `dispatch-fix.ts`, `merge-queue.ts`, `merge-eligibility.ts`,
+  `protected-paths.ts`, `release.ts`, `sync-tracker-issues.ts`, `scripts/pipeline/**`,
+  `pipeline-record.ts`, `refresh-manifest.ts`), `.claude/commands/**`,
+  `.claude/skills/analyze-session/**`, `.claude/hooks/**`, `.claude/settings.json`,
+  `.claude-plugin/**`, `package.json`, `bun.lock`, `src/figma_plugin/manifest.json` or `.mcp.json`
+  is listed as human-only whatever labels it carries. The list lives in
+  `scripts/protected-paths.ts`.
+- **Draft PRs from `auto-fix/*` are promoted by the queue** when its review approves them: the
+  pipeline opens fixes as drafts, and the queue marks them ready and merges in one step.
+- Merges are squashes that keep the `Closes #n` lines from the PR body, delete the branch, and
+  leave a comment with the review summary. At most six PRs merge per night.
+
 ## Reporting Issues
 
 Use GitHub Issues. Include:
