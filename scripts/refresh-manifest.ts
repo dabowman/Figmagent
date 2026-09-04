@@ -12,29 +12,49 @@
  *   bun scripts/refresh-manifest.ts --count    # refresh + print only the count
  *                                              # of figma sessions needing analysis
  *                                              # (used as the Stage B loop guard)
+ *   bun scripts/refresh-manifest.ts --next     # refresh + print only the session id
+ *                                              # that would be analyzed next
+ *                                              # (empty line when the queue is empty)
+ *
+ * Loop bookkeeping (manifest-only edits, no rescan — the nightly Stage B loop
+ * uses these so a session the analyzer cannot finish is handed out once, not
+ * once per iteration):
+ *   bun scripts/refresh-manifest.ts --mark-attempt <sid>
+ *   bun scripts/refresh-manifest.ts --mark-failed <sid> --reason "<text>"
+ *       excludes <sid> from --count / --next until cleared
+ *   bun scripts/refresh-manifest.ts --clear-failed <sid>
+ *
+ * Selection logic lives in scripts/refresh-manifest-lib.ts (pure, tested).
  */
 
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import {
+  clearFailed,
+  failedSessions,
+  type Manifest,
+  type ManifestEntry as Entry,
+  markAttempt,
+  markFailed,
+  preserveAttemptState,
+  selectNeedsAnalysis,
+} from "./refresh-manifest-lib.ts";
 import { isFigmagentTool, sessionHasEffectiveFigmaCall } from "./session-classify.ts";
 
 const SESSIONS_DIR = ".claude/sessions-json";
 const ANALYSIS_DIR = ".claude/analysis";
 const MANIFEST = join(ANALYSIS_DIR, "sessions.json");
-const countOnly = process.argv.includes("--count");
+const argv = process.argv.slice(2);
+const countOnly = argv.includes("--count");
+const nextOnly = argv.includes("--next");
 
-interface Entry {
-  sessionType?: "figma" | "dev" | "empty";
-  skip?: boolean;
-  toolCalls: number;
-  figmaToolCalls: number;
-  durationMinutes: number;
-  sourceModified: number;
-  sourceSignature?: string; // "${toolCalls}:${figmaToolCalls}" — content fingerprint
-  analysis?: string;
-  analyzedAt?: number;
-  analyzedSignature?: string; // the sourceSignature the recorded analysis covered
+function flagValue(name: string): string | undefined {
+  const i = argv.indexOf(name);
+  return i >= 0 ? argv[i + 1] : undefined;
 }
+const markAttemptSid = flagValue("--mark-attempt");
+const markFailedSid = flagValue("--mark-failed");
+const clearFailedSid = flagValue("--clear-failed");
 
 // seconds-since-epoch with 2 decimal places, matching the prior Python script
 const mtimeSeconds = (ms: number): number => Math.round(ms / 10) / 100;
@@ -55,11 +75,38 @@ async function originalTranscriptMtime(cwd: string | undefined, sid: string): Pr
   }
 }
 
-let manifest: { sessions: Record<string, Entry> };
+let manifest: Manifest;
 try {
   manifest = JSON.parse(await readFile(MANIFEST, "utf-8"));
 } catch {
   manifest = { sessions: {} };
+}
+
+// ---- loop bookkeeping: edit the manifest in place and exit (no rescan) -----
+// These must not rescan: a rescan re-reads every session JSON, and a failed
+// mark that raced a scan could be lost. The rebuild below preserves the fields
+// via preserveAttemptState, so the next refresh carries them forward.
+if (markAttemptSid || markFailedSid || clearFailedSid) {
+  try {
+    if (markAttemptSid) {
+      manifest = markAttempt(manifest, markAttemptSid);
+      console.log(`${markAttemptSid}: analysisAttempts=${manifest.sessions[markAttemptSid].analysisAttempts}`);
+    }
+    if (markFailedSid) {
+      const reason = flagValue("--reason") || "analysis failed (no reason given)";
+      manifest = markFailed(manifest, markFailedSid, reason);
+      console.log(`${markFailedSid}: analysisFailed (${reason}) — excluded from --count/--next until --clear-failed`);
+    }
+    if (clearFailedSid) {
+      manifest = clearFailed(manifest, clearFailedSid);
+      console.log(`${clearFailedSid}: analysisFailed cleared`);
+    }
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+  await writeFile(MANIFEST, JSON.stringify(manifest, null, 2));
+  process.exit(0);
 }
 
 let files: string[] = [];
@@ -177,7 +224,9 @@ for (const f of files) {
     }
   }
 
-  manifest.sessions[sid] = entry;
+  // Loop bookkeeping (analysisAttempts / analysisFailed) survives the rebuild
+  // whatever the entry's current type, like the analysis mapping does.
+  manifest.sessions[sid] = preserveAttemptState(existing, entry);
 }
 
 // Prune manifest entries whose extracted session JSON is no longer on disk, so a
@@ -189,11 +238,13 @@ for (const sid of Object.keys(manifest.sessions)) {
 await writeFile(MANIFEST, JSON.stringify(manifest, null, 2));
 
 const figma = Object.entries(manifest.sessions).filter(([, v]) => v.sessionType === "figma");
-const needs = figma
-  .filter(([, v]) => !v.analysis || v.analyzedSignature !== v.sourceSignature)
-  .sort((a, b) => a[1].sourceModified - b[1].sourceModified);
+// Sessions marked analysisFailed are excluded here (see refresh-manifest-lib.ts).
+const needs = selectNeedsAnalysis(manifest.sessions);
 
-if (countOnly) {
+if (nextOnly) {
+  // Only the id, or an empty line — the Stage B loop reads this verbatim.
+  console.log(needs.length > 0 ? needs[0][0] : "");
+} else if (countOnly) {
   console.log(needs.length);
 } else {
   console.log(`Figma sessions: ${figma.length}, needs analysis: ${needs.length}`);
@@ -202,5 +253,12 @@ if (countOnly) {
     console.log(
       `  ${sid}  ${String(v.toolCalls).padStart(4)} calls  ${String(v.figmaToolCalls).padStart(2)} figma  (${status})`,
     );
+  }
+  const failed = failedSessions(manifest.sessions);
+  if (failed.length > 0) {
+    console.log(`Excluded (analysisFailed — retry with --clear-failed <sid>): ${failed.length}`);
+    for (const [sid, v] of failed) {
+      console.log(`  ${sid}  ${v.analysisFailed?.at ?? ""}  ${v.analysisFailed?.reason ?? ""}`);
+    }
   }
 }
