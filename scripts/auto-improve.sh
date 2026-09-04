@@ -423,6 +423,16 @@ commit_artifacts() {
   if [ "$BRANCH" != "main" ]; then log "not on main (on '$BRANCH') — leaving analysis artifacts uncommitted"; return 0; fi
   if ! git diff --quiet -- .claude/analysis .claude/plans 2>/dev/null \
      || [ -n "$(git ls-files --others --exclude-standard .claude/analysis .claude/plans)" ]; then
+    # The tracker's shape is what Stage C/D and CI depend on. An agent-written
+    # line that breaks it (an `Auto-fixable: yes (<free text>)` that names no
+    # allowlist pattern turned main red on 2026-09-04) must never reach origin:
+    # leave the artifacts uncommitted for a human, and pause the pipeline.
+    if ! "$BUN" test tests/tracker-shape.test.ts >"$RUN_TMP/tracker-shape.out" 2>&1; then
+      log "  tracker shape test FAILED — analysis artifacts left uncommitted:"
+      grep -E '^\(fail\)|error:' "$RUN_TMP/tracker-shape.out" | head -n 5 | sed 's/^/    /' | tee -a "$LOG" >/dev/null
+      trip_breaker "tracker shape test failed after analysis (fix the offending line, then pipeline-resume)"
+      return 1
+    fi
     log "committing analysis artifacts to main"
     git add .claude/analysis .claude/plans
     git -c commit.gpgsign=false commit -q -m "$1" \
