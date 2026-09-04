@@ -1309,3 +1309,64 @@ Also examined and excluded before preflight: BUG-036 and BUG-039 (`boundary-guar
 
 No worktrees left behind and no non-draft PRs. Since INFRA-008 and TOOL-040 were blocked only by file collisions, they become dispatchable on the next run.
 [2026-09-03 03:06:19] run complete
+
+========================= auto-improve 2026-09-04 03:00:05 =========================
+[2026-09-04 03:00:05] Stage A — extract Figmagent sessions across all repos
+  a3121b35-4b7f-49bc-88ec-9be969e56571 → 170 messages, 83 tool calls
+  a24e357a-56d2-4aba-807c-5077a098084b → 135 messages, 62 tool calls
+  a2201e93-585a-4c71-b050-8f09dfa87973 → 217 messages, 100 tool calls
+  0f978732-bb80-4197-b164-528e108d7396 → 475 messages, 233 tool calls
+
+4 extracted, 43 up-to-date. Output: /Users/davidbowman/Github/cursor-talk-to-figma-mcp/.claude/sessions-json
+Figma sessions: 58, needs analysis: 2
+  a24e357a-56d2-4aba-807c-5077a098084b    62 calls   7 figma  (new)
+  a3121b35-4b7f-49bc-88ec-9be969e56571    83 calls   8 figma  (new)
+[2026-09-04 03:00:23] Stage B — analyze sessions (cap 25)
+[2026-09-04 03:00:24]   sessions needing analysis: 2
+Analysis complete. Session 63 (`a24e357a`, storybook/"Archer", remote, 2026-09-03) is written up, the tracker is updated, and two fix plans are drafted.
+
+**The session**: a library-wide focus refactor — 39 components/sets given a bound `Focus` BOOLEAN, 58 `State=Focus` variants deleted, rings normalised. 62 calls (47 Figmagent), 9 errors (19.1% of Figma calls), 0 official-MCP defections.
+
+**Four new tracker entries:**
+
+- **[TOOL-055]** (P1, planned) — `component_properties` batches operations *within* one component but not *across* components. It's the only write surface without a node-array form, so a 34-set refactor is 34 calls minimum. The tool was used **zero** times; the whole job went through 3 `run_script` calls. This is the named gap behind the session's 100%-of-writes script share.
+- **[BUG-048]** (P1, planned) — binding a BOOLEAN to a layer's `visible` overrides the `defaultValue` the caller passed. Measured across 39 components: some flipped to `true`, others held `false` but left the bound layer visible. Both ship a component that renders its focus ring by default, and the handler returns the wrong value with no warning.
+- **[BUG-049]** (P1) — `get_local_components` returned `{"count":0}` twice on remote in a file with 61 COMPONENT_SETs, `success: true`, one call burning 3.4s. A silent wrong answer on a read tool. Hypothesis pinned to the per-page `findAllWithCriteria` in `styles.js:226-249` (the only discovery path using it; `find.js`'s manual traverse and root-level `findAllWithCriteria` both work), with a 1-call test to confirm.
+- **[AGENT-037]** (P2) — a hand-rolled `run_script` loop needs per-item `try/catch`; one bad component set rolled back all 23.
+
+**The BUG-016 update is the notable one.** This session supplies the cleanest control in 22 recurrences: node `41:26` failed inside a 6-node batch and succeeded **alone, 2 seconds later, at the identical scale**. The batch failed as a unit, not on its members. And the empty-`images`-with-empty-`errors` signature *cannot* be produced by the plugin path (`document.js:719-742` writes every id into one map or the other), which corroborates the unshipped v5 root cause — `remote/client.ts:110-114` downgrading an unparseable response to a raw string — from the batch side by elimination rather than inference.
+
+One session remains unanalyzed (`a3121b35`, 83 calls, same file, earlier the same evening).
+[2026-09-04 03:14:54]   sessions needing analysis: 1
+Session 64 analyzed. Manifest is clean — 69 Figma sessions, 0 pending.
+
+## What the session was
+
+`~/Github/storybook` ("Archer"), remote transport, 20 min, 83 calls (58 Figmagent), **zero idle gaps** — the densest session in the series. Task: sync three shipped commits into the Figma library (mint 5 tokens, put Button/Toggle/Toolbar Link on one control height, fix Button leading, write variable IDs back into the repo's token JSON, re-annotate).
+
+## The headline finding
+
+**Three tools returned `success: true` while doing nothing.** That's why the error rate is the best on this file in six sessions (5.2%) and the waste is the worst (~36%) — the same fact seen twice.
+
+- **[BUG-050]** — `edit({variables:{fontSize:…}})` on a TEXT node carrying a `textStyleId` is inert. Figma *stacks* the bindings (`boundVariables.fontSize` read back as a two-element array) and the style wins. `edit` returned `{"success":true,"nodesEdited":1}` with no warning; `fig.bindVariable` returned `{ok:true}`. Cost: 8 calls to discover one fact. `apply.js` checks `textStyleId` when *applying* a style but never when one already exists.
+- **[BUG-051]** — a main component's corrected text metrics don't reach its instances on the remote VM (mains at 28px, instances still 33px). The session had to font-park/restore every label of **47 instances document-wide** to force a re-measure.
+
+## The structural finding
+
+`read` was the **second tool named in the opening ToolSearch and was called zero times** in 58 Figma calls, while 15 scripts dumped node metrics. That's not the discovery failure the tracker has been chasing — the tool was in hand. Two real gaps drove it: FSGN emits `primaryAxisSizingMode` but **not** `layoutSizingHorizontal`/`layoutSizingVertical` or min/max sizing (**[TOOL-056]** — the sizing model is writable but not readable), and `read` has no field projection, so comparing 60 variants on six fields is an over-budget dump (**[TOOL-057]**).
+
+This closes the discovery lever on **[AGENT-025]**: every remedy held (`get_design_system` in the slice and called 3×, zero re-implementations, `create_variables` clean first-class) and the script share still sat at 50%. Further movement has to come from the tool surface, not guidance.
+
+**[TOOL-058]** is the cheap one: `set_multiple_annotations` requires a `nodeId` described as the containing node, which made a cross-page batch of 9 look impossible — and the plugin handler ignores the parameter entirely.
+
+## Written
+
+- `.claude/analysis/figma-mcp-session64-analysis.md`
+- Tracker: 5 new entries, AGENT-025 (9th) and AGENT-026 (7th, held) updated, BUG-031/BUG-044 recurrences, metrics row
+- Fix plans for the three auto-fixable ones: `2026-09-04-{BUG-050,TOOL-056,TOOL-058}.md`, all marked `planned`
+
+One caveat worth stating: the re-measure script logged `HAD STYLE` for any instance label carrying a `textStyleId` (assigning `fontName` detaches it), but the response was truncated at 3,829 chars in extraction — so whether any label was detached **cannot** be determined from the transcript. I recorded that as unverified rather than clean.
+
+I also refreshed `analyzedAt` on five sessions the nightly job had re-queued; their tool-call counts (192/69/134/100/233) match their existing analyses exactly, so it was mtime churn, not new content.
+[2026-09-04 03:27:17]   sessions needing analysis: 0
+[2026-09-04 03:27:17] committing analysis artifacts to main (local, no push)
