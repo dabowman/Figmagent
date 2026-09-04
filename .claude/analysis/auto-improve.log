@@ -1370,3 +1370,45 @@ One caveat worth stating: the re-measure script logged `HAD STYLE` for any insta
 I also refreshed `analyzedAt` on five sessions the nightly job had re-queued; their tool-call counts (192/69/134/100/233) match their existing analyses exactly, so it was mtime churn, not new content.
 [2026-09-04 03:27:17]   sessions needing analysis: 0
 [2026-09-04 03:27:17] committing analysis artifacts to main (local, no push)
+[2026-09-04 03:27:17] Stage C — sync improvement tracker → GitHub issues
+tracker→issues: 153 unique entries · 9 create, 0 close, 0 reopen, 12 drift, 119 in-sync, 13 resolved-unfiled
+DRIFT   #90 [TOOL-006] closed but tracker active (use --reopen)
+DRIFT   #98 [TOOL-021] closed but tracker active (use --reopen)
+DRIFT   #106 [TOOL-022] closed but tracker active (use --reopen)
+DRIFT   #111 [TOOL-025] closed but tracker active (use --reopen)
+DRIFT   #112 [BUG-021] closed but tracker active (use --reopen)
+DRIFT   #115 [BUG-022] closed but tracker active (use --reopen)
+DRIFT   #117 [TOOL-027] closed but tracker active (use --reopen)
+DRIFT   #119 [INFRA-005] closed but tracker active (use --reopen)
+DRIFT   #128 [BUG-027] closed but tracker active (use --reopen)
+DRIFT   #134 [BUG-030] closed but tracker active (use --reopen)
+DRIFT   #139 [TOOL-035] closed but tracker active (use --reopen)
+DRIFT   #144 [BUG-032] closed but tracker active (use --reopen)
+CREATE  [BUG-050] (P1) `edit` and `fig.bindVariable` silently no-op on a TEXT node that carries a `textStyleId`
+CREATE  [BUG-051] (P1) A main component's text metrics do not propagate to its instances on the remote VM
+CREATE  [TOOL-056] (P1) `read` cannot report `layoutSizingHorizontal`/`layoutSizingVertical` or min/max sizing — the sizing model is writable but not readable
+CREATE  [TOOL-057] (P1) `read` has no field projection — comparing N sibling variants means an over-budget FSGN dump or a hand-rolled script
+CREATE  [TOOL-058] (P2) `set_multiple_annotations` requires a containing `nodeId` the plugin ignores — the false constraint blocks cross-page batches
+CREATE  [TOOL-055] (P1) `component_properties` batches operations *within* one component but not *across* components
+CREATE  [BUG-048] (P1) Binding a BOOLEAN property to a layer's `visible` overrides the `defaultValue` the caller asked for, silently
+CREATE  [BUG-049] (P1) `get_local_components` returns zero components on the remote transport
+CREATE  [AGENT-037] (P2) A hand-rolled batch loop inside `run_script` must isolate each item — remote scripts are atomic
+[2026-09-04 03:27:41] Stage D — dispatch draft fix PRs
+Work complete.
+
+**Results**
+
+| Candidate | Outcome |
+|---|---|
+| **TOOL-058** (#205, `description-only`, P2) | **PR opened — [#210](https://github.com/dabowman/Figmagent/pull/210)** (draft, base `main`) |
+| **BUG-040** (#172, `assertion`, P1) | Aborted: fix exceeds the 40KB remote-bundle cap |
+| **BUG-050** (#201, `boundary-guard`, P1) | Aborted: same cap |
+| **AGENT-033** (#165) | Skipped: `auto-fix/AGENT-033` already in flight (preflight exit 4) |
+| **TOOL-055** (#206) | Skipped: `missing-batch-tool` — [commented](https://github.com/dabowman/Figmagent/issues/206#issuecomment-5538563253), needs `/add-mcp-tool` |
+
+**The two P1 aborts share one root cause worth your attention.** `tests/registry.test.ts` asserts every remote domain bundle stays under 40 000 bytes. On `main` the `apply` bundle is at **39 745 — 255 bytes of headroom**. BUG-040's `checkMissingFontWidth` (in `assertions.js`, which `apply`'s remote entry imports) takes it to 40 484; BUG-050's `textStyleId` guard in `apply.js` takes it to 40 351. Both plans are otherwise clean — lint passed, and BUG-040's three new `checkMissingFontWidth` tests were written as specified. Trimming the remedy strings to fit ~250 bytes would gut the messages, which are the entire point of both fixes, so that's a judgement call rather than a mechanical one. Both issues carry a comment with the numbers and four possible directions (shrink the message strings, move remedy text server-side into the warning renderer, split the `apply` bundle, or revisit why the cap is 40KB).
+
+Two other candidates were dropped before preflight for same-file conflicts with higher-priority picks: TOOL-040 (#168, `script.ts` vs AGENT-033) and INFRA-008 (#197) / TOOL-056 (#203) (`CLAUDE.md` vs BUG-040).
+
+One tracker correction: **TOOL-006** is listed as `Status: identified` with a fix plan, but the change already shipped — `numericParam` exists in `utils.ts` and wraps every `z.number()` in `apply.ts` and `create.ts`, and issue #90 is closed. The entry will keep surfacing as a candidate until its status is updated.
+[2026-09-04 03:36:02] run complete
