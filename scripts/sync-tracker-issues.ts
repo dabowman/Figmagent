@@ -18,10 +18,13 @@
  * Reconciliation:
  *   - active entry, no issue            → create `[ID] Title`, labelled
  *   - resolved entry, issue still open  → close it with a comment
+ *   - active entry, issue closed by a   → REVERSE: rewrite the entry's Status to
+ *     merged PR (INFRA-007)               `implemented — PR #M (date)` in the tracker
  *   - active entry, issue closed        → report drift (reopen only with --reopen)
+ *     otherwise (manual close)
  *   - resolved entry, no issue          → skip (don't create just to close)
  *
- * The summary line always reports create/close/reopen/drift/in-sync/
+ * The summary line always reports create/close/reopen/reverse/drift/in-sync/
  * resolved-unfiled, and appends DANGLING (tracker points at an issue number that
  * is not on the repo) and DEFERRED (entry needs an issue but --limit was hit,
  * so it is NOT on GitHub) only when non-zero — those two mean findings are
@@ -39,6 +42,17 @@
  * to be appended after "## Metrics Over Time", where `implemented` never closed
  * an issue). Entries outside the two known headings are still reconciled, but
  * they are reported — misplacement is an authoring slip that stays visible.
+ * The parser itself lives in `tracker-parse.ts` (shared with `dispatch-fix.ts`
+ * and `tracker.ts`); `tests/tracker-parse.test.ts` pins it to these semantics.
+ *
+ * Reverse-sync (INFRA-007 / #196): a closed issue whose timeline carries a
+ * cross-reference from a MERGED pull request was closed by that PR, so the
+ * tracker — not GitHub — is stale. The entry's Status line is rewritten in
+ * place (nothing else in the file changes) and the row is reported as REVERSE.
+ * A close with no merged PR (manual, or `not_planned`) still needs a human and
+ * stays DRIFT. The decision is `decideReverse` in `sync-reverse-lib.ts`; the
+ * tracker is written once, after the loop, only when something changed, and
+ * never under --dry-run. Reverse-sync never reopens an issue.
  *
  * Idempotent: safe to run nightly. Keys on stable issue numbers / ID prefixes,
  * so it never creates duplicates.
@@ -50,8 +64,10 @@
  *   bun scripts/sync-tracker-issues.ts --reopen    # reopen issues that regressed
  */
 
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import { $ } from "bun";
+import { decideReverse, implementedStatus, parseTimelineJson } from "./sync-reverse-lib.ts";
+import { parseTrackerFull, type TrackerEntry, updateEntryField } from "./tracker-parse.ts";
 
 const TRACKER = ".claude/analysis/improvement-tracker.md";
 const ANALYSIS_DIR = ".claude/analysis";
@@ -74,135 +90,19 @@ if (limitArg) {
   createLimit = n;
 }
 
-const isResolutionStatus = (s: string): boolean => /^(verified|resolved|implemented)\b/i.test(s);
-
 // ---- parse the tracker into deduped issues ---------------------------------
 
-interface TrackerIssue {
-  id: string; // TOOL-001
-  cleanTitle: string; // header text with " — [#N]…" decoration stripped
-  fullTitle: string; // "[TOOL-001] cleanTitle"
-  priority: string; // P0 | P1 | P2 | ""
-  category: string;
-  body: string;
-  issueRef?: number; // structured **Issue** field, else header /issues/N
-  activeStatus?: string; // Status from a non-Resolved occurrence (authoritative)
-  inResolved: boolean; // appeared under "## Resolved Issues"
-  resolved: boolean; // derived after parsing
-  resolvedReason: string; // for the close comment (never contradicts status)
-}
-
-// Issue ref from the HEADER line only (the entry's own link), never body prose.
-const headerIssueRef = (titleLine: string): number | undefined => {
-  const m = titleLine.match(/\/issues\/(\d+)/);
-  return m?.[1] ? Number.parseInt(m[1], 10) : undefined;
-};
+type TrackerIssue = TrackerEntry;
 
 const raw = await readFile(TRACKER, "utf-8");
-const lines = raw.split("\n");
-const byId = new Map<string, TrackerIssue>();
+const parsed = parseTrackerFull(raw);
+const byId = new Map<string, TrackerIssue>(parsed.entries.map((e) => [e.id, e]));
 // IDs reused for materially different issues (an analyzer numbering bug): two
 // distinct findings would collapse onto one GitHub issue. Detect and warn.
-const collisions = new Set<string>();
-const normTitle = (s: string): string => s.toLowerCase().replace(/[`*_]/g, "").replace(/\s+/g, " ").trim();
-
-let section: "active" | "resolved" = "active";
-// The literal heading an entry sits under, so a `### [ID]` written outside the
-// two known sections is reported instead of silently absorbed.
-let heading = "";
-const misplaced = new Map<string, string>(); // id → heading it was found under
-let curId = "";
-let curTitleLine = "";
-let curStatus = "";
-let curPriority = "";
-let curCategory = "";
-let curIssue: number | undefined;
-let bodyLines: string[] = [];
-
-const KNOWN_SECTIONS = new Set(["active issues", "resolved issues"]);
-
-const commit = (): void => {
-  if (!curId) return;
-  if (!KNOWN_SECTIONS.has(heading)) misplaced.set(curId, heading || "(before the first heading)");
-  const body = bodyLines.join("\n").trim();
-  const cleanTitle = curTitleLine.replace(/\s*—\s*\[(?:#|PR\b).*$/u, "").trim();
-  const ref = curIssue ?? headerIssueRef(curTitleLine);
-
-  const existing = byId.get(curId);
-  if (!existing) {
-    byId.set(curId, {
-      id: curId,
-      cleanTitle,
-      fullTitle: `[${curId}] ${cleanTitle}`,
-      priority: curPriority,
-      category: curCategory,
-      body,
-      issueRef: ref,
-      activeStatus: section === "active" && curStatus ? curStatus : undefined,
-      inResolved: section === "resolved",
-      resolved: false,
-      resolvedReason: "",
-    });
-  } else {
-    // Same ID, materially different title ⇒ two different issues share an ID.
-    if (normTitle(cleanTitle) !== normTitle(existing.cleanTitle)) {
-      collisions.add(curId);
-    }
-    // Merge duplicates. Richest body wins for display; the ACTIVE occurrence's
-    // status is authoritative; resolved-ness is derived later, not OR-ed here.
-    if (body.length > existing.body.length) {
-      existing.body = body;
-      existing.cleanTitle = cleanTitle;
-      existing.fullTitle = `[${curId}] ${cleanTitle}`;
-      if (curPriority) existing.priority = curPriority;
-      if (curCategory) existing.category = curCategory;
-    }
-    if (section === "active" && curStatus) existing.activeStatus = curStatus;
-    if (section === "resolved") existing.inResolved = true;
-    existing.issueRef = existing.issueRef ?? ref;
-  }
-};
-
-for (const line of lines) {
-  const h2 = line.match(/^## (.+)/);
-  if (h2) {
-    commit();
-    curId = "";
-    bodyLines = [];
-    heading = (h2[1] ?? "").toLowerCase().trim();
-    // Anything that is not the Resolved section is authoritative for Status.
-    // Entries used to be appended after "## Metrics Over Time", where their
-    // Status was never read — so `implemented` never closed an issue.
-    // Anchored: "## Unresolved Issues" must not read as the Resolved section.
-    section = heading.startsWith("resolved") ? "resolved" : "active";
-    continue;
-  }
-  const h3 = line.match(/^### \[([A-Z]+-\d+)\]\s+(.+)/);
-  if (h3) {
-    commit();
-    curId = h3[1] ?? "";
-    curTitleLine = (h3[2] ?? "").trim();
-    curStatus = "";
-    curPriority = "";
-    curCategory = "";
-    curIssue = undefined;
-    bodyLines = [];
-    continue;
-  }
-  if (curId) {
-    bodyLines.push(line);
-    const s = line.match(/^- \*\*Status\*\*:\s*(.+)/);
-    if (s) curStatus = (s[1] ?? "").trim();
-    const p = line.match(/^- \*\*Priority\*\*:\s*(.+)/);
-    if (p) curPriority = (p[1] ?? "").trim();
-    const c = line.match(/^- \*\*Category\*\*:\s*(.+)/);
-    if (c) curCategory = (c[1] ?? "").trim();
-    // Optional structured override: `- **Issue**: #123` (preferred over header).
-    const iss = line.match(/^- \*\*Issue\*\*:\s*#?(\d+)/);
-    if (iss?.[1]) curIssue = Number.parseInt(iss[1], 10);
-  }
-}
-commit();
+const collisions = parsed.collisions;
+// A `### [ID]` written outside the two known sections is reported instead of
+// silently absorbed.
+const misplaced = parsed.misplaced; // id → heading it was found under
 
 // Entries outside "## Active Issues" / "## Resolved Issues" are still synced
 // (their Status is read), but the placement is an authoring slip: it hid 44
@@ -260,17 +160,6 @@ if (missingFromTracker.size > 0) {
   );
 }
 
-// Derive resolved-ness from the authoritative occurrence.
-for (const t of byId.values()) {
-  if (t.activeStatus !== undefined) {
-    t.resolved = isResolutionStatus(t.activeStatus);
-    t.resolvedReason = t.resolved ? `status: ${t.activeStatus}` : "";
-  } else {
-    t.resolved = t.inResolved; // only appears under Resolved
-    t.resolvedReason = t.inResolved ? "listed under Resolved Issues" : "";
-  }
-}
-
 const trackerIssues = [...byId.values()];
 
 const issueBody = (t: TrackerIssue): string =>
@@ -288,6 +177,7 @@ interface GhIssue {
   number: number;
   title: string;
   state: string;
+  stateReason: string | null;
 }
 
 // `gh issue list --limit N` caps the snapshot; once the repo exceeds N an
@@ -300,21 +190,23 @@ const listJson = await $`gh api --paginate --slurp ${`repos/${REPO}/issues?state
 let existingIssues: GhIssue[];
 try {
   const pages = JSON.parse(listJson) as Array<
-    Array<{ number: number; title: string; state: string; pull_request?: unknown }>
+    Array<{ number: number; title: string; state: string; state_reason?: string | null; pull_request?: unknown }>
   >;
   existingIssues = pages
     .flat()
     .filter((e) => !e.pull_request)
-    .map((e) => ({ number: e.number, title: e.title, state: e.state }));
+    .map((e) => ({ number: e.number, title: e.title, state: e.state, stateReason: e.state_reason ?? null }));
 } catch {
   console.error(`Failed to list GitHub issues. Is \`gh\` authenticated for ${REPO}?`);
   process.exit(1);
 }
 
 const stateByNumber = new Map<number, string>();
+const stateReasonByNumber = new Map<number, string | null>();
 const numberByPrefix = new Map<string, number>();
 for (const e of existingIssues) {
   stateByNumber.set(e.number, e.state.toLowerCase());
+  stateReasonByNumber.set(e.number, e.stateReason);
   const m = e.title.match(/^\[([A-Z]+-\d+)\]/);
   if (m?.[1]) numberByPrefix.set(m[1], e.number);
 }
@@ -322,6 +214,17 @@ for (const e of existingIssues) {
 // The [ID]-title match is the reliable primary key; the header/struct ref is a
 // fallback for pre-existing issues the sync didn't create.
 const resolveNum = (t: TrackerIssue): number | undefined => numberByPrefix.get(t.id) ?? t.issueRef;
+
+// The issue timeline names the PR that closed it (a `cross-referenced` event
+// whose source PR has `merged_at`). Fetched only for the closed-but-active
+// cases, a handful per night. A fetch failure reads as an empty timeline, so
+// the entry falls back to DRIFT — never to a wrong REVERSE.
+const fetchTimeline = async (num: number) => {
+  const json = await $`gh api --paginate --slurp ${`repos/${REPO}/issues/${num}/timeline?per_page=100`}`
+    .nothrow()
+    .text();
+  return parseTimelineJson(json);
+};
 
 // ---- ensure labels exist ----------------------------------------------------
 
@@ -351,6 +254,7 @@ if (!dryRun && toCreate.length > 0) {
 let created = 0;
 let closed = 0;
 let reopened = 0;
+let reversed = 0; // tracker Status rewritten to implemented from a merged PR
 let drift = 0;
 // `skipped` was one bucket for four unrelated outcomes, so a run that filed
 // nothing looked identical to a run that was in sync. Count them separately.
@@ -359,6 +263,7 @@ let unfiled = 0; // resolved and never filed — deliberate, no noise
 let dangling = 0; // tracker refs an issue number that isn't on the repo
 let deferred = 0; // needed an issue but hit --limit; NOT on GitHub yet
 const actions: string[] = [];
+let trackerText = raw;
 
 for (const t of trackerIssues) {
   const num = resolveNum(t);
@@ -378,7 +283,26 @@ for (const t of trackerIssues) {
       }
       closed++;
     } else if (wantOpen && state === "closed") {
-      if (reopen) {
+      const decision = decideReverse(
+        { state, state_reason: stateReasonByNumber.get(num) ?? null },
+        await fetchTimeline(num),
+        { repo: REPO },
+      );
+      if (decision.action === "reverse") {
+        const status = implementedStatus(decision.pr, decision.date);
+        const next = updateEntryField(trackerText, t.id, "Status", status);
+        if (next === trackerText) {
+          // Should not happen (the entry was parsed from this text); keep it visible.
+          actions.push(
+            `DRIFT   #${num} [${t.id}] closed by PR #${decision.pr} but its Status line could not be rewritten`,
+          );
+          drift++;
+        } else {
+          trackerText = next;
+          actions.push(`REVERSE #${num} [${t.id}] → implemented (PR #${decision.pr})`);
+          reversed++;
+        }
+      } else if (reopen) {
         actions.push(`REOPEN  #${num} [${t.id}]`);
         if (!dryRun) await $`gh issue reopen ${num} --repo ${REPO}`.nothrow().quiet();
         reopened++;
@@ -413,11 +337,23 @@ for (const t of trackerIssues) {
   created++;
 }
 
+// One write, after the loop, only when a Status line actually changed.
+if (trackerText !== raw && !dryRun) {
+  await writeFile(TRACKER, trackerText);
+}
+
 console.log(
   `${dryRun ? "[DRY RUN] " : ""}tracker→issues: ${trackerIssues.length} unique entries · ` +
-    `${created} create, ${closed} close, ${reopened} reopen, ${drift} drift, ` +
+    `${created} create, ${closed} close, ${reopened} reopen, ${reversed} reverse, ${drift} drift, ` +
     `${inSync} in-sync, ${unfiled} resolved-unfiled` +
     `${dangling ? `, ${dangling} DANGLING` : ""}` +
     `${deferred ? `, ${deferred} DEFERRED` : ""}`,
 );
 if (actions.length) console.log(actions.join("\n"));
+if (reversed > 0) {
+  console.log(
+    dryRun
+      ? `[DRY RUN] would rewrite ${reversed} Status line(s) in ${TRACKER}`
+      : `rewrote ${reversed} Status line(s) in ${TRACKER}`,
+  );
+}

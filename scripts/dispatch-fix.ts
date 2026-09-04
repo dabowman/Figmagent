@@ -1,25 +1,50 @@
 #!/usr/bin/env bun
 /**
  * Deterministic git/gh mechanics for Stage D (dispatch-fixes) of the auto-improve
- * pipeline. The /dispatch-fixes prompt supplies only JUDGEMENT — which issue, does
- * the plan apply cleanly — and calls these subcommands for every irreversible step.
+ * pipeline. The /dispatch-fixes prompt supplies only JUDGEMENT — does the plan
+ * apply cleanly — and calls these subcommands for every irreversible step, every
+ * shell-out, and (since WS1.3) for candidate selection itself.
  *
  * Why a script and not prose: the hard safety constraints (draft-only, never push
- * to main, always clean up the worktree, target the configured repo) must hold
- * even if the model misreads its instructions, a tracker entry contains injected
- * text, or the model is updated. Encoding them here makes them non-negotiable.
+ * to main, always clean up the worktree, target the configured repo, the 4/run
+ * cap, the priority floor, the same-file rule) must hold even if the model
+ * misreads its instructions, a tracker entry contains injected text, or the
+ * model is updated. Encoding them here makes them non-negotiable — and lets the
+ * Stage D allowlist be exactly `Bash(bun scripts/dispatch-fix.ts *)`, with no
+ * bare `git`, `gh`, or `bun install` for the agent.
  *
  * The repo is ALWAYS process.env.AUTO_IMPROVE_REPO (default dabowman/Figmagent) —
  * the same source Stage C uses — so the pipeline can never split across two repos.
  *
  * Subcommands:
+ *   candidates                Print JSON { candidates: [{ id, priority, pattern,
+ *                             plan, files, status, issue?, namedTest? }],
+ *                             skipped: [{ id, reason }] } — the ranked, capped
+ *                             list Stage D may act on (rules in
+ *                             dispatch-candidates-lib.ts). Needs no gh.
  *   preflight <ID>            Verify exactly one OPEN issue exists for [ID] and no
  *                             auto-fix/<ID> branch or PR is already in flight.
  *                             Prints JSON { issueNumber } on success.
  *                             Exit 3 = skip (no open issue); 4 = skip (in flight).
- *   setup <ID>               git fetch + create worktree auto-fix/<ID> off
+ *   setup <ID>                git fetch + create worktree auto-fix/<ID> off
  *                             origin/main. Prints the worktree path. The model then
- *                             applies the plan and runs lint/test/build INSIDE it.
+ *                             applies the plan INSIDE it.
+ *   verify-plan <ID>          In the worktree: every `### File:` the plan names
+ *                             exists (unless the plan says to create it) and every
+ *                             `- Line N: \`old\` → \`new\`` old snippet is present
+ *                             verbatim. Prints `plan-stale: <what>` and exits 5
+ *                             otherwise; exit 0 when all match or nothing to check.
+ *   check <ID> [--test <path>]
+ *                             In the worktree: bun install --frozen-lockfile (only
+ *                             when node_modules is missing), bun run lint, bun run
+ *                             test, bun run build:plugin (only when the diff touches
+ *                             src/figma_plugin/), and `bun test <path>` when --test
+ *                             is given (the file must exist in the worktree). One
+ *                             PASS/FAIL line per step, the last 40 lines of any
+ *                             failure; exit 1 on any failure.
+ *   comment <ID> --issue N --body "<text>"
+ *                             gh issue comment. Refuses (exit 2) a body over
+ *                             2,000 characters.
  *   publish <ID> --issue N --title T --summary S
  *                             Commit all changes in the worktree, push the branch,
  *                             open a DRAFT PR (base main), remove the worktree, and
@@ -28,13 +53,22 @@
  *                             Remove the worktree + branch and (if --issue) comment
  *                             that auto-fix failed and needs manual work.
  *
- * Exit codes: 0 ok · 2 usage/precondition error · 3 skip:no-open-issue · 4 skip:in-flight.
+ * Exit codes: 0 ok · 1 check failed · 2 usage/precondition error ·
+ * 3 skip:no-open-issue · 4 skip:in-flight · 5 plan-stale.
  */
 
+import { existsSync, readFileSync } from "node:fs";
+import { readdir, readFile } from "node:fs/promises";
 import { $ } from "bun";
+import { checkSteps, type PlanRef, selectCandidates, staleItems } from "./dispatch-candidates-lib.ts";
+import { parsePlan, parseTracker, planFileFor } from "./tracker-parse.ts";
 
 const REPO = process.env.AUTO_IMPROVE_REPO || "dabowman/Figmagent";
+const TRACKER = ".claude/analysis/improvement-tracker.md";
+const PLANS_DIR = ".claude/plans";
 const ID_RE = /^[A-Z]+-\d+$/;
+const MAX_COMMENT_CHARS = 2000;
+const TAIL_LINES = 40;
 
 function die(msg: string, code = 2): never {
   console.error(msg);
@@ -54,6 +88,12 @@ function branchName(id: string): string {
   return `auto-fix/${id}`;
 }
 
+function requireWorktree(id: string): string {
+  const wt = worktreePath(id);
+  if (!existsSync(wt)) die(`No worktree at ${wt} — run \`dispatch-fix.ts setup ${id}\` first.`);
+  return wt;
+}
+
 // minimal flag parser: --key value  /  --key=value
 function flags(argv: string[]): Record<string, string> {
   const out: Record<string, string> = {};
@@ -69,6 +109,29 @@ function flags(argv: string[]): Record<string, string> {
     }
   }
   return out;
+}
+
+async function loadPlan(id: string): Promise<PlanRef | undefined> {
+  const listing = await readdir(PLANS_DIR).catch(() => [] as string[]);
+  const file = planFileFor(id, listing);
+  if (!file) return undefined;
+  const path = `${PLANS_DIR}/${file}`;
+  return { id, path, parsed: parsePlan(await readFile(path, "utf-8")) };
+}
+
+async function candidates(): Promise<void> {
+  const entries = parseTracker(await readFile(TRACKER, "utf-8"));
+  // `ls .claude/plans/` once; match every entry against that one listing.
+  const listing = await readdir(PLANS_DIR).catch(() => [] as string[]);
+  const plans: PlanRef[] = [];
+  for (const e of entries) {
+    const file = planFileFor(e.id, listing);
+    if (!file) continue;
+    const path = `${PLANS_DIR}/${file}`;
+    plans.push({ id: e.id, path, parsed: parsePlan(await readFile(path, "utf-8")) });
+  }
+  const { candidates, skipped } = selectCandidates(entries, plans);
+  console.log(JSON.stringify({ candidates, skipped }, null, 2));
 }
 
 async function preflight(id: string): Promise<void> {
@@ -107,6 +170,85 @@ async function setup(id: string): Promise<void> {
   console.log(wt);
 }
 
+async function verifyPlan(id: string): Promise<void> {
+  const wt = requireWorktree(id);
+  const plan = await loadPlan(id);
+  if (!plan) die(`No plan file for [${id}] under ${PLANS_DIR}/ — nothing to apply.`);
+  const read = (path: string): string | undefined => {
+    const full = `${wt}/${path}`;
+    if (!existsSync(full)) return undefined;
+    try {
+      return readFileSync(full, "utf-8");
+    } catch {
+      return undefined;
+    }
+  };
+  const stale = staleItems(plan.parsed, read);
+  if (stale.length > 0) {
+    for (const s of stale) console.log(`plan-stale: ${s}`);
+    process.exit(5);
+  }
+  console.log(
+    `plan-ok: ${plan.path} — ${plan.parsed.files.length} file(s), ${plan.parsed.snippets.length} snippet(s) checked`,
+  );
+}
+
+async function check(id: string, f: Record<string, string>): Promise<void> {
+  const wt = requireWorktree(id);
+  const test = f.test || undefined;
+  if (test !== undefined) {
+    if (!/^tests\/[\w./-]+\.test\.ts$/.test(test) || test.split("/").includes("..")) {
+      die(`--test must be a tests/<name>.test.ts path inside the worktree, got: ${test}`);
+    }
+    if (!existsSync(`${wt}/${test}`)) {
+      console.log(`FAIL test ${test} (file not found in ${wt})`);
+      process.exit(1);
+    }
+  }
+  const changed = (await $`git -C ${wt} diff --name-only HEAD`.nothrow().text())
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const untracked = (await $`git -C ${wt} ls-files --others --exclude-standard`.nothrow().text())
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const steps = checkSteps({
+    nodeModulesPresent: existsSync(`${wt}/node_modules`),
+    changedFiles: [...changed, ...untracked],
+    test,
+  });
+
+  let failed = false;
+  for (const step of steps) {
+    const proc = Bun.spawn(step.cmd, { cwd: wt, stdout: "pipe", stderr: "pipe", env: process.env });
+    const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+    const code = await proc.exited;
+    if (code === 0) {
+      console.log(`PASS ${step.name}`);
+      continue;
+    }
+    failed = true;
+    console.log(`FAIL ${step.name} (exit ${code})`);
+    const tail = `${out}\n${err}`.trim().split("\n").slice(-TAIL_LINES);
+    for (const line of tail) console.log(`  ${line}`);
+    if (step.name === "install") break; // nothing after a failed install is meaningful
+  }
+  if (failed) process.exit(1);
+}
+
+async function comment(id: string, f: Record<string, string>): Promise<void> {
+  const issue = f.issue;
+  const body = f.body;
+  if (!issue || !/^\d+$/.test(issue)) die("comment requires --issue <number>");
+  if (!body || !body.trim()) die('comment requires --body "<text>"');
+  if (body.length > MAX_COMMENT_CHARS) {
+    die(`comment body is ${body.length} chars; the limit is ${MAX_COMMENT_CHARS}. Shorten it.`);
+  }
+  await $`gh issue comment ${issue} --repo ${REPO} --body ${body}`;
+  console.log(`commented on #${issue} for [${id}]`);
+}
+
 async function publish(id: string, f: Record<string, string>): Promise<void> {
   const issue = f.issue;
   const title = f.title;
@@ -122,7 +264,7 @@ async function publish(id: string, f: Record<string, string>): Promise<void> {
 
 Closes #${issue}
 
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`;
+Auto-generated by the Figmagent auto-improve pipeline (Stage D)`;
 
   const prBody = `${summary}
 
@@ -131,7 +273,7 @@ Closes #${issue}
 Auto-generated **draft** by the auto-improve pipeline (Stage D) from \`.claude/plans/\`.
 Review before marking ready / merging.
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)`;
+Auto-generated by the Figmagent auto-improve pipeline (Stage D)`;
 
   await $`git -C ${wt} add -A`;
   await $`git -C ${wt} -c commit.gpgsign=false commit -q -m ${commitMsg}`;
@@ -170,11 +312,23 @@ const [cmd, idArg, ...rest] = process.argv.slice(2);
 const f = flags(rest);
 
 switch (cmd) {
+  case "candidates":
+    await candidates();
+    break;
   case "preflight":
     await preflight(requireId(idArg));
     break;
   case "setup":
     await setup(requireId(idArg));
+    break;
+  case "verify-plan":
+    await verifyPlan(requireId(idArg));
+    break;
+  case "check":
+    await check(requireId(idArg), f);
+    break;
+  case "comment":
+    await comment(requireId(idArg), f);
     break;
   case "publish":
     await publish(requireId(idArg), f);
@@ -183,5 +337,7 @@ switch (cmd) {
     await abort(requireId(idArg), f);
     break;
   default:
-    die(`Unknown subcommand: ${cmd ?? "(none)"}. Use preflight | setup | publish | abort.`);
+    die(
+      `Unknown subcommand: ${cmd ?? "(none)"}. Use candidates | preflight | setup | verify-plan | check | comment | publish | abort.`,
+    );
 }
