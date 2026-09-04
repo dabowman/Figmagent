@@ -340,7 +340,7 @@ async function main(): Promise<void> {
     .map((p) => p.trim())
     .filter(Boolean);
   const worthy = releaseWorthy(changed);
-  log(`${changed.length} path(s) changed since ${base}${worthy ? "" : " — all analysis-only"}`);
+  log(`${changed.length} path(s) changed since ${base}${changed.length > 0 && !worthy ? " — all analysis-only" : ""}`);
   if (!worthy && !o.force) {
     console.log(changed.length === 0 ? "nothing to release: no changes" : "nothing to release: analysis-only changes");
     return;
