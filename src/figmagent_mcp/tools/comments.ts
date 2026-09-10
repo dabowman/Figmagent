@@ -207,7 +207,7 @@ Categories are only included in the response when annotations are found. To disc
 // Set Annotation Tool
 server.tool(
   "set_annotation",
-  "Create or update an annotation on a node. If annotationIndex is provided, replaces the annotation at that position (0-based). If omitted and the node already has annotations, replaces the first one. If the node has no annotations, adds a new one.",
+  "Create or update an annotation on a node. If annotationIndex is provided, replaces the annotation at that position (0-based). If omitted and the node already has annotations, replaces the first one. If the node has no annotations, adds a new one. To annotate several nodes, use set_multiple_annotations — one call, any number of nodes, across pages.",
   {
     nodeId: nodeIdParam().describe("The ID of the node to annotate"),
     annotationIndex: z
@@ -262,9 +262,14 @@ server.tool(
 // Set Multiple Annotations Tool
 server.tool(
   "set_multiple_annotations",
-  "Set multiple annotations parallelly in a node",
+  "Set annotations on many nodes in one call. Each entry targets its own nodeId — the nodes need not share a parent or a page. Prefer this over repeated set_annotation calls.",
   {
-    nodeId: nodeIdParam().describe("The ID of the node containing the elements to annotate"),
+    nodeId: nodeIdParam()
+      .optional()
+      .describe(
+        "Optional and unused — kept for backward compatibility. Each annotation is addressed by its own " +
+          "annotations[].nodeId; the targets need share no common ancestor and may span different pages.",
+      ),
     annotations: z
       .array(
         z.object({
