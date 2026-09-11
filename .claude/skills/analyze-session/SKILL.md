@@ -39,7 +39,7 @@ citing the event, and continue.
 
 ### Session manifest
 
-A manifest at `.claude/analysis/sessions.json` tracks all sessions and their analysis status:
+A manifest at `analysis/sessions.json` tracks all sessions and their analysis status:
 
 ```json
 {
@@ -85,7 +85,7 @@ undecidable — it shortens tool-result text but keeps every block and its `is_e
 
 3. **Pick the target session**:
    - If a file path argument was provided, use that specific session.
-   - Otherwise, read `.claude/analysis/sessions.json` and find Figma sessions that need analysis:
+   - Otherwise, read `analysis/sessions.json` and find Figma sessions that need analysis:
      - `sessionType: "figma"` AND no `analysis` field → **new, needs analysis**
      - `sessionType: "figma"` AND `sourceModified > analyzedAt` → **updated, needs re-analysis**
    - Pick the oldest unanalyzed session first (analyze in chronological order).
@@ -101,7 +101,7 @@ undecidable — it shortens tool-result text but keeps every block and its `is_e
 Refresh the manifest before analysis with:
 
 ```bash
-bun run refresh-manifest          # rewrites .claude/analysis/sessions.json, prints the needs-analysis list
+bun run refresh-manifest          # rewrites analysis/sessions.json, prints the needs-analysis list
 bun run refresh-manifest --count  # prints only the integer count (used by the nightly auto-improve loop)
 bun scripts/refresh-manifest.ts --next                                 # prints the id of the next session to analyze (unattended runs)
 bun scripts/refresh-manifest.ts --mark-failed <sid> --reason "<text>"  # orchestrator only: records analysisFailed so the loop skips the session
@@ -175,7 +175,7 @@ This can be done by reading the manifest, updating the entry, and writing it bac
    - `usage` on assistant messages — token consumption per turn
 
 4. **Three-pass approach** (critical for large transcripts — 800+ events):
-   - **Pass 1 (Extract)**: Read in chunks. For each message, scan content blocks. For each `tool_use` block, record: timestamp, tool name, input params (extract nodeId if present). For each `tool_result` block, record: tool_use_id, is_error, error message snippet. Output a compact one-line-per-tool-call summary. This reduces 300KB → ~15KB.
+   - **Pass 1 (Extract)**: Read in chunks. For each message, scan content blocks. For each `tool_use` block, record: timestamp, tool name, input params (extract nodeId if present). For each `tool_result` block, record: tool_use_id, is_error, error message snippet. Output a compact one-line-per-tool-call summary. This reduces 300KB → ~15KB. Build it with `Grep` (e.g. `"name":` / `"is_error": true` with line numbers) and `Read` with `offset`/`limit` — the extracted JSON is pretty-printed, so it chunks by line. Never script it with an inline interpreter (`bun -e`, `python3 -c`, `node -e`): unattended, the guard hook denies that and the denial pauses the whole pipeline.
    - **Pass 2 (Analyze)**: Over the compact summary, compute all metrics and identify patterns.
    - **Pass 3 (Detail)**: For each flagged issue/error pattern, go back to the original transcript to extract specific context (full error messages, parameter values, cascading effects).
 
@@ -231,8 +231,8 @@ For each unique tool name:
 
 ## Phase 3: Cross-Session Comparison
 
-1. Read the improvement tracker at `.claude/analysis/improvement-tracker.md`
-2. Read the most recent previous analysis from `.claude/analysis/` (by filename number)
+1. Read the improvement tracker at `analysis/improvement-tracker.md`
+2. Read the most recent previous analysis from `analysis/` (by filename number)
 3. Compute deltas:
    - Waste percentage change
    - Error rate change
@@ -257,7 +257,7 @@ For each unique tool name:
 
 ## Phase 4: Generate Analysis Document
 
-Write the analysis to `.claude/analysis/figma-mcp-session<N>-analysis.md` where N is auto-incremented based on existing files in the directory.
+Write the analysis to `analysis/figma-mcp-session<N>-analysis.md` where N is auto-incremented based on existing files in the directory.
 
 **"No new findings" is a first-class outcome.** A clean session produces the Session Overview,
 Metrics, Tool Call Distribution, What Worked Well and `## Outcome` sections — nothing else. The
@@ -363,7 +363,7 @@ Use this exact template structure (matching the format of existing session 1 and
 
 ## Phase 5: Update Improvement Tracker
 
-Update `.claude/analysis/improvement-tracker.md`:
+Update `analysis/improvement-tracker.md`:
 
 1. **Add new issues**: For each efficiency issue or error pattern identified in this analysis that doesn't already exist in the tracker. If the session yielded no new findings, add none — say so in the `## Outcome` reason and still complete steps 2–5; a session that adds nothing is a normal result, not a failed one.
    - **Insert the entry at the END of the `## Active Issues` section — immediately before `## Resolved Issues`.** Never append after `## Metrics Over Time` or `## Issue Categories`.
@@ -399,7 +399,7 @@ Update `.claude/analysis/improvement-tracker.md`:
 
 ## Phase 6: Generate Fix Plans (if applicable)
 
-For issues with `- **Auto-fixable**: yes (<pattern>)` in the tracker, generate implementation plans. Plans go to `.claude/plans/<date>-<issue-id>.md`. **After writing a plan file, set that entry's `Status` to `planned`.** Stage D (`/dispatch-fixes`) gates on the plan file's existence plus a non-resolved status, so a written-but-not-marked plan would never be dispatched — keep these in lockstep.
+For issues with `- **Auto-fixable**: yes (<pattern>)` in the tracker, generate implementation plans. Plans go to `plans/<date>-<issue-id>.md`. **After writing a plan file, set that entry's `Status` to `planned`.** Stage D (`/dispatch-fixes`) gates on the plan file's existence plus a non-resolved status, so a written-but-not-marked plan would never be dispatched — keep these in lockstep.
 
 ### Safe Fix Patterns (allowlist)
 
@@ -492,7 +492,7 @@ These are the last two things the run does, in this order.
    - `analyzed` — every phase completed; the tracker and the plans are consistent.
    - `partial` — the turn budget ran low or the transcript could only be read in part. The reason line says which phases are done and what remains. Anything already written to the tracker must be complete and evidenced: finish or remove a half-written entry before stopping.
    - `failed` — the session could not be analyzed at all (unreadable or empty transcript, inputs not what this skill expects). The reason says why. End the turn with one line beginning `BLOCKED:` and that reason.
-2. **Update the session manifest only when the Outcome is `analyzed`** (`.claude/analysis/sessions.json`): set the entry's `analysis` to the analysis filename and `analyzedAt` to the current time — read the manifest, update the entry, write it back. This marks the session complete so the next `/analyze-session` invocation skips it. For `partial` and `failed`, leave the manifest untouched: the session is then still first in the queue, and the orchestrator — which does not read the Outcome block — defers it to the next night rather than handing it to another agent the same night; after its second unfinished attempt it is marked `analysisFailed` with the cause (watchdog, turn cap, or "ran but did not mark"), and a person retries it with `bun scripts/refresh-manifest.ts --clear-failed <sid>` after reading the Outcome reason in the doc.
+2. **Update the session manifest only when the Outcome is `analyzed`** (`analysis/sessions.json`): set the entry's `analysis` to the analysis filename and `analyzedAt` to the current time — read the manifest, update the entry, write it back. This marks the session complete so the next `/analyze-session` invocation skips it. For `partial` and `failed`, leave the manifest untouched: the session is then still first in the queue, and the orchestrator — which does not read the Outcome block — defers it to the next night rather than handing it to another agent the same night; after its second unfinished attempt it is marked `analysisFailed` with the cause (watchdog, turn cap, or "ran but did not mark"), and a person retries it with `bun scripts/refresh-manifest.ts --clear-failed <sid>` after reading the Outcome reason in the doc.
 
 ---
 
@@ -501,4 +501,4 @@ These are the last two things the run does, in this order.
 - If the transcript is too large to fit in context even with the 3-pass approach, focus on the tool call distribution and error extraction (Phases 2a-2b) and skip detailed efficiency pattern analysis for the middle sections. A transcript that cannot be read at all is a `failed` Outcome, not something to work around.
 - Always validate numbers: total tool calls should equal sum of distribution table. Error count should match error analysis section.
 - When comparing sessions, normalize for scope differences (session 2 had 26% more tool calls because the task was larger, not because it was less efficient).
-- The analysis document is committed to git (the pipeline commits and pushes `.claude/analysis/**` and `.claude/plans/**` to `main` under a path guard) — it serves as a permanent record of the session and its learnings.
+- The analysis document is committed to git (the pipeline commits and pushes `analysis/**` and `plans/**` to `main` under a path guard) — it serves as a permanent record of the session and its learnings.

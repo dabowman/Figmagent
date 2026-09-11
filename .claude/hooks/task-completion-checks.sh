@@ -5,7 +5,7 @@
 #
 # Two guards keep this from trapping an agent that cannot make the checks pass
 # (an agent that is never allowed to stop will eventually route around whatever
-# is in its way — see .claude/plans/2026-09-03-pipeline-prompt-review.md, #2):
+# is in its way — see plans/2026-09-03-pipeline-prompt-review.md, #2):
 #   1. `stop_hook_active` in the hook input: Claude Code sets it when the agent is
 #      already continuing because a Stop hook blocked it. We let that second stop
 #      through without running the checks, so a failing check blocks at most once.

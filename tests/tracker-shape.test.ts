@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "bun:test";
 
-const TRACKER = ".claude/analysis/improvement-tracker.md";
+const TRACKER = "analysis/improvement-tracker.md";
 const PATTERNS = [
   "sync-to-async",
   "type-coercion",

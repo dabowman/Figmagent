@@ -1,6 +1,6 @@
 # Changelog
 
-Releases are cut nightly by the auto-improve pipeline (Stage F, `scripts/release.ts`): a patch bump by default, minor or major by hand with `bun run release --minor|--major`, and only when something outside `.claude/analysis/`, `.claude/plans/` and this file has changed since the last tag — analysis-only nights do not release. The bump is the release: Claude Code pins an installed plugin to its `plugin.json` version and `/plugin update` keeps the cached copy until that number changes (plan `2026-09-03-auto-improve-v2`, section 1.3), so anything merged after the newest version below is invisible to `/plugin update` until the next cut. `Unreleased` lists exactly that and is replaced by the next release section.
+Releases are cut nightly by the auto-improve pipeline (Stage F, `scripts/release.ts`): a patch bump by default, minor or major by hand with `bun run release --minor|--major`, and only when something outside `analysis/`, `plans/` and this file has changed since the last tag — analysis-only nights do not release. The bump is the release: Claude Code pins an installed plugin to its `plugin.json` version and `/plugin update` keeps the cached copy until that number changes (plan `2026-09-03-auto-improve-v2`, section 1.3), so anything merged after the newest version below is invisible to `/plugin update` until the next cut. `Unreleased` lists exactly that and is replaced by the next release section.
 
 ## Unreleased
 

@@ -38,7 +38,7 @@ export const PROTECTED_PATHS: readonly string[] = [
 ];
 
 /** Directories (and one file) whose changes are "analysis only" — pushable without a release. */
-export const ANALYSIS_ONLY_PREFIXES: readonly string[] = [".claude/analysis/", ".claude/plans/"];
+export const ANALYSIS_ONLY_PREFIXES: readonly string[] = ["analysis/", "plans/"];
 export const ANALYSIS_ONLY_FILES: readonly string[] = ["CHANGELOG.md"];
 
 /** Strip a leading `./` or `/` so `./package.json`, `/package.json` and `package.json` agree. */
@@ -100,7 +100,7 @@ export function touchesProtected(paths: readonly string[]): boolean {
 }
 
 /**
- * True when EVERY path is under `.claude/analysis/`, `.claude/plans/`, or is
+ * True when EVERY path is under `analysis/`, `plans/`, or is
  * `CHANGELOG.md` — the shape of a Stage B commit that may be pushed to `main`
  * without a review or a release. An empty list is vacuously analysis-only:
  * pushing a commit that touches nothing is harmless.

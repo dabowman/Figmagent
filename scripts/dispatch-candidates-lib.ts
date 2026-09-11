@@ -84,7 +84,7 @@ export function eligibility(entry: TrackerEntry, plan: PlanRef | undefined): Can
   if (entry.activeStatus === undefined) return { id: entry.id, reason: "appears only under Resolved Issues" };
   if (!DISPATCH_STATUSES.has(status)) return { id: entry.id, reason: `status is ${status || "empty"}` };
 
-  if (!plan) return { id: entry.id, reason: "no plan file in .claude/plans/" };
+  if (!plan) return { id: entry.id, reason: "no plan file in plans/" };
   const pattern = plan.parsed.pattern;
   if (!pattern) return { id: entry.id, reason: `plan ${plan.path} has no **Pattern** line` };
   if (NEVER_PATTERNS.has(pattern)) return { id: entry.id, reason: `pattern ${pattern} is never auto-dispatched` };

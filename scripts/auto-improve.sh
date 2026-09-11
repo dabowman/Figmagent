@@ -13,7 +13,7 @@
 #   D.  Open DRAFT PRs for auto-fixable issues       (/dispatch-fixes)
 #   E.  Review-and-merge eligible PRs                (/merge-queue + merge-queue.ts)
 #   F.  Release: bump, CHANGELOG, tag, GitHub Release (release.ts)
-#   R.  One JSON line per stage event → .claude/analysis/pipeline-runs.jsonl
+#   R.  One JSON line per stage event → analysis/pipeline-runs.jsonl
 #
 # Stages A, C and F, and every irreversible step, are deterministic scripts.
 # Stages B, B2, D and E invoke Claude Code headless (`claude -p`) under least
@@ -24,7 +24,7 @@
 # hook (scripts/pipeline/guard.ts — live only while AUTO_IMPROVE_RUN=1).
 #
 # Safety properties (full list in scripts/launchd/README.md):
-#   - the only pushes to main from here carry .claude/analysis/, .claude/plans/
+#   - the only pushes to main from here carry analysis/, plans/
 #     or CHANGELOG.md (push guard); release.ts makes its own release push;
 #   - merges are squash merges made by merge-queue.ts after re-checking
 #     eligibility; draft PRs stay draft until reviewed;
@@ -68,11 +68,11 @@ export AUTO_IMPROVE_MERGE="$MERGE_MODE"
 export AUTO_IMPROVE_RELEASE="$DO_RELEASE"
 
 cd "$REPO_DIR" || { echo "cannot cd to $REPO_DIR"; exit 1; }
-mkdir -p .claude/analysis
-LOG=".claude/analysis/auto-improve.log"
+mkdir -p analysis
+LOG="analysis/auto-improve.log"
 PAUSED=".pipeline.paused"
 LOCK=".pipeline.lock"
-GUARD_LOG=".claude/analysis/pipeline-guard.log"
+GUARD_LOG="analysis/pipeline-guard.log"
 STAGE_OUT="/dev/null"
 ts() { date "+%Y-%m-%d %H:%M:%S"; }
 log() { echo "[$(ts)] $*"; }
@@ -250,7 +250,7 @@ run_stage() {
   return "$rc"
 }
 
-count_plans() { ls .claude/plans/*.md 2>/dev/null | wc -l | tr -d ' '; }
+count_plans() { ls plans/*.md 2>/dev/null | wc -l | tr -d ' '; }
 # nth <keyword> <text>: the number before <keyword> in a Stage C summary line, or 0
 nth() { local v; v="$(printf '%s' "$2" | grep -Eo "[0-9]+ $1" | head -n1 | grep -Eo '^[0-9]+')"; echo "${v:-0}"; }
 # bullets <regex> <file>: count end-of-turn bullets that BEGIN with <regex>
@@ -373,7 +373,7 @@ record triage "plans=$(( $(count_plans) - PLANS_BEFORE ))"
 BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
 
 # push_main: push local main to origin under the PATH GUARD. Only commits whose
-# every path is under .claude/analysis/, .claude/plans/ or CHANGELOG.md may
+# every path is under analysis/, plans/ or CHANGELOG.md may
 # leave the Mac from here (release.ts makes its own push). Anything else is
 # logged loudly, NOT pushed, and trips the breaker — a foreign commit on the
 # pipeline clone's main is exactly what a human should look at.
@@ -405,7 +405,7 @@ push_main() {
   local outside
   outside="$(git diff --name-only origin/main..HEAD | "$BUN" scripts/protected-paths.ts --analysis-only)"
   if [ -n "$outside" ]; then
-    log "  PUSH GUARD: commits ahead of origin/main touch paths outside .claude/analysis/, .claude/plans/, CHANGELOG.md — NOT pushing:"
+    log "  PUSH GUARD: commits ahead of origin/main touch paths outside analysis/, plans/, CHANGELOG.md — NOT pushing:"
     echo "$outside" | sed 's/^/    /'
     trip_breaker "push guard: local main touches $(echo "$outside" | head -n3 | paste -sd ' ' -)"
     return 1
@@ -421,8 +421,8 @@ push_main() {
 commit_artifacts() {
   [ "$DO_COMMIT" = "1" ] || return 0
   if [ "$BRANCH" != "main" ]; then log "not on main (on '$BRANCH') — leaving analysis artifacts uncommitted"; return 0; fi
-  if ! git diff --quiet -- .claude/analysis .claude/plans 2>/dev/null \
-     || [ -n "$(git ls-files --others --exclude-standard .claude/analysis .claude/plans)" ]; then
+  if ! git diff --quiet -- analysis plans 2>/dev/null \
+     || [ -n "$(git ls-files --others --exclude-standard analysis plans)" ]; then
     # The tracker's shape is what Stage C/D and CI depend on. An agent-written
     # line that breaks it (an `Auto-fixable: yes (<free text>)` that names no
     # allowlist pattern turned main red on 2026-09-04) must never reach origin:
@@ -434,7 +434,7 @@ commit_artifacts() {
       return 1
     fi
     log "committing analysis artifacts to main"
-    git add .claude/analysis .claude/plans
+    git add analysis plans
     git -c commit.gpgsign=false commit -q -m "$1" \
       || log "  nothing to commit / commit failed (continuing)"
   fi

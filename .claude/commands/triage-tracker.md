@@ -1,6 +1,6 @@
 ---
 description: Nightly triage (Stage B2 of auto-improve) — classify untriaged improvement-tracker entries against the current auto-fix allowlist and write fix plans for the ones that qualify
-allowed-tools: Bash(bun scripts/tracker.ts *), Read, Write(.claude/plans/**), Glob, Grep
+allowed-tools: Bash(bun scripts/tracker.ts *), Read, Write(plans/**), Glob, Grep
 ---
 
 # Triage Tracker Entries (Stage B2 of auto-improve)
@@ -17,7 +17,7 @@ this command does not restate them.
 
 No human is reading this session and none can answer a question. Your tools are exactly the ones
 in `allowed-tools` above: `bun scripts/tracker.ts <subcommand>`, file reads, and writing new plan files
-under `.claude/plans/` (no `Edit` at all: the tracker and the analysis docs are read-only here). **A denied tool call means the action is outside this stage's scope** — it
+under `plans/` (no `Edit` at all: the tracker and the analysis docs are read-only here). **A denied tool call means the action is outside this stage's scope** — it
 is never a signal to find another way. Two endings besides "entries triaged" are complete,
 successful runs: **zero untriaged entries** (`untriaged` printed an empty list) and a final line
 beginning **`BLOCKED:`** with the reason (the inputs are not what this prompt expects, or the stage
@@ -35,7 +35,7 @@ Exactly three things, nothing else:
 - an entry's `Auto-fixable` line, through `bun scripts/tracker.ts set-autofixable <ID> "…"`;
 - an entry's `Status` line, through `bun scripts/tracker.ts set-status <ID> "planned"` — only after
   its plan file exists;
-- a new plan file `.claude/plans/<today>-<ID>.md` (`<today>` is the run date as `YYYY-MM-DD`, from
+- a new plan file `plans/<today>-<ID>.md` (`<today>` is the run date as `YYYY-MM-DD`, from
   your context — this stage cannot run `date`).
 
 Never edit `improvement-tracker.md` directly (not Descriptions, not Decisions, not Priority, not
@@ -58,8 +58,8 @@ Tracker edits go only through the two subcommands above.
    bun scripts/tracker.ts entry <ID>
    ```
    Then read the analysis section it cites: `First seen: Session N` →
-   `.claude/analysis/figma-mcp-session<N>-analysis.md`, and `Grep` for `\[<ID>\]` across
-   `.claude/analysis/*.md` to find every section that names it. A GitHub decision comment the
+   `analysis/figma-mcp-session<N>-analysis.md`, and `Grep` for `\[<ID>\]` across
+   `analysis/*.md` to find every section that names it. A GitHub decision comment the
    entry links to is not readable here; decide from the entry and the analysis text. When a
    verdict needs the current code (a file path, the exact text a plan would replace), `Read` it
    from the repo — a plan Stage D can apply verbatim quotes the current text.
@@ -90,9 +90,9 @@ Tracker edits go only through the two subcommands above.
    ```
 
 5. **When `yes`, write the plan, then mark the status — in that order.**
-   - Check `Glob .claude/plans/*<ID>*.md` first: if a plan already exists, do not write another —
+   - Check `Glob plans/*<ID>*.md` first: if a plan already exists, do not write another —
      go straight to `set-status`.
-   - Otherwise write `.claude/plans/<today>-<ID>.md` in the Phase 6 **Plan Format**: `**Pattern**`
+   - Otherwise write `plans/<today>-<ID>.md` in the Phase 6 **Plan Format**: `**Pattern**`
      starts with the one allowlist token, `**Priority**` copies the entry, `### File:` sections
      quote the exact current text and its replacement, and `## Verification` names the test
      file/case that fails without the change (required for every pattern except `description-only`

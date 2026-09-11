@@ -11,6 +11,12 @@
        derives the repo from its own location. -->
   <key>ProgramArguments</key>
   <array>
+    <!-- caffeinate -i holds an idle-sleep assertion for the whole run (a
+         closed lid on battery still forces sleep). Without it the job runs in
+         brief dark wakes: stages stretch to hours and the per-stage watchdog,
+         whose timer stops during sleep, never fires. -->
+    <string>/usr/bin/caffeinate</string>
+    <string>-i</string>
     <string>/bin/bash</string>
     <string>/Users/davidbowman/Github/figmagent-pipeline/scripts/auto-improve.sh</string>
   </array>
@@ -58,10 +64,10 @@
   <string>Background</string>
 
   <!-- launchd's own capture of stdout/stderr (the script also writes its own
-       detailed log to .claude/analysis/auto-improve.log). -->
+       detailed log to analysis/auto-improve.log). -->
   <key>StandardOutPath</key>
-  <string>/Users/davidbowman/Github/figmagent-pipeline/.claude/analysis/auto-improve.launchd.log</string>
+  <string>/Users/davidbowman/Github/figmagent-pipeline/analysis/auto-improve.launchd.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/davidbowman/Github/figmagent-pipeline/.claude/analysis/auto-improve.launchd.log</string>
+  <string>/Users/davidbowman/Github/figmagent-pipeline/analysis/auto-improve.launchd.log</string>
 </dict>
 </plist>

@@ -1,6 +1,6 @@
 /**
  * Pure parsing and aggregation for the pipeline run record
- * (.claude/analysis/pipeline-runs.jsonl). One JSON object per line, one line per
+ * (analysis/pipeline-runs.jsonl). One JSON object per line, one line per
  * event: `{ run, stage, ts, ...counters }`. Stages append whatever key=value
  * pairs they know; `summarizeRuns` sums every numeric key per run and keeps the
  * last string value per key, so a new counter needs no schema change — only the

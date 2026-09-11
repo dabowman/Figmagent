@@ -6,7 +6,7 @@
  * `version`, and `/plugin update` keeps the cached copy until that number
  * changes. Merged PRs alone never reach the harness — the version bump is the
  * release. Judgement is not needed here, so no agent runs this stage; it is
- * plain git + gh with fixed parameters (see .claude/plans/2026-09-03-auto-improve-v2.md, WS3).
+ * plain git + gh with fixed parameters (see plans/2026-09-03-auto-improve-v2.md, WS3).
  *
  * Steps, each logged:
  *   1. Preconditions: on main, clean tree (analysis-only paths excepted — the

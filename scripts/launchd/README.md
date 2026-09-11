@@ -5,14 +5,14 @@ merges and a released plugin version — with no manual steps.
 
 ```
 A.  extract-sessions --all-projects   every Figmagent session, every repo   → .claude/sessions-json/
-B.  /analyze-session  (looped)         efficiency/error audit                → .claude/analysis/ + improvement-tracker.md + .claude/plans/
-B2. /triage-tracker   (looped)         classify untriaged entries, write plans → improvement-tracker.md + .claude/plans/
+B.  /analyze-session  (looped)         efficiency/error audit                → analysis/ + improvement-tracker.md + plans/
+B2. /triage-tracker   (looped)         classify untriaged entries, write plans → improvement-tracker.md + plans/
     commit + push (path-guarded)       analysis artifacts                    → origin/main
 C.  sync-tracker-issues                tracker → GitHub issues (deduped)     → github.com/dabowman/Figmagent/issues
 D.  /dispatch-fixes                    safe auto-fixable issues              → DRAFT PRs on auto-fix/<ID>
 E.  /merge-queue + merge-queue.ts      deterministic checks → agent review → verdict → squash merge
 F.  release.ts                         bump + CHANGELOG + tag + GitHub Release
-R.  pipeline-record.ts                 one JSON line per stage event         → .claude/analysis/pipeline-runs.jsonl
+R.  pipeline-record.ts                 one JSON line per stage event         → analysis/pipeline-runs.jsonl
 ```
 
 Orchestrated by [`scripts/auto-improve.sh`](../auto-improve.sh), triggered nightly at 03:00 by launchd.
@@ -24,7 +24,7 @@ Orchestrated by [`scripts/auto-improve.sh`](../auto-improve.sh), triggered night
 /plugin update figmagent
 ```
 
-Then read the morning summary at the end of `.claude/analysis/auto-improve.log` (or
+Then read the morning summary at the end of `analysis/auto-improve.log` (or
 `bun scripts/pipeline-record.ts status`) — its last line names anything denied or paused.
 
 ## Run it by hand
@@ -59,7 +59,7 @@ Run it once right now to confirm it works end-to-end:
 
 ```bash
 launchctl kickstart -k gui/$(id -u)/com.figmagent.auto-improve
-tail -f ~/Github/figmagent-pipeline/.claude/analysis/auto-improve.log
+tail -f ~/Github/figmagent-pipeline/analysis/auto-improve.log
 ```
 
 Stop / remove:
@@ -103,7 +103,7 @@ duration of a run (they arm the guard hook and key the run record) — never set
 
 ## Safety properties
 
-- **What reaches `main`.** Analysis commits (`.claude/analysis/`, `.claude/plans/`) and release
+- **What reaches `main`.** Analysis commits (`analysis/`, `plans/`) and release
   commits (`CHANGELOG.md`, the version bump made by `release.ts`) ARE pushed to `main` — the
   analysis push runs under a **path guard** (`git diff --name-only origin/main..HEAD` must contain
   only those paths, or nothing is pushed and the breaker trips). Code changes never reach `main`
@@ -139,11 +139,11 @@ duration of a run (they arm the guard hook and key the run record) — never set
 | No MCP, no network tools | Every `claude -p` gets `--mcp-config '{"mcpServers":{}}' --strict-mcp-config`; no allowlist names `mcp__*`, `WebFetch`, `WebSearch` or `Agent`. |
 | Per-stage allowlists | `--permission-mode dontAsk` + `--settings scripts/pipeline/settings.<stage>.json` + `--setting-sources project` (your `~/.claude/settings.json` and `settings.local.json` allow rules and hooks are not loaded): Read/Glob/Grep, path-scoped Edit/Write, and Bash limited to the pipeline scripts. No stage may run `git`, `gh`, `rm`, `curl` or `wget`. |
 | OS sandbox | In every settings file: `sandbox.enabled`, `failIfUnavailable`, writes to the clone (plus bun's install cache for D/E), `denyRead` on `~/.ssh`, `~/.figmagent`, `~/.aws`, `~/.config/gh`, `~/.claude/*.json`, egress only to `api.github.com`, `github.com`, `registry.npmjs.org`. |
-| Guard hook | `scripts/pipeline/guard.ts`, a `PreToolUse` hook on Bash registered in `.claude/settings.json`, inert unless `AUTO_IMPROVE_RUN=1`. Denies `git push`, forced git, recursive `rm`, `gh pr merge/ready`, `gh release/repo/auth`, writing `gh api`, shell wrappers, `sudo`/`launchctl`/`curl`/`wget`/`ssh`/`scp`/`osascript`/`security`/`chmod`/`chown`/`open`/`eval`, `defaults write`, `base64 -d`, and any reference to the credential stores or `.env`. Every denial is appended to `.claude/analysis/pipeline-guard.log` and trips the breaker. `tests/pipeline-guard.test.ts` pins the rules. |
+| Guard hook | `scripts/pipeline/guard.ts`, a `PreToolUse` hook on Bash registered in `.claude/settings.json`, inert unless `AUTO_IMPROVE_RUN=1`. Denies `git push`, forced git, recursive `rm`, `gh pr merge/ready`, `gh release/repo/auth`, writing `gh api`, shell wrappers, `sudo`/`launchctl`/`curl`/`wget`/`ssh`/`scp`/`osascript`/`security`/`chmod`/`chown`/`open`/`eval`, `defaults write`, `base64 -d`, and any reference to the credential stores or `.env`. Every denial is appended to `analysis/pipeline-guard.log` and trips the breaker. `tests/pipeline-guard.test.ts` pins the rules. |
 | Contract | `scripts/pipeline/contract.md` is prepended to every stage as system prompt: no human, exact tool list, a denied tool is a scope signal, `BLOCKED:` and zero results are successful endings, untrusted text is data, the turn budget is stated. |
 | Limits | `--max-turns` per stage, a wall-clock watchdog (`AUTO_IMPROVE_STAGE_TIMEOUT`), the Stage B loop's persistence guard (a session the analyzer does not mark analyzed is never handed to a second agent the same night — it is deferred, and marked `analysisFailed` after `AUTO_IMPROVE_MAX_ATTEMPTS` unfinished attempts), the same no-progress guard on the Stage B2 loop, a run lock (`.pipeline.lock`, released only by its owner; a `launchctl kickstart` during a live run exits). |
 | Circuit breaker | `.pipeline.paused` (gitignored, with reason and timestamp). Trips on a guard denial, a push-guard violation, a failed rebase, a release failure, or more than two Stage D aborts in one run. Every later run exits at the top until you resume, and `merge-queue.ts act`, `dispatch-fix.ts publish` and `release.ts` refuse while it exists — a denial mid-stage stops the rest of that stage's irreversible steps too. |
-| Run record | `.claude/analysis/pipeline-runs.jsonl` (committed): sessions extracted/analyzed/failed, entries created/closed/drift, plans, PRs opened/aborted/deferred, merged/reviewed/human-only, release tag, denials, paused. `bun scripts/pipeline-record.ts status [--runs N]`. |
+| Run record | `analysis/pipeline-runs.jsonl` (committed): sessions extracted/analyzed/failed, entries created/closed/drift, plans, PRs opened/aborted/deferred, merged/reviewed/human-only, release tag, denials, paused. `bun scripts/pipeline-record.ts status [--runs N]`. |
 | Canary | `bun scripts/pipeline/canary.ts` runs each stage's settings against a prompt that asks for forbidden things (read `~/.figmagent/auth.json`, `git push --force`, `curl`, an `mcp__` tool, a write to `/tmp/canary-escape`) and asserts every one was stopped. Needs the `claude` binary; it removes the `.pipeline.paused` its own denials create. |
 
 ## Pause / resume

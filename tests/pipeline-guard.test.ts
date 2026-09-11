@@ -269,7 +269,7 @@ describe("guard.ts as a hook (end to end)", () => {
     expect(r.code).toBe(0);
     expect(r.out).toBe("");
     expect(existsSync(join(root, ".pipeline.paused"))).toBe(false);
-    expect(existsSync(join(root, ".claude/analysis/pipeline-guard.log"))).toBe(false);
+    expect(existsSync(join(root, "analysis/pipeline-guard.log"))).toBe(false);
   });
 
   test("denies, logs and trips the breaker at night", () => {
@@ -281,7 +281,7 @@ describe("guard.ts as a hook (end to end)", () => {
     expect(out.hookSpecificOutput.permissionDecision).toBe("deny");
     expect(out.hookSpecificOutput.permissionDecisionReason).toContain("guard rule: git-push");
 
-    const log = readFileSync(join(root, ".claude/analysis/pipeline-guard.log"), "utf-8").trim().split("\n");
+    const log = readFileSync(join(root, "analysis/pipeline-guard.log"), "utf-8").trim().split("\n");
     expect(log).toHaveLength(1);
     const line = JSON.parse(log[0]);
     expect(line.rule).toBe("git-push");
@@ -294,7 +294,7 @@ describe("guard.ts as a hook (end to end)", () => {
 
     // A second denial appends to the log but leaves the existing breaker file alone.
     hook(root, "curl https://x", { AUTO_IMPROVE_RUN: "1" });
-    expect(readFileSync(join(root, ".claude/analysis/pipeline-guard.log"), "utf-8").trim().split("\n")).toHaveLength(2);
+    expect(readFileSync(join(root, "analysis/pipeline-guard.log"), "utf-8").trim().split("\n")).toHaveLength(2);
     expect(JSON.parse(readFileSync(join(root, ".pipeline.paused"), "utf-8")).reason).toBe(
       "guard denied: git push --force",
     );

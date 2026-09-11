@@ -387,9 +387,9 @@ describe("releaseWorthy: analysis-only nights do not release", () => {
   test("only analysis, plans and the changelog", () => {
     expect(
       releaseWorthy([
-        ".claude/analysis/improvement-tracker.md",
-        ".claude/analysis/figma-mcp-session63-analysis.md",
-        ".claude/plans/2026-09-04-BUG-050.md",
+        "analysis/improvement-tracker.md",
+        "analysis/figma-mcp-session63-analysis.md",
+        "plans/2026-09-04-BUG-050.md",
         "CHANGELOG.md",
         "./CHANGELOG.md",
       ]),
@@ -397,7 +397,7 @@ describe("releaseWorthy: analysis-only nights do not release", () => {
   });
 
   test("one real path among them is enough", () => {
-    expect(releaseWorthy([".claude/analysis/improvement-tracker.md", "src/figmagent_mcp/tools/apply.ts"])).toBe(true);
+    expect(releaseWorthy(["analysis/improvement-tracker.md", "src/figmagent_mcp/tools/apply.ts"])).toBe(true);
     expect(releaseWorthy(["README.md"])).toBe(true);
   });
 
@@ -406,8 +406,8 @@ describe("releaseWorthy: analysis-only nights do not release", () => {
     expect(isAnalysisOnlyPath(".claude/skills/analyze-session/SKILL.md")).toBe(false);
     expect(isAnalysisOnlyPath(".claude-plugin/plugin.json")).toBe(false);
     expect(isAnalysisOnlyPath("docs/CHANGELOG.md")).toBe(false);
-    expect(isAnalysisOnlyPath(".claude/analysis/sessions.json")).toBe(true);
-    expect(isAnalysisOnlyPath(".claude/plans/x.md")).toBe(true);
+    expect(isAnalysisOnlyPath("analysis/sessions.json")).toBe(true);
+    expect(isAnalysisOnlyPath("plans/x.md")).toBe(true);
   });
 });
 

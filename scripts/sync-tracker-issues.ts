@@ -2,7 +2,7 @@
 /**
  * Sync the improvement tracker to GitHub issues.
  *
- * The improvement tracker (.claude/analysis/improvement-tracker.md) is the
+ * The improvement tracker (analysis/improvement-tracker.md) is the
  * deduplicated source of truth for Figmagent self-improvement work. Each
  * `### [CATEGORY-NNN] Title` block maps to at most one GitHub issue.
  *
@@ -70,8 +70,8 @@ import { $ } from "bun";
 import { decideReverse, implementedStatus, mergedClosers, parseTimelineJson } from "./sync-reverse-lib.ts";
 import { parseTrackerFull, priorityToken, type TrackerEntry, updateEntryField } from "./tracker-parse.ts";
 
-const TRACKER = ".claude/analysis/improvement-tracker.md";
-const ANALYSIS_DIR = ".claude/analysis";
+const TRACKER = "analysis/improvement-tracker.md";
+const ANALYSIS_DIR = "analysis";
 const REPO = process.env.AUTO_IMPROVE_REPO || "dabowman/Figmagent";
 const LABEL = "figmagent-improvement";
 
@@ -168,7 +168,7 @@ const issueBody = (t: TrackerIssue): string =>
     t.body,
     "",
     "---",
-    "*Auto-synced from `.claude/analysis/improvement-tracker.md` by `scripts/sync-tracker-issues.ts`.*",
+    "*Auto-synced from `analysis/improvement-tracker.md` by `scripts/sync-tracker-issues.ts`.*",
     `*Tracker ID: \`${t.id}\` — keep the \`[${t.id}]\` title prefix; it is the sync key.*`,
   ].join("\n");
 
