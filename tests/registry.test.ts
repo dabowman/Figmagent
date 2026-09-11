@@ -150,11 +150,18 @@ describe("plugin command registry", () => {
 });
 
 describe("remote domain bundles", () => {
-  test("every domain bundles to a < 40KB IIFE exposing __figmagent", async () => {
+  // assembleScript puts bundle + the command's params JSON into one script
+  // under executor.ts's 49,000-char use_figma budget, and `edit` (the apply
+  // domain) is not chunked — so every byte a bundle grows is a byte an edit
+  // batch loses. Keep at least 8 KB of params room: 49,000 − 8,000 = 41,000.
+  // apply is the fat one (~40 KB); the rest sit under 33 KB.
+  const SCRIPT_CHAR_BUDGET = 49000;
+  const MIN_PARAMS_ROOM = 8000;
+  test("every domain bundles to an IIFE exposing __figmagent with ≥ 8 KB of params room left", async () => {
     for (const domain of Object.keys(DOMAINS)) {
       const code = await getDomainBundle(domain);
       expect(code.length).toBeGreaterThan(0);
-      expect(code.length).toBeLessThan(40000);
+      expect(code.length).toBeLessThan(SCRIPT_CHAR_BUDGET - MIN_PARAMS_ROOM);
       expect(code).toContain("__figmagent");
     }
   }, 30000);
