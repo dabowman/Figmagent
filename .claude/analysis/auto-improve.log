@@ -1412,3 +1412,109 @@ Two other candidates were dropped before preflight for same-file conflicts with 
 
 One tracker correction: **TOOL-006** is listed as `Status: identified` with a fix plan, but the change already shipped — `numericParam` exists in `utils.ts` and wraps every `z.number()` in `apply.ts` and `create.ts`, and issue #90 is closed. The entry will keep surfacing as a candidate until its status is updated.
 [2026-09-04 03:36:02] run complete
+
+========================= auto-improve 2026-09-05 03:04:19 =========================
+[2026-09-05 03:04:20] run 20260905T030420 in /Users/davidbowman/Github/cursor-talk-to-figma-mcp (bun: /Users/davidbowman/.bun/bin/bun, claude: /Users/davidbowman/.local/bin/claude)
+[2026-09-05 03:04:20] Stage A — extract Figmagent sessions across all repos
+  0f54fea9-aae0-4c5d-90ff-58b603df70ff → 330 messages, 149 tool calls
+
+1 extracted, 47 up-to-date. Output: /Users/davidbowman/Github/cursor-talk-to-figma-mcp/.claude/sessions-json
+Figma sessions: 59, needs analysis: 1
+  0f54fea9-aae0-4c5d-90ff-58b603df70ff   149 calls  10 figma  (new)
+[2026-09-05 03:08:13] Stage B — analyze sessions (cap 25, 200 turns each)
+[2026-09-05 03:08:24]   sessions needing analysis: 1
+[2026-09-05 03:08:30]   analyzing 0f54fea9-aae0-4c5d-90ff-58b603df70ff (attempt 1)
+Permission allow rule (scripts/pipeline/settings.analyze.json): Write(.claude/analysis/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(.claude/analysis/**) instead (Edit rules cover all file-editing tools).
+Permission allow rule (scripts/pipeline/settings.analyze.json): Write(.claude/plans/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(.claude/plans/**) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.analyze.json): Write(src/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(src/**) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.analyze.json): Write(scripts/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(scripts/**) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.analyze.json): Write(.github/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(.github/**) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.analyze.json): Write(.claude/commands/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(.claude/commands/**) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.analyze.json): Write(.claude/skills/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(.claude/skills/**) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.analyze.json): Write(CLAUDE.md) is not matched by file permission checks — only Edit(path) rules are. Use Edit(CLAUDE.md) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.analyze.json): Write(.claude/settings.json) is not matched by file permission checks — only Edit(path) rules are. Use Edit(.claude/settings.json) instead (Edit rules cover all file-editing tools).
+Both permitted write targets are denied by the harness, so this stage cannot produce its deliverables. Recording what the analysis found, since the transcript survives:
+
+**Session picked**: `0f54fea9-aae0-4c5d-90ff-58b603df70ff` (`bun scripts/refresh-manifest.ts --next`), 13th run on the external storybook "Archer" file, remote transport, 37 min, 149 tool calls (84 Figmagent), 9 `is_error` + 2 unflagged soft failures. Transcript read in full; no injected instructions found in it.
+
+Findings that would have been filed (3 new, cap not reached):
+- **[TOOL-059]** `read` drops `visible: false` subtrees at `document.js:462` with no counter and no mention in the tool description (`document.ts:275-288`) — the agent's own summary blames it for a wrong component triage costing ~6 calls; the one call that used `filter: { visibleOnly: false }` (`toolu_01WPDsRH6CeqyL3ViKtcZn8U`) was correct first try. `description-only`, P1.
+- **[BUG-052]** In `run_script`, `node.setBoundVariable(field, "VariableID:…")` silently no-ops (`toolu_01YCUdqwRxoJLSvCfhRzirav`), an alias object throws `invalid variable id` (`toolu_01RKmYsq9zqga6Ur9Cn1mfbV`), only a `Variable` object works (`toolu_01PcDi9KXy51abZSs87UWiJj`) — cost 3 calls and permanently lost the node's `ui/body` `textStyleId`. `description-only` on `script.ts:156-161`, P1.
+- **[BUG-033] 9th recurrence** — `write({fromNodeId})` on a text-bearing subtree, 3 byte-identical failures; `cloneAndModify` (`modify.js:513-522`) lets Figma's raw `appendChild: unloaded font` escape with no `Fix:`. Text-free siblings cloned in 1 call each. Worst [AGENT-029] execution on this file.
+
+Recurrences: **[BUG-039]** 3rd (wrong fix string still at `apply.js:686-689`), **[BUG-016]** (recovered in 2 calls via its own stated fix). **[BUG-041]** would have moved to `verified` — `fig.loadFont` hard-failed with the true remote-font cause instead of substituting Inter. Reversal worth noting on **[AGENT-025]**: `run_script` at 7.1% of Figma calls, the lowest on this file.
+
+The manifest is untouched, so the orchestrator will defer this session to the next night rather than losing it.
+
+BLOCKED: `Write` to both `.claude/analysis/**` and `.claude/plans/**` is denied by the harness ("don't ask mode") despite being in this stage's permitted tool list, so the session-65 analysis document, its `## Outcome` block, the tracker updates and the two fix plans could not be written.
+[2026-09-05 09:43:46]   GUARD: 1 command(s) denied by scripts/pipeline/guard.ts this stage (see .claude/analysis/pipeline-guard.log)
+[2026-09-05 09:43:46] BREAKER TRIPPED by the guard hook: guard denied: bun -e '\nconst s = await Bun.file(\
+[2026-09-05 09:43:46]   breaker tripped — stopping Stage B
+[2026-09-05 09:43:48]   0f54fea9-aae0-4c5d-90ff-58b603df70ff is still queued after attempt 1 — deferred to the next run (analyze-session ran but did not mark the session analyzed)
+[2026-09-05 09:43:48] Stage B done: 1 run(s), 0 analyzed, 1 deferred, 0 failed
+[2026-09-05 09:43:48] Stage B2 — skipped (breaker tripped)
+[2026-09-05 09:43:49] not on main (on 'claude/auto-improve-release-process-5ts90l') — leaving analysis artifacts uncommitted
+[2026-09-05 09:43:49] Stage C — skipped (breaker tripped)
+[2026-09-05 09:43:49] Stage D — skipped (not on main, on 'claude/auto-improve-release-process-5ts90l')
+[2026-09-05 09:43:49] Stage E — skipped (not on main, on 'claude/auto-improve-release-process-5ts90l')
+[2026-09-05 09:43:49] Stage F — skipped (not on main, on 'claude/auto-improve-release-process-5ts90l')
+[2026-09-05 09:43:50] run complete in 399m
+----- morning summary (this run) -----
+run              start             dur    sess e/a/f  entries c/c/d  plans  prs o/a/d  merge m/r/h  release  deny  paused
+20260905T030420  2026-09-05 09:08  6h36m  1/0/0       0/0/0          0      0/0/1      0/0/0        -        1     yes: guard denied: bun -e '\nconst s = await Bun.file(\
+denied: 1 command(s) (see .claude/analysis/pipeline-guard.log); PAUSED: guard denied: bun -e '\nconst s = await Bun.file(\ — resume with: bun scripts/pipeline-record.ts resume
+[2026-09-05 09:43:50] not on main (on 'claude/auto-improve-release-process-5ts90l') — leaving analysis artifacts uncommitted
+
+========================= auto-improve 2026-09-06 03:12:39 =========================
+[2026-09-06 03:12:39] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-09-06 03:12:39] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-09-07 03:07:55 =========================
+[2026-09-07 03:07:55] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-09-07 03:07:55] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-09-08 03:12:26 =========================
+[2026-09-08 03:12:26] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-09-08 03:12:26] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-09-09 03:08:26 =========================
+[2026-09-09 03:08:26] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-09-09 03:08:26] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-09-10 03:00:05 =========================
+[2026-09-10 03:00:05] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-09-10 03:00:05] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-09-11 03:00:05 =========================
+[2026-09-11 03:00:05] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-09-11 03:00:05] resume with: bun scripts/pipeline-record.ts resume

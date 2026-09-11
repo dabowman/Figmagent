@@ -1,0 +1,8 @@
+{"run":"20260905T030420","stage":"extract","ts":"2026-09-05T09:08:13.097Z","extracted":1,"queued":1}
+{"run":"20260905T030420","stage":"analyze","ts":"2026-09-05T15:43:46.087Z","exit":0,"seconds":23715}
+{"run":"20260905T030420","stage":"guard","ts":"2026-09-05T15:43:46.185Z","denials":1}
+{"run":"20260905T030420","stage":"breaker","ts":"2026-09-05T15:43:46.334Z","paused":1,"reason":"guard denied: bun -e '\\nconst s = await Bun.file(\\"}
+{"run":"20260905T030420","stage":"analyze","ts":"2026-09-05T15:43:48.707Z","deferred":1,"session":"0f54fea9-aae0-4c5d-90ff-58b603df70ff"}
+{"run":"20260905T030420","stage":"triage","ts":"2026-09-05T15:43:48.947Z","plans":0}
+{"run":"20260905T030420","stage":"sync","ts":"2026-09-05T15:43:49.620Z","created":0,"closed":0,"reopened":0,"reversed":0,"drift":0,"in_sync":0,"resolved_unfiled":0,"dangling":0,"sync_deferred":0,"sync_failed":0}
+{"run":"20260905T030420","stage":"run","ts":"2026-09-05T15:43:50.152Z","seconds":23970,"denials_total":1}
