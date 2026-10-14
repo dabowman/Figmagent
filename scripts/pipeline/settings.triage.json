@@ -5,8 +5,6 @@
       "Read",
       "Glob",
       "Grep",
-      "Edit(analysis/**)",
-      "Write(analysis/**)",
       "Edit(plans/**)",
       "Write(plans/**)",
       "Bash(bun run refresh-manifest *)",

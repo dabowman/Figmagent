@@ -11,10 +11,12 @@
        derives the repo from its own location. -->
   <key>ProgramArguments</key>
   <array>
-    <!-- caffeinate -i holds an idle-sleep assertion for the whole run (a
-         closed lid on battery still forces sleep). Without it the job runs in
-         brief dark wakes: stages stretch to hours and the per-stage watchdog,
-         whose timer stops during sleep, never fires. -->
+    <!-- caffeinate -i holds an idle-sleep assertion for the whole run, so a
+         run that starts while the Mac is awake is not idle-slept mid-stage.
+         It cannot wake a sleeping Mac: the assertion has no effect in Dark
+         Wake (IOPMLib.h), so a run launchd starts in a maintenance wake on
+         battery still crawls through brief wakes, and a closed lid still
+         forces sleep. The per-stage watchdog counts awake time only. -->
     <string>/usr/bin/caffeinate</string>
     <string>-i</string>
     <string>/bin/bash</string>

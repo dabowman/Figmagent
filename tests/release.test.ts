@@ -408,6 +408,9 @@ describe("releaseWorthy: analysis-only nights do not release", () => {
     expect(isAnalysisOnlyPath("docs/CHANGELOG.md")).toBe(false);
     expect(isAnalysisOnlyPath("analysis/sessions.json")).toBe(true);
     expect(isAnalysisOnlyPath("plans/x.md")).toBe(true);
+    // commits from before the move out of .claude/ still classify
+    expect(isAnalysisOnlyPath(".claude/analysis/sessions.json")).toBe(true);
+    expect(isAnalysisOnlyPath(".claude/plans/x.md")).toBe(true);
   });
 });
 

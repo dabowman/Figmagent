@@ -15,6 +15,9 @@
       "Bash(bun scripts/extract-sessions.ts *)"
     ],
     "deny": [
+      "Edit(analysis/auto-improve.log)",
+      "Edit(analysis/pipeline-runs.jsonl)",
+      "Edit(analysis/pipeline-guard.log)",
       "Bash(git *)",
       "Bash(gh *)",
       "Bash(rm *)",

@@ -58,8 +58,8 @@ Tracker edits go only through the two subcommands above.
    bun scripts/tracker.ts entry <ID>
    ```
    Then read the analysis section it cites: `First seen: Session N` →
-   `analysis/figma-mcp-session<N>-analysis.md`, and `Grep` for `\[<ID>\]` across
-   `analysis/*.md` to find every section that names it. A GitHub decision comment the
+   `analysis/figma-mcp-session<N>-analysis.md`, and run `grep -n '\[<ID>\]' analysis/*.md`
+   to find every section that names it (there is no Grep or Glob tool in this build). A GitHub decision comment the
    entry links to is not readable here; decide from the entry and the analysis text. When a
    verdict needs the current code (a file path, the exact text a plan would replace), `Read` it
    from the repo — a plan Stage D can apply verbatim quotes the current text.
@@ -90,7 +90,7 @@ Tracker edits go only through the two subcommands above.
    ```
 
 5. **When `yes`, write the plan, then mark the status — in that order.**
-   - Check `Glob plans/*<ID>*.md` first: if a plan already exists, do not write another —
+   - Check `ls plans/*<ID>*.md` first: if a plan already exists, do not write another —
      go straight to `set-status`.
    - Otherwise write `plans/<today>-<ID>.md` in the Phase 6 **Plan Format**: `**Pattern**`
      starts with the one allowlist token, `**Priority**` copies the entry, `### File:` sections

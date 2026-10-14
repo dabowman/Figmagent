@@ -44,6 +44,8 @@
       "Write(.claude/worktrees/**/scripts/**)",
       "Edit(.claude/worktrees/**/.claude/**)",
       "Write(.claude/worktrees/**/.claude/**)",
+      "Edit(.claude/worktrees/**/analysis/**)",
+      "Edit(.claude/worktrees/**/plans/**)",
       "Edit(.claude/worktrees/**/.claude-plugin/**)",
       "Write(.claude/worktrees/**/.claude-plugin/**)",
       "Edit(.claude/worktrees/**/package.json)",

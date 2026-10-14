@@ -25,3 +25,7 @@ analysis/auto-improve.launchd.log
 .pipeline.lock
 .pipeline.paused
 analysis/pipeline-guard.log
+
+# Pre-move location of the files above. An older clone or installed plist still
+# writes logs here; unignored, they make release.ts refuse a dirty tree.
+.claude/analysis/

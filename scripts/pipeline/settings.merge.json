@@ -5,6 +5,7 @@
       "Read",
       "Glob",
       "Grep",
+      "Edit(.claude/worktrees/verdicts/**)",
       "Write(.claude/worktrees/verdicts/**)",
       "Bash(bun scripts/merge-queue.ts *)"
     ],

@@ -224,7 +224,8 @@ async function baseline(): Promise<string> {
 }
 
 async function changedPathsOf(sha: string): Promise<string[] | null> {
-  const r = await $`git diff --name-only ${`${sha}^1`} ${sha}`.nothrow().quiet();
+  // --no-renames: a file moved into analysis/ also shows its old path (same rule as the push guard).
+  const r = await $`git diff --name-only --no-renames ${`${sha}^1`} ${sha}`.nothrow().quiet();
   if (r.exitCode !== 0) return null; // root commit: no parent to diff against
   return r.stdout
     .toString()
@@ -388,7 +389,7 @@ async function main(): Promise<void> {
 
   // 3. What changed.
   const head = (await git(["rev-parse", "HEAD"])).trim();
-  const changed = (await git(["diff", "--name-only", base, head]))
+  const changed = (await git(["diff", "--name-only", "--no-renames", base, head]))
     .split("\n")
     .map((p) => p.trim())
     .filter(Boolean);

@@ -200,11 +200,16 @@ run_with_watchdog() {
   perl -e 'setpgrp(0, 0); exec @ARGV or die "exec failed: $!\n"' -- "$@" &
   local pid=$!
   local fired="$RUN_TMP/watchdog.$pid"
-  ( sleep "$secs"; touch "$fired"; kill -TERM -- "-$pid" 2>/dev/null; sleep 30; kill -KILL -- "-$pid" 2>/dev/null ) &
+  # The watchdog's output goes to /dev/null: `kill "$wd"` below leaves its
+  # `sleep` running, and with the caller's stdout that sleep held the `| tee`
+  # pipe open, so every stage lasted the full timeout.
+  ( sleep "$secs"; touch "$fired"; kill -TERM -- "-$pid" 2>/dev/null; sleep 30; kill -KILL -- "-$pid" 2>/dev/null ) >/dev/null 2>&1 &
   local wd=$!
   wait "$pid"; local rc=$?
+  # Fired: let the watchdog finish its KILL of the group (a TERM-ignoring
+  # grandchild would otherwise survive) instead of killing it mid-grace.
+  if [ -e "$fired" ]; then wait "$wd" 2>/dev/null; rm -f "$fired"; return 124; fi
   kill "$wd" 2>/dev/null; wait "$wd" 2>/dev/null
-  if [ -e "$fired" ]; then rm -f "$fired"; return 124; fi
   return "$rc"
 }
 
@@ -403,7 +408,9 @@ push_main() {
   # The analysis-only rule lives in scripts/protected-paths.ts (shared with
   # release.ts); the CLI prints every path that is NOT analysis-only.
   local outside
-  outside="$(git diff --name-only origin/main..HEAD | "$BUN" scripts/protected-paths.ts --analysis-only)"
+  # --no-renames: a file moved INTO analysis/ must also show its old path, or
+  # `git mv scripts/x.ts analysis/x.ts` would pass as analysis-only.
+  outside="$(git diff --name-only --no-renames origin/main..HEAD | "$BUN" scripts/protected-paths.ts --analysis-only)"
   if [ -n "$outside" ]; then
     log "  PUSH GUARD: commits ahead of origin/main touch paths outside analysis/, plans/, CHANGELOG.md — NOT pushing:"
     echo "$outside" | sed 's/^/    /'
@@ -427,7 +434,7 @@ commit_artifacts() {
     # line that breaks it (an `Auto-fixable: yes (<free text>)` that names no
     # allowlist pattern turned main red on 2026-09-04) must never reach origin:
     # leave the artifacts uncommitted for a human, and pause the pipeline.
-    if ! "$BUN" test tests/tracker-shape.test.ts >"$RUN_TMP/tracker-shape.out" 2>&1; then
+    if ! "$BUN" test ./tests/tracker-shape.test.ts >"$RUN_TMP/tracker-shape.out" 2>&1; then
       log "  tracker shape test FAILED — analysis artifacts left uncommitted:"
       grep -E '^\(fail\)|error:' "$RUN_TMP/tracker-shape.out" | head -n 5 | sed 's/^/    /' | tee -a "$LOG" >/dev/null
       trip_breaker "tracker shape test failed after analysis (fix the offending line, then pipeline-resume)"
