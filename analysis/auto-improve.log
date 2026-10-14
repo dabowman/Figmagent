@@ -1518,3 +1518,282 @@ denied: 1 command(s) (see .claude/analysis/pipeline-guard.log); PAUSED: guard de
   "run": "20260905T030420"
 }
 [2026-09-11 03:00:05] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-09-12 03:00:05 =========================
+[2026-09-12 03:00:05] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-09-12 03:00:05] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-09-13 03:00:04 =========================
+[2026-09-13 03:00:04] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-09-13 03:00:04] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-09-14 03:00:04 =========================
+[2026-09-14 03:00:04] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-09-14 03:00:05] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-09-15 03:14:21 =========================
+[2026-09-15 03:14:21] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-09-15 03:14:21] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-09-16 03:00:05 =========================
+[2026-09-16 03:00:05] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-09-16 03:00:05] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-09-17 03:00:04 =========================
+[2026-09-17 03:00:04] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-09-17 03:00:04] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-09-18 03:00:05 =========================
+[2026-09-18 03:00:05] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-09-18 03:00:05] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-09-19 03:00:05 =========================
+[2026-09-19 03:00:05] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-09-19 03:00:05] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-09-20 03:00:05 =========================
+[2026-09-20 03:00:05] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-09-20 03:00:05] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-09-21 03:00:05 =========================
+[2026-09-21 03:00:05] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-09-21 03:00:05] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-09-22 03:00:05 =========================
+[2026-09-22 03:00:05] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-09-22 03:00:05] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-09-23 03:00:05 =========================
+[2026-09-23 03:00:05] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-09-23 03:00:05] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-09-24 03:00:05 =========================
+[2026-09-24 03:00:05] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-09-24 03:00:05] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-09-25 03:02:36 =========================
+[2026-09-25 03:02:36] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-09-25 03:02:36] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-09-26 03:00:05 =========================
+[2026-09-26 03:00:05] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-09-26 03:00:05] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-09-27 03:00:05 =========================
+[2026-09-27 03:00:05] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-09-27 03:00:05] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-09-28 03:05:21 =========================
+[2026-09-28 03:05:21] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-09-28 03:05:21] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-09-29 11:00:06 =========================
+[2026-09-29 11:00:06] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-09-29 11:00:06] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-09-30 11:00:05 =========================
+[2026-09-30 11:00:05] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-09-30 11:00:05] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-10-01 11:00:05 =========================
+[2026-10-01 11:00:05] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-10-01 11:00:05] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-10-02 11:07:13 =========================
+[2026-10-02 11:07:13] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-10-02 11:07:13] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-10-03 03:02:33 =========================
+[2026-10-03 03:02:33] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-10-03 03:02:33] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-10-04 03:05:21 =========================
+[2026-10-04 03:05:21] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-10-04 03:05:21] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-10-05 03:00:36 =========================
+[2026-10-05 03:00:39] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-10-05 03:14:08] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-10-06 03:00:05 =========================
+[2026-10-06 03:00:05] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-10-06 03:00:05] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-10-07 03:02:40 =========================
+[2026-10-07 03:02:40] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-10-07 03:02:40] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-10-08 03:00:05 =========================
+[2026-10-08 03:00:05] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-10-08 03:00:05] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-10-09 03:00:05 =========================
+[2026-10-09 03:00:05] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-10-09 03:00:05] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-10-12 10:49:53 =========================
+[2026-10-12 10:49:54] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-10-12 10:49:54] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-10-13 03:00:05 =========================
+[2026-10-13 03:00:05] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-10-13 03:00:05] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-10-14 03:00:05 =========================
+[2026-10-14 03:00:05] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-10-14 03:00:05] resume with: bun scripts/pipeline-record.ts resume
