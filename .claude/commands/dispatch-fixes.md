@@ -42,7 +42,7 @@ name its test, and did the checks pass — once.
   1. The tracker entry has `Auto-fixable: yes (<pattern>)` — the plan's `**Pattern**` line is the
      authoritative one if the two disagree; the tracker parenthetical only orders the sort, and
   2. Priority is **P0 or P1** — or **P2** when the pattern is `description-only` or `lint-scope-filter`, and
-  3. A plan file exists at `.claude/plans/*<ISSUE-ID>*.md`, and
+  3. A plan file exists at `plans/*<ISSUE-ID>*.md`, and
   4. Status is `identified` or `planned` (never implemented/verified/resolved).
   5. You then run `dispatch-fix.ts preflight` yourself (an **open** issue exists; no branch/PR in flight).
 - The plan's `**Pattern**` must be one of `sync-to-async`, `type-coercion`,

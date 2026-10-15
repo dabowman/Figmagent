@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * Pipeline run record — one JSON line per event in
- * .claude/analysis/pipeline-runs.jsonl (committed; created on first use).
+ * analysis/pipeline-runs.jsonl (committed; created on first use).
  *
  * Usage:
  *   bun scripts/pipeline-record.ts event --run <RUN_ID> --stage <stage> [key=value ...]
@@ -23,7 +23,7 @@ import { dirname, join, resolve } from "node:path";
 import { formatStatus, parseEvents, parseKv, summarizeRuns } from "./pipeline-record-lib.ts";
 
 const ROOT = process.env.PIPELINE_ROOT || resolve(import.meta.dir, "..");
-const RUNS_FILE = join(ROOT, ".claude/analysis/pipeline-runs.jsonl");
+const RUNS_FILE = join(ROOT, "analysis/pipeline-runs.jsonl");
 const PAUSED_FILE = join(ROOT, ".pipeline.paused");
 
 const argv = process.argv.slice(2);

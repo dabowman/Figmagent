@@ -1,10 +1,10 @@
 /**
  * Pure parsers for the auto-improve pipeline's two authoring artifacts:
  *
- *   - the improvement tracker (`.claude/analysis/improvement-tracker.md`):
+ *   - the improvement tracker (`analysis/improvement-tracker.md`):
  *     `## <section>` headings, `### [CATEGORY-NNN] Title` entries, and the
  *     `- **Field**: value` lines under each entry
- *   - fix plans (`.claude/plans/<date>-<ID>.md`): the `**Pattern**` /
+ *   - fix plans (`plans/<date>-<ID>.md`): the `**Pattern**` /
  *     `**Priority**` / `**Partial**` header, `### File:` sections, and the
  *     `- Line N: \`old\` → \`new\`` snippets under them
  *

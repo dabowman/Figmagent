@@ -13,7 +13,7 @@
 #   D.  Open DRAFT PRs for auto-fixable issues       (/dispatch-fixes)
 #   E.  Review-and-merge eligible PRs                (/merge-queue + merge-queue.ts)
 #   F.  Release: bump, CHANGELOG, tag, GitHub Release (release.ts)
-#   R.  One JSON line per stage event → .claude/analysis/pipeline-runs.jsonl
+#   R.  One JSON line per stage event → analysis/pipeline-runs.jsonl
 #
 # Stages A, C and F, and every irreversible step, are deterministic scripts.
 # Stages B, B2, D and E invoke Claude Code headless (`claude -p`) under least
@@ -24,7 +24,7 @@
 # hook (scripts/pipeline/guard.ts — live only while AUTO_IMPROVE_RUN=1).
 #
 # Safety properties (full list in scripts/launchd/README.md):
-#   - the only pushes to main from here carry .claude/analysis/, .claude/plans/
+#   - the only pushes to main from here carry analysis/, plans/
 #     or CHANGELOG.md (push guard); release.ts makes its own release push;
 #   - merges are squash merges made by merge-queue.ts after re-checking
 #     eligibility; draft PRs stay draft until reviewed;
@@ -53,6 +53,7 @@ MAX_ANALYZE="${AUTO_IMPROVE_MAX_ANALYZE:-25}"        # cap on analyses per run
 DO_COMMIT="${AUTO_IMPROVE_COMMIT:-1}"                # commit analysis artifacts (main only)
 DO_PUSH="${AUTO_IMPROVE_PUSH:-1}"                    # push them to origin/main (path-guarded)
 DO_DISPATCH="${AUTO_IMPROVE_DISPATCH:-1}"            # Stage D: open draft fix PRs
+SYNC_MODE="${AUTO_IMPROVE_SYNC:-1}"                  # Stage C: 0 (skip) | dry-run | 1
 DO_TRIAGE="${AUTO_IMPROVE_TRIAGE:-1}"                # Stage B2: triage untriaged tracker entries
 MAX_TRIAGE="${AUTO_IMPROVE_MAX_TRIAGE:-6}"           # cap on /triage-tracker calls per run
 MERGE_MODE="${AUTO_IMPROVE_MERGE:-dry-run}"          # Stage E: 0 (skip) | dry-run | 1 — a human flips it to 1
@@ -68,11 +69,11 @@ export AUTO_IMPROVE_MERGE="$MERGE_MODE"
 export AUTO_IMPROVE_RELEASE="$DO_RELEASE"
 
 cd "$REPO_DIR" || { echo "cannot cd to $REPO_DIR"; exit 1; }
-mkdir -p .claude/analysis
-LOG=".claude/analysis/auto-improve.log"
+mkdir -p analysis
+LOG="analysis/auto-improve.log"
 PAUSED=".pipeline.paused"
 LOCK=".pipeline.lock"
-GUARD_LOG=".claude/analysis/pipeline-guard.log"
+GUARD_LOG="analysis/pipeline-guard.log"
 STAGE_OUT="/dev/null"
 ts() { date "+%Y-%m-%d %H:%M:%S"; }
 log() { echo "[$(ts)] $*"; }
@@ -200,11 +201,16 @@ run_with_watchdog() {
   perl -e 'setpgrp(0, 0); exec @ARGV or die "exec failed: $!\n"' -- "$@" &
   local pid=$!
   local fired="$RUN_TMP/watchdog.$pid"
-  ( sleep "$secs"; touch "$fired"; kill -TERM -- "-$pid" 2>/dev/null; sleep 30; kill -KILL -- "-$pid" 2>/dev/null ) &
+  # The watchdog's output goes to /dev/null: `kill "$wd"` below leaves its
+  # `sleep` running, and with the caller's stdout that sleep held the `| tee`
+  # pipe open, so every stage lasted the full timeout.
+  ( sleep "$secs"; touch "$fired"; kill -TERM -- "-$pid" 2>/dev/null; sleep 30; kill -KILL -- "-$pid" 2>/dev/null ) >/dev/null 2>&1 &
   local wd=$!
   wait "$pid"; local rc=$?
+  # Fired: let the watchdog finish its KILL of the group (a TERM-ignoring
+  # grandchild would otherwise survive) instead of killing it mid-grace.
+  if [ -e "$fired" ]; then wait "$wd" 2>/dev/null; rm -f "$fired"; return 124; fi
   kill "$wd" 2>/dev/null; wait "$wd" 2>/dev/null
-  if [ -e "$fired" ]; then rm -f "$fired"; return 124; fi
   return "$rc"
 }
 
@@ -250,7 +256,7 @@ run_stage() {
   return "$rc"
 }
 
-count_plans() { ls .claude/plans/*.md 2>/dev/null | wc -l | tr -d ' '; }
+count_plans() { ls plans/*.md 2>/dev/null | wc -l | tr -d ' '; }
 # nth <keyword> <text>: the number before <keyword> in a Stage C summary line, or 0
 nth() { local v; v="$(printf '%s' "$2" | grep -Eo "[0-9]+ $1" | head -n1 | grep -Eo '^[0-9]+')"; echo "${v:-0}"; }
 # bullets <regex> <file>: count end-of-turn bullets that BEGIN with <regex>
@@ -373,7 +379,7 @@ record triage "plans=$(( $(count_plans) - PLANS_BEFORE ))"
 BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
 
 # push_main: push local main to origin under the PATH GUARD. Only commits whose
-# every path is under .claude/analysis/, .claude/plans/ or CHANGELOG.md may
+# every path is under analysis/, plans/ or CHANGELOG.md may
 # leave the Mac from here (release.ts makes its own push). Anything else is
 # logged loudly, NOT pushed, and trips the breaker — a foreign commit on the
 # pipeline clone's main is exactly what a human should look at.
@@ -403,9 +409,11 @@ push_main() {
   # The analysis-only rule lives in scripts/protected-paths.ts (shared with
   # release.ts); the CLI prints every path that is NOT analysis-only.
   local outside
-  outside="$(git diff --name-only origin/main..HEAD | "$BUN" scripts/protected-paths.ts --analysis-only)"
+  # --no-renames: a file moved INTO analysis/ must also show its old path, or
+  # `git mv scripts/x.ts analysis/x.ts` would pass as analysis-only.
+  outside="$(git diff --name-only --no-renames origin/main..HEAD | "$BUN" scripts/protected-paths.ts --analysis-only)"
   if [ -n "$outside" ]; then
-    log "  PUSH GUARD: commits ahead of origin/main touch paths outside .claude/analysis/, .claude/plans/, CHANGELOG.md — NOT pushing:"
+    log "  PUSH GUARD: commits ahead of origin/main touch paths outside analysis/, plans/, CHANGELOG.md — NOT pushing:"
     echo "$outside" | sed 's/^/    /'
     trip_breaker "push guard: local main touches $(echo "$outside" | head -n3 | paste -sd ' ' -)"
     return 1
@@ -421,20 +429,20 @@ push_main() {
 commit_artifacts() {
   [ "$DO_COMMIT" = "1" ] || return 0
   if [ "$BRANCH" != "main" ]; then log "not on main (on '$BRANCH') — leaving analysis artifacts uncommitted"; return 0; fi
-  if ! git diff --quiet -- .claude/analysis .claude/plans 2>/dev/null \
-     || [ -n "$(git ls-files --others --exclude-standard .claude/analysis .claude/plans)" ]; then
+  if ! git diff --quiet -- analysis plans 2>/dev/null \
+     || [ -n "$(git ls-files --others --exclude-standard analysis plans)" ]; then
     # The tracker's shape is what Stage C/D and CI depend on. An agent-written
     # line that breaks it (an `Auto-fixable: yes (<free text>)` that names no
     # allowlist pattern turned main red on 2026-09-04) must never reach origin:
     # leave the artifacts uncommitted for a human, and pause the pipeline.
-    if ! "$BUN" test tests/tracker-shape.test.ts >"$RUN_TMP/tracker-shape.out" 2>&1; then
+    if ! "$BUN" test ./tests/tracker-shape.test.ts >"$RUN_TMP/tracker-shape.out" 2>&1; then
       log "  tracker shape test FAILED — analysis artifacts left uncommitted:"
       grep -E '^\(fail\)|error:' "$RUN_TMP/tracker-shape.out" | head -n 5 | sed 's/^/    /' | tee -a "$LOG" >/dev/null
       trip_breaker "tracker shape test failed after analysis (fix the offending line, then pipeline-resume)"
       return 1
     fi
     log "committing analysis artifacts to main"
-    git add .claude/analysis .claude/plans
+    git add analysis plans
     git -c commit.gpgsign=false commit -q -m "$1" \
       || log "  nothing to commit / commit failed (continuing)"
   fi
@@ -449,9 +457,12 @@ if breaker_tripped; then
   # is irreversible enough to wait for the human the breaker asks for.
   log "Stage C — skipped (breaker tripped)"
   SUMMARY=""
+elif [ "$SYNC_MODE" = "0" ]; then
+  log "Stage C — skipped (AUTO_IMPROVE_SYNC=0)"
+  SUMMARY=""
 else
-  log "Stage C — sync improvement tracker → GitHub issues"
-  "$BUN" scripts/sync-tracker-issues.ts 2>&1 | tee "$RUN_TMP/sync.out"
+  log "Stage C — sync improvement tracker → GitHub issues$([ "$SYNC_MODE" = "dry-run" ] && echo " (dry run)")"
+  "$BUN" scripts/sync-tracker-issues.ts $([ "$SYNC_MODE" = "dry-run" ] && echo --dry-run) 2>&1 | tee "$RUN_TMP/sync.out"
   SUMMARY="$(grep -E '[0-9]+ create, [0-9]+ close' "$RUN_TMP/sync.out" | tail -n1)"
 fi
 record sync "created=$(nth create "$SUMMARY")" "closed=$(nth close "$SUMMARY")" \

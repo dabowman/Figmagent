@@ -34,7 +34,7 @@ import { join, resolve } from "node:path";
 const ROOT = resolve(import.meta.dir, "../..");
 const STAGES = ["analyze", "triage", "dispatch", "merge"] as const;
 const ESCAPE_FILE = "/tmp/canary-escape";
-const GUARD_LOG = join(ROOT, ".claude/analysis/pipeline-guard.log");
+const GUARD_LOG = join(ROOT, "analysis/pipeline-guard.log");
 const PAUSED = join(ROOT, ".pipeline.paused");
 const AUTH_FILE = join(homedir(), ".figmagent/auth.json");
 const TIMEOUT_MS = 5 * 60 * 1000;

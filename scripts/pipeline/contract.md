@@ -3,7 +3,9 @@ human will read this session before morning and none can answer a question. Extr
 the manifest refresh are already done for this run — do not re-run extraction.
 
 Your permitted tools are exactly: {{TOOLS}}. A denied tool call means the action is outside
-this stage's scope. It is never a signal to find another way.
+this stage's scope. It is never a signal to find another way. Never reach for an inline
+interpreter (`bun -e`, `python3 -c`, `node -e`), `sh -c`, a shell script, `source` or `eval`:
+the guard hook denies them, and a single guard denial pauses the whole pipeline.
 
 If the inputs are not what this prompt expects, or the stage cannot be completed with the
 permitted tools, stop and end with one line beginning `BLOCKED:` and the reason. That is a

@@ -140,7 +140,7 @@ describe("pipeline-record.ts CLI", () => {
     expect(run(root, "event", "--run", "20260904T030000", "--stage", "extract", "extracted=2").code).toBe(0);
     expect(run(root, "event", "--run", "20260904T030000", "--stage", "release", "tag=v0.4.1").code).toBe(0);
 
-    const file = join(root, ".claude/analysis/pipeline-runs.jsonl");
+    const file = join(root, "analysis/pipeline-runs.jsonl");
     expect(existsSync(file)).toBe(true);
     const lines = readFileSync(file, "utf-8").trim().split("\n");
     expect(lines).toHaveLength(2);
@@ -172,14 +172,14 @@ describe("pipeline-record.ts CLI", () => {
 
   test("resume deletes .pipeline.paused and records the resume; a second resume is a no-op", () => {
     const root = mkdtempSync(join(tmpdir(), "pipeline-record-"));
-    mkdirSync(join(root, ".claude/analysis"), { recursive: true });
+    mkdirSync(join(root, "analysis"), { recursive: true });
     writeFileSync(join(root, ".pipeline.paused"), JSON.stringify({ at: "t", reason: "guard denied: curl x" }));
 
     const r = run(root, "resume");
     expect(r.code).toBe(0);
     expect(r.out).toMatch(/resumed .*guard denied: curl x/);
     expect(existsSync(join(root, ".pipeline.paused"))).toBe(false);
-    const line = JSON.parse(readFileSync(join(root, ".claude/analysis/pipeline-runs.jsonl"), "utf-8").trim());
+    const line = JSON.parse(readFileSync(join(root, "analysis/pipeline-runs.jsonl"), "utf-8").trim());
     expect(line.stage).toBe("resume");
     expect(line.paused).toBe(0);
     expect(line.reason).toBe("guard denied: curl x");

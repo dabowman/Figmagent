@@ -46,7 +46,7 @@ function plan(
   const text = `# Fix: [${id}]\n\n${header}**Priority**: P1\n${extra}\n## Changes\n\n${named
     .map((f) => `### File: \`${f}\`\n- Line 1: \`a\` → \`b\`\n`)
     .join("\n")}\n## Verification\n- [ ] Run \`bun run test\` — \`tests/${id.toLowerCase()}.test.ts\`\n`;
-  return { id, path: `.claude/plans/2026-09-02-${id}.md`, parsed: parsePlan(text) };
+  return { id, path: `plans/2026-09-02-${id}.md`, parsed: parsePlan(text) };
 }
 
 describe("eligibility — per-entry rules", () => {
@@ -58,7 +58,7 @@ describe("eligibility — per-entry rules", () => {
       id: "BUG-001",
       priority: "P1",
       pattern: "boundary-guard",
-      plan: ".claude/plans/2026-09-02-BUG-001.md",
+      plan: "plans/2026-09-02-BUG-001.md",
       files: ["src/a.js"],
       status: "planned",
       issue: undefined,
@@ -103,9 +103,9 @@ describe("eligibility — per-entry rules", () => {
     const e = tracker([
       { id: "T-1", status: "planned", priority: "P1", fixable: "yes (type-coercion)" },
     ])[0] as TrackerEntry;
-    expect(eligibility(e, undefined)).toMatchObject({ reason: "no plan file in .claude/plans/" });
+    expect(eligibility(e, undefined)).toMatchObject({ reason: "no plan file in plans/" });
     expect(eligibility(e, plan("T-1", undefined, []))).toMatchObject({
-      reason: ".claude/plans/2026-09-02-T-1.md has no **Pattern** line".replace(/^/, "plan "),
+      reason: "plans/2026-09-02-T-1.md has no **Pattern** line".replace(/^/, "plan "),
     });
     expect(eligibility(e, plan("T-1", "missing-batch-tool", []))).toMatchObject({
       reason: "pattern missing-batch-tool is never auto-dispatched",
@@ -121,13 +121,13 @@ describe("eligibility — per-entry rules", () => {
     const e = tracker([{ id: "T-1", status: "planned", priority: "P1", fixable: "yes (boundary-guard)" }])[0];
     const prose = {
       id: "T-1",
-      path: ".claude/plans/2026-09-02-T-1.md",
+      path: "plans/2026-09-02-T-1.md",
       parsed: parsePlan(
         "# Fix: [T-1]\n\n**Pattern**: `boundary-guard`\n**Priority**: P1\n\n- `src/a.js`: add a guard\n",
       ),
     };
     expect(eligibility(e as TrackerEntry, prose)).toMatchObject({
-      reason: "plan .claude/plans/2026-09-02-T-1.md names no `### File:` section — nothing to apply verbatim",
+      reason: "plan plans/2026-09-02-T-1.md names no `### File:` section — nothing to apply verbatim",
     });
   });
 
@@ -231,7 +231,7 @@ describe("selectCandidates — ordering, caps, collisions", () => {
     const entries = tracker([{ id: "S-1", status: "planned", priority: "P1", fixable: "yes (assertion)" }]);
     expect(selectCandidates(entries, [])).toEqual({
       candidates: [],
-      skipped: [{ id: "S-1", reason: "no plan file in .claude/plans/" }],
+      skipped: [{ id: "S-1", reason: "no plan file in plans/" }],
     });
   });
 
@@ -312,11 +312,11 @@ function run(args: string[], cwd: string) {
 
 function repoFixture(): string {
   const dir = mkdtempSync(join(tmpdir(), "figmagent-dispatch-"));
-  mkdirSync(join(dir, ".claude", "analysis"), { recursive: true });
-  mkdirSync(join(dir, ".claude", "plans"), { recursive: true });
+  mkdirSync(join(dir, "analysis"), { recursive: true });
+  mkdirSync(join(dir, "plans"), { recursive: true });
   mkdirSync(join(dir, ".claude", "worktrees", "auto-fix-BUG-001", "src"), { recursive: true });
   writeFileSync(
-    join(dir, ".claude", "analysis", "improvement-tracker.md"),
+    join(dir, "analysis", "improvement-tracker.md"),
     [
       "## Active Issues",
       "",
@@ -337,11 +337,11 @@ function repoFixture(): string {
     ].join("\n"),
   );
   writeFileSync(
-    join(dir, ".claude", "plans", "2026-09-02-BUG-001.md"),
+    join(dir, "plans", "2026-09-02-BUG-001.md"),
     "# Fix: [BUG-001]\n\n**Pattern**: `boundary-guard`\n**Priority**: P1\n\n## Changes\n\n### File: `src/a.js`\n- Line 1: `throw new TypeError()` → `fail('x', 'y')`\n\n## Verification\n- [ ] Run `bun run test` — `tests/a.test.ts` fails without it\n",
   );
   writeFileSync(
-    join(dir, ".claude", "plans", "2026-09-02-TOOL-002.md"),
+    join(dir, "plans", "2026-09-02-TOOL-002.md"),
     "# Fix: [TOOL-002]\n\n**Pattern**: `missing-batch-tool`\n**Priority**: P1\n",
   );
   writeFileSync(
@@ -361,7 +361,7 @@ describe("dispatch-fix.ts CLI (no git/gh needed)", () => {
           id: "BUG-001",
           priority: "P1",
           pattern: "boundary-guard",
-          plan: ".claude/plans/2026-09-02-BUG-001.md",
+          plan: "plans/2026-09-02-BUG-001.md",
           files: ["src/a.js"],
           status: "planned",
           issue: 41,
@@ -376,7 +376,7 @@ describe("dispatch-fix.ts CLI (no git/gh needed)", () => {
     const dir = repoFixture();
     const ok = run(["verify-plan", "BUG-001"], dir);
     expect(ok.code).toBe(0);
-    expect(ok.out).toContain("plan-ok: .claude/plans/2026-09-02-BUG-001.md — 1 file(s), 1 snippet(s) checked");
+    expect(ok.out).toContain("plan-ok: plans/2026-09-02-BUG-001.md — 1 file(s), 1 snippet(s) checked");
 
     writeFileSync(join(dir, ".claude", "worktrees", "auto-fix-BUG-001", "src", "a.js"), "if (!n) fail('x', 'y');\n");
     const stale = run(["verify-plan", "BUG-001"], dir);

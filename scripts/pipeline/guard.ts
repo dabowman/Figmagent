@@ -9,7 +9,7 @@
  * permitted; this file says what is never permitted even if a rule is loosened
  * later or the flags are flipped back. A denial means an agent tried something
  * outside its lane — exactly when a human should look — so every denial is
- * logged to .claude/analysis/pipeline-guard.log and trips the circuit breaker
+ * logged to analysis/pipeline-guard.log and trips the circuit breaker
  * (.pipeline.paused) if it is not already tripped.
  *
  * The rule set is the exported pure `judge(command)` so tests can drive it
@@ -191,7 +191,7 @@ function deny(reason: string): never {
 
 function recordDenial(root: string, verdict: Verdict, command: string, input: HookInput): void {
   const now = new Date().toISOString();
-  const log = join(root, ".claude/analysis/pipeline-guard.log");
+  const log = join(root, "analysis/pipeline-guard.log");
   try {
     mkdirSync(dirname(log), { recursive: true });
     appendFileSync(

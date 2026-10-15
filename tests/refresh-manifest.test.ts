@@ -158,7 +158,7 @@ describe("refresh-manifest.ts CLI (cwd-relative, end to end)", () => {
   function fixture(): string {
     const dir = mkdtempSync(join(tmpdir(), "refresh-manifest-"));
     mkdirSync(join(dir, ".claude/sessions-json"), { recursive: true });
-    mkdirSync(join(dir, ".claude/analysis"), { recursive: true });
+    mkdirSync(join(dir, "analysis"), { recursive: true });
     const session = (id: string) => ({
       sessionId: id,
       metadata: { uniqueTools: ["mcp__Figmagent__read", "Read"], toolCallCount: 3, duration: { minutes: 2 } },
@@ -203,7 +203,7 @@ describe("refresh-manifest.ts CLI (cwd-relative, end to end)", () => {
     // The rescan (--count / --next) rebuilds the manifest and must keep both fields.
     expect(run(dir, "--count").out.trim()).toBe("1");
     expect(run(dir, "--next").out.trim()).toBe(other);
-    const manifest = JSON.parse(readFileSync(join(dir, ".claude/analysis/sessions.json"), "utf-8"));
+    const manifest = JSON.parse(readFileSync(join(dir, "analysis/sessions.json"), "utf-8"));
     expect(manifest.sessions[first].analysisAttempts).toBe(1);
     expect(manifest.sessions[first].analysisFailed.reason).toMatch(/did not mark/);
 

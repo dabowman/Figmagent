@@ -11,6 +11,14 @@
        derives the repo from its own location. -->
   <key>ProgramArguments</key>
   <array>
+    <!-- caffeinate -i holds an idle-sleep assertion for the whole run, so a
+         run that starts while the Mac is awake is not idle-slept mid-stage.
+         It cannot wake a sleeping Mac: the assertion has no effect in Dark
+         Wake (IOPMLib.h), so a run launchd starts in a maintenance wake on
+         battery still crawls through brief wakes, and a closed lid still
+         forces sleep. The per-stage watchdog counts awake time only. -->
+    <string>/usr/bin/caffeinate</string>
+    <string>-i</string>
     <string>/bin/bash</string>
     <string>/Users/davidbowman/Github/figmagent-pipeline/scripts/auto-improve.sh</string>
   </array>
@@ -58,10 +66,10 @@
   <string>Background</string>
 
   <!-- launchd's own capture of stdout/stderr (the script also writes its own
-       detailed log to .claude/analysis/auto-improve.log). -->
+       detailed log to analysis/auto-improve.log). -->
   <key>StandardOutPath</key>
-  <string>/Users/davidbowman/Github/figmagent-pipeline/.claude/analysis/auto-improve.launchd.log</string>
+  <string>/Users/davidbowman/Github/figmagent-pipeline/analysis/auto-improve.launchd.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/davidbowman/Github/figmagent-pipeline/.claude/analysis/auto-improve.launchd.log</string>
+  <string>/Users/davidbowman/Github/figmagent-pipeline/analysis/auto-improve.launchd.log</string>
 </dict>
 </plist>

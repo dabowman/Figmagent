@@ -124,8 +124,8 @@ describe("protected paths", () => {
       "src/figma_plugin/src/commands/apply.js",
       "src/figma_plugin/code.js",
       "tests/registry.test.ts",
-      ".claude/analysis/improvement-tracker.md",
-      ".claude/plans/2026-09-02-AGENT-033.md",
+      "analysis/improvement-tracker.md",
+      "plans/2026-09-02-AGENT-033.md",
       ".claude/skills/other-skill/SKILL.md",
       ".claude/settings.local.json",
       "CONTRIBUTING.md",
@@ -174,22 +174,22 @@ describe("isAnalysisOnly: what a Stage B commit may push to main", () => {
   test("analysis docs, plans and the changelog qualify", () => {
     expect(
       isAnalysisOnly([
-        ".claude/analysis/improvement-tracker.md",
-        ".claude/plans/2026-09-04-TOOL-050.md",
+        "analysis/improvement-tracker.md",
+        "plans/2026-09-04-TOOL-050.md",
         "CHANGELOG.md",
       ]),
     ).toBe(true);
   });
 
   test("one file outside those paths disqualifies the whole commit", () => {
-    expect(isAnalysisOnly([".claude/analysis/x.md", "src/figmagent_mcp/tools/script.ts"])).toBe(false);
-    expect(isAnalysisOnly([".claude/plans/x.md", "package.json"])).toBe(false);
+    expect(isAnalysisOnly(["analysis/x.md", "src/figmagent_mcp/tools/script.ts"])).toBe(false);
+    expect(isAnalysisOnly(["plans/x.md", "package.json"])).toBe(false);
     expect(isAnalysisOnly(["CLAUDE.md"])).toBe(false);
   });
 
   test("the directory prefix must be exact — sibling names do not qualify", () => {
-    expect(isAnalysisOnly([".claude/analysis-old/x.md"])).toBe(false);
-    expect(isAnalysisOnly([".claude/plans"])).toBe(false);
+    expect(isAnalysisOnly(["analysis-old/x.md"])).toBe(false);
+    expect(isAnalysisOnly(["plans"])).toBe(false);
     expect(isAnalysisOnly(["docs/CHANGELOG.md"])).toBe(false);
   });
 

@@ -17,7 +17,7 @@ import {
 } from "../scripts/tracker.ts";
 
 const SCRIPT = join(import.meta.dir, "..", "scripts", "tracker.ts");
-const REAL_TRACKER = join(import.meta.dir, "..", ".claude", "analysis", "improvement-tracker.md");
+const REAL_TRACKER = join(import.meta.dir, "..", "analysis", "improvement-tracker.md");
 
 const FIXTURE = `# Tracker
 

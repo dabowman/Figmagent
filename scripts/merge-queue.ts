@@ -32,7 +32,7 @@
  *                             bun run lint, bun run test, bun run build:plugin when
  *                             src/figma_plugin/ is touched; a protected-path assertion
  *                             on the merged result (renames included); plus a
- *                             plan-scope assertion when a .claude/plans/*<ID>*.md
+ *                             plan-scope assertion when a plans/*<ID>*.md
  *                             exists for the PR's [ID]. Compact PASS/FAIL per step,
  *                             last 40 lines on failure, exit 1 on any failure. A
  *                             pass is recorded in the sidecar for `act`.
@@ -80,8 +80,8 @@ export const MAX_SUMMARY_CHARS = 2000;
 export const WORKTREES_DIR = ".claude/worktrees";
 export const VERDICTS_DIR = `${WORKTREES_DIR}/verdicts`;
 export const RUN_STATE_FILE = `${WORKTREES_DIR}/merge-queue-run.json`;
-export const PLANS_DIR = ".claude/plans";
-export const TRACKER = ".claude/analysis/improvement-tracker.md";
+export const PLANS_DIR = "plans";
+export const TRACKER = "analysis/improvement-tracker.md";
 export const PAUSE_FILE = ".pipeline.paused";
 /** A run state older than this is a previous night's — start counting again. */
 export const RUN_STATE_MAX_AGE_MS = 20 * 60 * 60 * 1000;

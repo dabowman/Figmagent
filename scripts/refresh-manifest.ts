@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Refresh the session analysis manifest (.claude/analysis/sessions.json).
+ * Refresh the session analysis manifest (analysis/sessions.json).
  *
  * Scans every extracted session in .claude/sessions-json/, classifies each as
  * figma | dev | empty, and records whether it still needs analysis (a figma
@@ -45,7 +45,7 @@ import {
 import { isFigmagentTool, sessionHasEffectiveFigmaCall } from "./session-classify.ts";
 
 const SESSIONS_DIR = ".claude/sessions-json";
-const ANALYSIS_DIR = ".claude/analysis";
+const ANALYSIS_DIR = "analysis";
 const MANIFEST = join(ANALYSIS_DIR, "sessions.json");
 const argv = process.argv.slice(2);
 const countOnly = argv.includes("--count");

@@ -1,0 +1,6 @@
+# Test discovery stays in tests/. The nightly pipeline's agents write under
+# analysis/ and plans/; without a root, `bun test` would run any *.test.ts
+# they leave there, and `bun test tests/x.test.ts` (a substring filter) would
+# also run analysis/tests/x.test.ts.
+[test]
+root = "tests"

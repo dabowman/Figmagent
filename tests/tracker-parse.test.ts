@@ -424,7 +424,7 @@ function legacyParse(raw: string): { entries: LegacyIssue[]; misplaced: Map<stri
 }
 
 describe("parity with the sync script's original inline parser", () => {
-  const real = readFileSync(join(import.meta.dir, "..", ".claude/analysis/improvement-tracker.md"), "utf-8");
+  const real = readFileSync(join(import.meta.dir, "..", "analysis/improvement-tracker.md"), "utf-8");
   for (const [name, text] of [
     ["fixture", FIXTURE],
     ["real tracker", real],

@@ -34,7 +34,7 @@ import {
   updateEntryField,
 } from "./tracker-parse.ts";
 
-export const DEFAULT_TRACKER = ".claude/analysis/improvement-tracker.md";
+export const DEFAULT_TRACKER = "analysis/improvement-tracker.md";
 
 /** The allowlist before 2026-09-02 (INFRA-006 widened it to seven patterns). */
 export const OLD_PATTERNS = ["sync-to-async", "type-coercion", "missing-batch-tool"];

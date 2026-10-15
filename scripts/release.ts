@@ -6,7 +6,7 @@
  * `version`, and `/plugin update` keeps the cached copy until that number
  * changes. Merged PRs alone never reach the harness — the version bump is the
  * release. Judgement is not needed here, so no agent runs this stage; it is
- * plain git + gh with fixed parameters (see .claude/plans/2026-09-03-auto-improve-v2.md, WS3).
+ * plain git + gh with fixed parameters (see plans/2026-09-03-auto-improve-v2.md, WS3).
  *
  * Steps, each logged:
  *   1. Preconditions: on main, clean tree (analysis-only paths excepted — the
@@ -224,7 +224,8 @@ async function baseline(): Promise<string> {
 }
 
 async function changedPathsOf(sha: string): Promise<string[] | null> {
-  const r = await $`git diff --name-only ${`${sha}^1`} ${sha}`.nothrow().quiet();
+  // --no-renames: a file moved into analysis/ also shows its old path (same rule as the push guard).
+  const r = await $`git diff --name-only --no-renames ${`${sha}^1`} ${sha}`.nothrow().quiet();
   if (r.exitCode !== 0) return null; // root commit: no parent to diff against
   return r.stdout
     .toString()
@@ -388,7 +389,7 @@ async function main(): Promise<void> {
 
   // 3. What changed.
   const head = (await git(["rev-parse", "HEAD"])).trim();
-  const changed = (await git(["diff", "--name-only", base, head]))
+  const changed = (await git(["diff", "--name-only", "--no-renames", base, head]))
     .split("\n")
     .map((p) => p.trim())
     .filter(Boolean);

@@ -1,0 +1,24 @@
+{"run":"20260905T030420","stage":"extract","ts":"2026-09-05T09:08:13.097Z","extracted":1,"queued":1}
+{"run":"20260905T030420","stage":"analyze","ts":"2026-09-05T15:43:46.087Z","exit":0,"seconds":23715}
+{"run":"20260905T030420","stage":"guard","ts":"2026-09-05T15:43:46.185Z","denials":1}
+{"run":"20260905T030420","stage":"breaker","ts":"2026-09-05T15:43:46.334Z","paused":1,"reason":"guard denied: bun -e '\\nconst s = await Bun.file(\\"}
+{"run":"20260905T030420","stage":"analyze","ts":"2026-09-05T15:43:48.707Z","deferred":1,"session":"0f54fea9-aae0-4c5d-90ff-58b603df70ff"}
+{"run":"20260905T030420","stage":"triage","ts":"2026-09-05T15:43:48.947Z","plans":0}
+{"run":"20260905T030420","stage":"sync","ts":"2026-09-05T15:43:49.620Z","created":0,"closed":0,"reopened":0,"reversed":0,"drift":0,"in_sync":0,"resolved_unfiled":0,"dangling":0,"sync_deferred":0,"sync_failed":0}
+{"run":"20260905T030420","stage":"run","ts":"2026-09-05T15:43:50.152Z","seconds":23970,"denials_total":1}
+{"run":"manual","stage":"resume","ts":"2026-10-15T22:52:47.928Z","paused":0,"reason":"guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array."}
+{"run":"20261015T165248","stage":"extract","ts":"2026-10-15T22:52:54.774Z","extracted":11,"queued":11}
+{"run":"20261015T165248","stage":"analyze","ts":"2026-10-15T23:00:39.921Z","exit":0,"seconds":464}
+{"run":"20261015T165248","stage":"analyze","ts":"2026-10-15T23:00:40.353Z","analyzed":1,"session":"5bbcf3de-b865-4cf0-b397-3702205754ac"}
+{"run":"20261015T165248","stage":"analyze","ts":"2026-10-15T23:02:41.907Z","exit":0,"seconds":121}
+{"run":"20261015T165248","stage":"analyze","ts":"2026-10-15T23:02:42.229Z","analyzed":1,"session":"97fdcb70-8570-4125-8388-af7f62105d83"}
+{"run":"20261015T165248","stage":"triage","ts":"2026-10-15T23:03:27.617Z","exit":0,"seconds":45}
+{"run":"20261015T165248","stage":"triage","ts":"2026-10-15T23:03:27.653Z","plans":1}
+{"run":"20261015T165248","stage":"sync","ts":"2026-10-15T23:03:45.714Z","created":6,"closed":0,"reopened":0,"reversed":12,"drift":0,"in_sync":129,"resolved_unfiled":16,"dangling":0,"sync_deferred":0,"sync_failed":0}
+{"run":"20261015T165248","stage":"run","ts":"2026-10-15T23:03:45.749Z","seconds":657,"denials_total":0}
+{"run":"manual","stage":"resume","ts":"2026-10-15T23:07:03.179Z","paused":0,"reason":"guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array."}
+{"run":"20261015T170703","stage":"extract","ts":"2026-10-15T23:07:08.928Z","extracted":0,"queued":9}
+{"run":"20261015T170703","stage":"triage","ts":"2026-10-15T23:07:52.191Z","exit":0,"seconds":44}
+{"run":"20261015T170703","stage":"triage","ts":"2026-10-15T23:07:52.242Z","plans":0}
+{"run":"20261015T170703","stage":"sync","ts":"2026-10-15T23:07:52.314Z","created":0,"closed":0,"reopened":0,"reversed":0,"drift":0,"in_sync":0,"resolved_unfiled":0,"dangling":0,"sync_deferred":0,"sync_failed":0}
+{"run":"20261015T170703","stage":"run","ts":"2026-10-15T23:07:52.347Z","seconds":49,"denials_total":0}
