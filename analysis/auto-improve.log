@@ -1797,3 +1797,188 @@ denied: 1 command(s) (see .claude/analysis/pipeline-guard.log); PAUSED: guard de
   "run": "20260905T030420"
 }
 [2026-10-14 03:00:05] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-10-15 03:00:05 =========================
+[2026-10-15 03:00:05] PAUSED — .pipeline.paused exists; not running. Contents:
+{
+  "at": "2026-09-05T10:12:32.634Z",
+  "reason": "guard denied: bun -e '\nconst s = await Bun.file(\".claude/sessions-json/0f54fea9-aae0-4c5d-90ff-58b603df70ff.json\").json();\nconst idx = new Map();\nlet n=0;\nconst lines=[];\nfor (const m of s.messages) {\n  if (!Array.",
+  "run": "20260905T030420"
+}
+[2026-10-15 03:00:05] resume with: bun scripts/pipeline-record.ts resume
+
+========================= auto-improve 2026-10-15 16:52:48 =========================
+[2026-10-15 16:52:48] run 20261015T165248 in /Users/davidbowman/Github/cursor-talk-to-figma-mcp (bun: /Users/davidbowman/.bun/bin/bun, claude: /Users/davidbowman/.local/bin/claude)
+[2026-10-15 16:52:48] Stage A — extract Figmagent sessions across all repos
+  66d59266-2f57-4c4a-8c4a-8ede6f3a2b85 → 631 messages, 264 tool calls + 31 sub-agents
+  86d559e4-56ae-4e2f-91c0-c207970bba88 → 274 messages, 115 tool calls
+  ed1da4a7-e8ed-4b15-8f46-b071957ed894 → 696 messages, 306 tool calls + 25 sub-agents
+  57c36387-790c-4b4d-aa6c-7a426fe21605 → 300 messages, 136 tool calls
+  3ae6e1e0-9ed3-4174-9e24-a06764cf2092 → 116 messages, 54 tool calls
+  227aef83-a91b-4e7d-821f-7779b6ab6fa1 → 261 messages, 105 tool calls
+  b40722a9-4369-4ce1-baf1-3fb27e1ba00c → 84 messages, 37 tool calls
+  daf93ab8-817e-43b4-9fb6-86b2175b063b → 141 messages, 64 tool calls
+  037896ec-0d16-40f1-9049-d36f75cd1f50 → 194 messages, 79 tool calls + 13 sub-agents
+  97fdcb70-8570-4125-8388-af7f62105d83 → 63 messages, 23 tool calls
+  5bbcf3de-b865-4cf0-b397-3702205754ac → 297 messages, 145 tool calls
+
+11 extracted, 48 up-to-date. Output: /Users/davidbowman/Github/cursor-talk-to-figma-mcp/.claude/sessions-json
+Figma sessions: 70, needs analysis: 11
+  5bbcf3de-b865-4cf0-b397-3702205754ac   145 calls   6 figma  (new)
+  97fdcb70-8570-4125-8388-af7f62105d83    23 calls   1 figma  (new)
+  037896ec-0d16-40f1-9049-d36f75cd1f50    79 calls   8 figma  (new)
+  daf93ab8-817e-43b4-9fb6-86b2175b063b    64 calls   5 figma  (new)
+  b40722a9-4369-4ce1-baf1-3fb27e1ba00c    37 calls   4 figma  (new)
+  227aef83-a91b-4e7d-821f-7779b6ab6fa1   105 calls   4 figma  (new)
+  3ae6e1e0-9ed3-4174-9e24-a06764cf2092    54 calls   2 figma  (new)
+  57c36387-790c-4b4d-aa6c-7a426fe21605   136 calls   2 figma  (new)
+  ed1da4a7-e8ed-4b15-8f46-b071957ed894   306 calls   7 figma  (new)
+  86d559e4-56ae-4e2f-91c0-c207970bba88   115 calls   6 figma  (new)
+  66d59266-2f57-4c4a-8c4a-8ede6f3a2b85   264 calls   6 figma  (new)
+[2026-10-15 16:52:54] Stage B — analyze sessions (cap 2, 200 turns each)
+[2026-10-15 16:52:54]   sessions needing analysis: 11
+[2026-10-15 16:52:55]   analyzing 5bbcf3de-b865-4cf0-b397-3702205754ac (attempt 1)
+Permission allow rule (scripts/pipeline/settings.analyze.json): Write(analysis/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(analysis/**) instead (Edit rules cover all file-editing tools).
+Permission allow rule (scripts/pipeline/settings.analyze.json): Write(plans/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(plans/**) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.analyze.json): Write(src/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(src/**) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.analyze.json): Write(scripts/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(scripts/**) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.analyze.json): Write(.github/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(.github/**) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.analyze.json): Write(.claude/commands/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(.claude/commands/**) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.analyze.json): Write(.claude/skills/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(.claude/skills/**) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.analyze.json): Write(CLAUDE.md) is not matched by file permission checks — only Edit(path) rules are. Use Edit(CLAUDE.md) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.analyze.json): Write(.claude/settings.json) is not matched by file permission checks — only Edit(path) rules are. Use Edit(.claude/settings.json) instead (Edit rules cover all file-editing tools).
+I've finished the analysis of session 5bbcf3de (session 66). It was a 66-minute sync of the "Archer" Figma file with the storybook repo's code, on the remote transport. The session is marked analyzed in the manifest, and the queue has moved on to the next one (`97fdcb70…`).
+
+**What happened in the session:** 145 tool calls, 77 of them to Figmagent. 9 errors: 8 Figmagent (5 `screenshot`, 3 `run_script`) and 1 Bash. All 29 write operations went through `run_script` (60 of 77 Figma calls, 77.9%). That is despite `edit`, `write`, `create_variables` and `update_variables` all being loaded and never called.
+
+**New tracker entries (2):**
+- **[TOOL-062] (P2, description-only, planned):** `edit` can bind `minHeight`/`minWidth`/`maxWidth`/`maxHeight`, the four per-corner radii and `counterAxisSpacing`. Its `variables` description doesn't list them, and the session bound a size scale to `minHeight` across 16 sets in a script instead. The plan is `plans/2026-10-15-TOOL-062.md`. If a test pins the old description text verbatim, the dispatch stage will abort it as stale.
+- **[TOOL-063] (P2, not auto-fixable):** no tool can set vertical trim (`leadingTrim`), so five cap-trim text styles had to be built in a script. Without trim, Figma components measure taller than the browser draws them.
+
+**Recurrences recorded on 10 existing entries:**
+- **[BUG-016] (24th, remote screenshot failures):** the agent wrote "bogus 4MB-cap error" into the storybook repo's build-workflow prompt. That line should be corrected when the real fix lands.
+- **[BUG-044]:** a parked text style must have its font family re-bound before its weight. The reverse order throws.
+- **[BUG-051]:** re-measuring a text style doesn't reach nested instance labels that override the style.
+- **[BUG-034]:** 29 instance labels were on "Semi Bold", a face the real font family doesn't have.
+- **Also updated:** [BUG-033], [BUG-037], [AGENT-025], [AGENT-036], [TOOL-052] and [TOOL-057], plus the metrics row and the tracker header.
+
+Nothing in the transcript tried to redirect the analysis.
+[2026-10-15 17:00:40]   sessions needing analysis: 10
+[2026-10-15 17:00:40]   analyzing 97fdcb70-8570-4125-8388-af7f62105d83 (attempt 1)
+Permission allow rule (scripts/pipeline/settings.analyze.json): Write(analysis/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(analysis/**) instead (Edit rules cover all file-editing tools).
+Permission allow rule (scripts/pipeline/settings.analyze.json): Write(plans/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(plans/**) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.analyze.json): Write(src/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(src/**) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.analyze.json): Write(scripts/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(scripts/**) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.analyze.json): Write(.github/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(.github/**) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.analyze.json): Write(.claude/commands/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(.claude/commands/**) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.analyze.json): Write(.claude/skills/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(.claude/skills/**) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.analyze.json): Write(CLAUDE.md) is not matched by file permission checks — only Edit(path) rules are. Use Edit(CLAUDE.md) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.analyze.json): Write(.claude/settings.json) is not matched by file permission checks — only Edit(path) rules are. Use Edit(.claude/settings.json) instead (Edit rules cover all file-editing tools).
+I analyzed session 97fdcb70 as session 67 and marked it analyzed in the manifest. The outcome is `analyzed`.
+
+- **What the session was:** 23 tool calls in `vip-admin-ui`, almost all Bash work on that repo's loupe config. The only Figmagent call was a single successful `reauthenticate`, run through `/figmagent:reauth`. No Figma file was read or changed.
+- **New tracker entry, [INFRA-012] (P2, not auto-fixable):** the manifest counts a session whose only Figmagent call is `reauthenticate` as a Figma session, so a full analysis run was spent on this one. The proposed fix is to add `reauthenticate` to `METADATA_ONLY_COMMANDS` in `scripts/session-classify.ts`, with a test in `tests/session-classify.test.ts`. The entry evidences it with `toolu_01EEKQ6fVoiBiQCQvXdCDCcX`. There is no fix plan, because this is a pipeline-script change outside the auto-fix allowlist.
+- **Not filed:** `commands/reauth.md` refers to the tool as `mcp__Figmagent__reauthenticate`, but under the plugin install its real name was `mcp__plugin_figmagent_Figmagent__reauthenticate`. This contradicts CLAUDE.md, which says that prefix only appears with a duplicate registration. The session showed no cost from it, so I recorded it in the doc as an observation for a person to check.
+- **Other tracker updates:** the Metrics Over Time table has a row for session 67, and the header now reads 67 sessions analyzed. No existing entries were exercised, so none were updated.
+
+Files are in `analysis/`:
+- figma-mcp-session67-analysis.md
+- improvement-tracker.md
+- sessions.json
+[2026-10-15 17:02:42] Stage B done: 2 run(s), 2 analyzed, 0 deferred, 0 failed
+[2026-10-15 17:02:42] Stage B2 — triage tracker entries (up to 1 calls, 120 turns each)
+Permission allow rule (scripts/pipeline/settings.triage.json): Write(plans/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(plans/**) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.triage.json): Write(analysis/improvement-tracker.md) is not matched by file permission checks — only Edit(path) rules are. Use Edit(analysis/improvement-tracker.md) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.triage.json): Write(src/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(src/**) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.triage.json): Write(scripts/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(scripts/**) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.triage.json): Write(.github/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(.github/**) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.triage.json): Write(.claude/commands/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(.claude/commands/**) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.triage.json): Write(.claude/skills/**) is not matched by file permission checks — only Edit(path) rules are. Use Edit(.claude/skills/**) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.triage.json): Write(CLAUDE.md) is not matched by file permission checks — only Edit(path) rules are. Use Edit(CLAUDE.md) instead (Edit rules cover all file-editing tools).
+Permission deny rule (scripts/pipeline/settings.triage.json): Write(.claude/settings.json) is not matched by file permission checks — only Edit(path) rules are. Use Edit(.claude/settings.json) instead (Edit rules cover all file-editing tools).
+I couldn't record any verdicts: every `set-autofixable` call failed because the sandbox won't let `scripts/tracker.ts` write `analysis/improvement-tracker.md`. The error was `EPERM: operation not permitted`. The stage's write allowlist covers `.`, `plans` and `scripts/pipeline`, but in practice the `analysis/` directory is blocked. I did not retry outside the sandbox, so nothing in the tracker changed and no plan files were written.
+
+I read all six entries and their evidence and decided each one. All six are not auto-fixable, so no plans were needed:
+
+- not auto-fixable TOOL-024: the routing half already landed in commit `0af2c9a` and was verified in session 52, so a person should move it to verified/resolved. The remaining work, making `lint` match library variables, is design work tracked as TOOL-036.
+- not auto-fixable BUG-027: mixed. The root cause is a transport behaviour change: `remote/client.ts:110-114` still returns raw text when `JSON.parse` fails, the same defect as BUG-016. The fix also needs a new result-validation branch in `tools/document.ts` `buildFsgn`, which doesn't fit any allowlist pattern.
+- not auto-fixable BUG-029: why the library collection list goes stale hasn't been investigated. The fix needs a refresh mechanism and completeness heuristics, which is behaviour change. A confirmed cause would change this verdict.
+- not auto-fixable TOOL-005: ToolSearch deferral is Claude Code behaviour outside Figmagent's code, and the proposed fix is infrastructure design.
+- not auto-fixable BUG-011: this is a performance problem that needs profiling first. The root cause isn't pinned, so no file or exact change can be named.
+- not auto-fixable BUG-015: mixed. Reading view-only files on remote would need a transport/auth change against a limit in Figma's own `use_figma`. The cheap half, adding a `reauthenticate` hint to the error, needs new error-detection code: the upstream message is passed through verbatim at `remote/client.ts:104-106`, with no existing `fail()` to reword.
+
+Each verdict also lists the current seven-pattern allowlist (sync-to-async, type-coercion, missing-batch-tool, description-only, lint-scope-filter, boundary-guard, assertion). The next run will re-list all six entries and can write these verdicts once `analysis/` is writable.
+
+BLOCKED: the sandbox stops `bun scripts/tracker.ts set-autofixable` from writing `analysis/improvement-tracker.md` (EPERM), so the six verdicts above weren't recorded; the stage's sandbox write allowlist needs to include `analysis/`.
+[2026-10-15 17:03:27]   triage reports nothing more to do
+[2026-10-15 17:03:27] not on main (on 'claude/pipeline-dirs-out-of-dot-claude') — leaving analysis artifacts uncommitted
+[2026-10-15 17:03:27] Stage C — sync improvement tracker → GitHub issues (dry run)
+[DRY RUN] tracker→issues: 163 unique entries · 6 create, 0 close, 0 reopen, 12 reverse, 0 drift, 129 in-sync, 16 resolved-unfiled
+REVERSE #90 [TOOL-006] → implemented (PR #108)
+REVERSE #98 [TOOL-021] → implemented (PR #155)
+REVERSE #106 [TOOL-022] → implemented (PR #153)
+REVERSE #111 [TOOL-025] → implemented (PR #151)
+REVERSE #112 [BUG-021] → implemented (PR #154)
+REVERSE #115 [BUG-022] → implemented (PR #147)
+REVERSE #117 [TOOL-027] → implemented (PR #151)
+REVERSE #119 [INFRA-005] → implemented (PR #150)
+REVERSE #128 [BUG-027] → implemented (PR #146)
+REVERSE #134 [BUG-030] → implemented (PR #154)
+REVERSE #139 [TOOL-035] → implemented (PR #151)
+REVERSE #144 [BUG-032] → implemented (PR #148)
+CREATE  [TOOL-059] (P2) `read` silently skips hidden nodes — an audit reports existing layers as missing
+CREATE  [TOOL-060] (P2) `run_script` never says TEXT-node `boundVariables` are arrays — a hand-written rebind silently drops the binding
+CREATE  [BUG-052] (P2) `edit` reports success for a font-family swap it could not make
+CREATE  [TOOL-062] (P2) `edit`'s `variables` description lists a subset of the bindable fields — `minHeight`, per-corner radii and `counterAxisSpacing` look unbindable
+CREATE  [TOOL-063] (P2) No first-class way to set vertical trim (`leadingTrim`) on a text style or TEXT node
+CREATE  [INFRA-012] (P2) Manifest classifier counts a `reauthenticate`-only session as a Figma session
+[DRY RUN] would rewrite 12 Status line(s) in analysis/improvement-tracker.md
+[2026-10-15 17:03:45] Stage D — skipped (AUTO_IMPROVE_DISPATCH=0)
+[2026-10-15 17:03:45] Stage E — skipped (AUTO_IMPROVE_MERGE=0)
+[2026-10-15 17:03:45] Stage F — skipped (AUTO_IMPROVE_RELEASE=0)
+[2026-10-15 17:03:45] run complete in 10m
+----- morning summary (this run) -----
+run              start             dur  sess e/a/f  entries c/c/d  plans  prs o/a/d  merge m/r/h  release  deny  paused
+20261015T165248  2026-10-15 22:52  11m  11/2/0      6/0/0          1      0/0/0      0/0/0        -        0     no
+denied: 0 command(s); paused: no
+[2026-10-15 17:03:45] not on main (on 'claude/pipeline-dirs-out-of-dot-claude') — leaving analysis artifacts uncommitted
+
+========================= auto-improve 2026-10-15 17:07:03 =========================
+[2026-10-15 17:07:03] run 20261015T170703 in /Users/davidbowman/Github/cursor-talk-to-figma-mcp (bun: /Users/davidbowman/.bun/bin/bun, claude: /Users/davidbowman/.local/bin/claude)
+[2026-10-15 17:07:03] Stage A — extract Figmagent sessions across all repos
+
+0 extracted, 59 up-to-date. Output: /Users/davidbowman/Github/cursor-talk-to-figma-mcp/.claude/sessions-json
+Figma sessions: 70, needs analysis: 9
+  037896ec-0d16-40f1-9049-d36f75cd1f50    79 calls   8 figma  (new)
+  daf93ab8-817e-43b4-9fb6-86b2175b063b    64 calls   5 figma  (new)
+  b40722a9-4369-4ce1-baf1-3fb27e1ba00c    37 calls   4 figma  (new)
+  227aef83-a91b-4e7d-821f-7779b6ab6fa1   105 calls   4 figma  (new)
+  3ae6e1e0-9ed3-4174-9e24-a06764cf2092    54 calls   2 figma  (new)
+  57c36387-790c-4b4d-aa6c-7a426fe21605   136 calls   2 figma  (new)
+  ed1da4a7-e8ed-4b15-8f46-b071957ed894   306 calls   7 figma  (new)
+  86d559e4-56ae-4e2f-91c0-c207970bba88   115 calls   6 figma  (new)
+  66d59266-2f57-4c4a-8c4a-8ede6f3a2b85   264 calls   6 figma  (new)
+[2026-10-15 17:07:08] Stage B — analyze sessions (cap 0, 200 turns each)
+[2026-10-15 17:07:08] Stage B done: 0 run(s), 0 analyzed, 0 deferred, 0 failed
+[2026-10-15 17:07:08] Stage B2 — triage tracker entries (up to 1 calls, 120 turns each)
+Triage is complete: I classified all six untriaged entries and none qualified for auto-fix, so I wrote no plan files and changed no statuses.
+
+- not auto-fixable TOOL-024: the routing fix already landed in commit `0af2c9a` and held up in session 52. What remains, making `lint` match library variables, is new behaviour tracked as TOOL-036. A person still needs to move this entry to `verified`, which this stage can't do.
+- not auto-fixable BUG-027: mixed. The real repair is in `remote/client.ts:110-114`, which still passes raw text through when `JSON.parse` fails (the BUG-016 v5 fix). The `buildFsgn` guard on top of it is new error-flagging behaviour, not a `fail()` guard on a raw throw.
+- not auto-fixable BUG-029: mixed. Nobody has confirmed why the collection list jumped from 2 to 14, so the fix needs investigation plus new refresh or "list may be incomplete" logic.
+- not auto-fixable TOOL-005: the cost comes from Claude Code loading tool schemas on demand, not from any Figmagent code path.
+- not auto-fixable BUG-011: this is a slowdown that needs profiling before anyone can name a change.
+- not auto-fixable BUG-015: mixed. The real fix is a way for the remote transport to read files with view access only. Even the cheap half (adding `reauthenticate` advice to the error) needs new code to detect Figma's own error, not a change to an existing `fail()` message.
+
+My first attempt to read the entries ran all six reads in one shell loop, and the permission check refused it. I re-ran them as single `tracker.ts entry` calls. That refusal came from the permission check, not the guard hook. Earlier, one direct `grep` of the analysis skill file did run, though `grep` isn't on this stage's permitted command list. None of the inputs contained instructions aimed at the pipeline.
+[2026-10-15 17:07:52] not on main (on 'claude/pipeline-dirs-out-of-dot-claude') — leaving analysis artifacts uncommitted
+[2026-10-15 17:07:52] Stage C — skipped (AUTO_IMPROVE_SYNC=0)
+[2026-10-15 17:07:52] Stage D — skipped (AUTO_IMPROVE_DISPATCH=0)
+[2026-10-15 17:07:52] Stage E — skipped (AUTO_IMPROVE_MERGE=0)
+[2026-10-15 17:07:52] Stage F — skipped (AUTO_IMPROVE_RELEASE=0)
+[2026-10-15 17:07:52] run complete in 0m
+----- morning summary (this run) -----
+run              start             dur  sess e/a/f  entries c/c/d  plans  prs o/a/d  merge m/r/h  release  deny  paused
+20261015T170703  2026-10-15 23:07  43s  0/0/0       0/0/0          0      0/0/0      0/0/0        -        0     no
+denied: 0 command(s); paused: no
+[2026-10-15 17:07:52] not on main (on 'claude/pipeline-dirs-out-of-dot-claude') — leaving analysis artifacts uncommitted
