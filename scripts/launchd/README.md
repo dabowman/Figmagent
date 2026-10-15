@@ -85,6 +85,7 @@ bun scripts/pipeline/canary.ts
 | `AUTO_IMPROVE_COMMIT` | `1` | `0` leaves analysis artifacts uncommitted (implies no push). |
 | `AUTO_IMPROVE_PUSH` | `1` | `0` commits analysis artifacts locally but never pushes. |
 | `AUTO_IMPROVE_TRIAGE` | `1` | `0` skips Stage B2. |
+| `AUTO_IMPROVE_SYNC` | `1` | `0` skips Stage C; `dry-run` previews it (no issues created or closed). |
 | `AUTO_IMPROVE_MAX_TRIAGE` | `6` | Cap on `/triage-tracker` calls per night (each handles one batch). |
 | `AUTO_IMPROVE_DISPATCH` | `1` | `0` skips Stage D (draft PRs). |
 | `AUTO_IMPROVE_MERGE` | `dry-run` | Stage E: `0` skips it; `dry-run` runs the checks and the review and logs the `gh` calls `act` would make — nothing is posted or merged (read the verdicts in the log); `1` posts reviews/labels and merges. **A human flips it to `1`** after a couple of clean dry-run nights. |

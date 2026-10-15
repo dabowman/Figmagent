@@ -53,6 +53,7 @@ MAX_ANALYZE="${AUTO_IMPROVE_MAX_ANALYZE:-25}"        # cap on analyses per run
 DO_COMMIT="${AUTO_IMPROVE_COMMIT:-1}"                # commit analysis artifacts (main only)
 DO_PUSH="${AUTO_IMPROVE_PUSH:-1}"                    # push them to origin/main (path-guarded)
 DO_DISPATCH="${AUTO_IMPROVE_DISPATCH:-1}"            # Stage D: open draft fix PRs
+SYNC_MODE="${AUTO_IMPROVE_SYNC:-1}"                  # Stage C: 0 (skip) | dry-run | 1
 DO_TRIAGE="${AUTO_IMPROVE_TRIAGE:-1}"                # Stage B2: triage untriaged tracker entries
 MAX_TRIAGE="${AUTO_IMPROVE_MAX_TRIAGE:-6}"           # cap on /triage-tracker calls per run
 MERGE_MODE="${AUTO_IMPROVE_MERGE:-dry-run}"          # Stage E: 0 (skip) | dry-run | 1 — a human flips it to 1
@@ -456,9 +457,12 @@ if breaker_tripped; then
   # is irreversible enough to wait for the human the breaker asks for.
   log "Stage C — skipped (breaker tripped)"
   SUMMARY=""
+elif [ "$SYNC_MODE" = "0" ]; then
+  log "Stage C — skipped (AUTO_IMPROVE_SYNC=0)"
+  SUMMARY=""
 else
-  log "Stage C — sync improvement tracker → GitHub issues"
-  "$BUN" scripts/sync-tracker-issues.ts 2>&1 | tee "$RUN_TMP/sync.out"
+  log "Stage C — sync improvement tracker → GitHub issues$([ "$SYNC_MODE" = "dry-run" ] && echo " (dry run)")"
+  "$BUN" scripts/sync-tracker-issues.ts $([ "$SYNC_MODE" = "dry-run" ] && echo --dry-run) 2>&1 | tee "$RUN_TMP/sync.out"
   SUMMARY="$(grep -E '[0-9]+ create, [0-9]+ close' "$RUN_TMP/sync.out" | tail -n1)"
 fi
 record sync "created=$(nth create "$SUMMARY")" "closed=$(nth close "$SUMMARY")" \

@@ -40,6 +40,11 @@ describe("hasEffectiveFigmaCall: what counts as a real Figma session", () => {
     expect(hasEffectiveFigmaCall(messages)).toBe(false);
   });
 
+  test("reauthenticate alone does not count — it swaps the token, not the canvas", () => {
+    const messages = [msg(call("a", "mcp__plugin_figmagent_Figmagent__reauthenticate")), msg(ok("a"))];
+    expect(hasEffectiveFigmaCall(messages)).toBe(false);
+  });
+
   test("export_session plus one real call counts", () => {
     const messages = [msg(call("a", "mcp__Figmagent__export_session"), call("b", FIGMA_TOOL)), msg(ok("a"), ok("b"))];
     expect(hasEffectiveFigmaCall(messages)).toBe(true);

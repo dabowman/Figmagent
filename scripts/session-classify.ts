@@ -13,7 +13,8 @@
 //
 // The bar: at least one Figmagent call that (a) did not come back is_error, and
 // (b) is not a pure metadata call. Everything else is a dev session.
-export const METADATA_ONLY_COMMANDS = ["export_session"];
+// reauthenticate swaps the OAuth token: no file, no node (a `/figmagent:reauth` run inside unrelated work).
+export const METADATA_ONLY_COMMANDS = ["export_session", "reauthenticate"];
 
 interface ContentBlock {
   type?: string;
